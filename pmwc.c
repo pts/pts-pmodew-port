@@ -317,7 +317,7 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
 
   HashAdd (HashVal (*(unsigned short *)IBuf), 0);
 
-  BufPutLiteral (*IBuf);
+  BufPutLiteral(*IBuf);
   ++IBuf;
 
   MaxProbes = probes;
@@ -354,9 +354,10 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
 
   if (!r)
   {
-    BufPutBit (1);
-    BufPutM1 (0);
-    BufPutBits (0, 2);
+    BufPutBit(1);
+    BufPutM1(0);
+    BufPutBit(0);
+    BufPutBit(0);
 
     r = BufFlush ();
   }
@@ -371,11 +372,12 @@ static int PutCode (void)
 {
   int  off, len, hash, i0, i1, i2;
   char *c;
+  unsigned char offb;
 
   if (LSize == 1)
   {
-    BufPutBit (0);
-    BufPutLiteral (*IBuf);
+    BufPutBit(0);
+    BufPutLiteral(*IBuf);
     return 1;
   }
 
@@ -405,46 +407,35 @@ static int PutCode (void)
     }
   }
 
-  if (len < 2)
-  {
-    BufPutBit (0);
-    BufPutLiteral (*IBuf);
-  }
-  else if (len == 2)
-  {
-    BufPutBit (1);
-
-    if (off < 255)
-    {
-      BufPutM1 ((char)off + 1);
-      BufPutBits (0, 2);
-    }
-    else
-    {
-      BufPutM1 ((char)off);
-      BufPutBits (8 | ((off >> 8) & 7), 5);
-    }
-  }
-  else
-  {
-    BufPutBit (1);
-    BufPutM1 ((char)off);
-
-    if (off < 0x100)
-      BufPutBits (2, 2);
-    else if (off < 0x400)
-      BufPutBits (0x18 | ((off >> 8) & 3), 5);
-    else
-      BufPutBits (0x70 | ((off >> 8) & 15), 7);
-
-    if (len < 7)
-      BufPutBits (1, len - 2);
-    else if (len < 15)
-      BufPutBits ((len-7) & 7, 8);
-    else
-    {
-      BufPutBits (1, 5);
-      BufPutM1101 (len - 15);
+  if (len < 2) {
+    BufPutBit(0);
+    BufPutLiteral(*IBuf);
+  } else {
+    offb = (unsigned char)off;
+    if (len == 2 && off < 255) ++offb;
+    BufPutBit(1);
+    BufPutM1(offb);
+    BufPutBit(len != 2);
+    BufPutBit(off + (len == 2) >= 0x100);
+    if (len == 2) {
+      if (off >= 255) {
+        BufPutBits((off >> 8) & 7, 3);
+      }
+    } else {
+      if (off < 0x100) {
+      } else if (off < 0x400) {
+        BufPutBits((off >> 8) & 3, 3);
+      } else {
+        BufPutBits(0x10 | (off >> 8) & 15, 5);
+      }
+      if (len < 7) {
+        BufPutBits(1, len - 2);
+      } else if (len < 15) {
+        BufPutBits((len-7) & 7, 8);
+      } else {
+        BufPutBits(1, 5);
+        BufPutM1101(len - 15);
+      }
     }
   }
 
