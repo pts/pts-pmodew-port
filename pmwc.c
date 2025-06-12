@@ -822,7 +822,7 @@ static const char header[] =
     /* @0x050 */ "\x2d\x20\x43\x6f\x70\x79\x72\x69\x67\x68\x74\x20\x31\x39\x39\x34"  /* - Copyright 1994 */
     /* @0x060 */ "\x2d\x31\x39\x39\x37\x2c\x20\x44\x61\x72\x65\x64\x65\x76\x69\x6c"  /* -1997, Daredevil */
     /* @0x070 */ "\x20\x61\x6e\x64\x20\x54\x72\x61\x6e\x2e"                          /*  and Tran. */
-    /* @0x07a */                                         "\x7d\x04\x1c\x02"
+    /* @0x07a */                                         "\x00\x00\x00\x00"  /* Will be overwritten with ip (U_IP) and cs (U_CS) below. */
 #if COMPRESS_BITS==16 && COMPRESS_BITREV==1 && COMPRESS_M1BITFIRST==0 && COMPRESS_EARLYNEXTBLOCK==0  /* The compressor below corresponds to these settings. */
     /* @0x07e */                                                         "\xfc\x16"
     /* @0x080 */ "\x07\xbf\x00\x01\x8b\xf7\x57\xb9\x5e\x16\xf3\xa5\x06\x1e\x07\x1f"
@@ -854,7 +854,7 @@ int main(int argc, char **argv) {
   unsigned probes = probes_ary[level];
   const int show = 0;
   int res;  /* Either a positive file size or an error. */
-  unsigned lastsize, nblocks, nreloc, hdrsize, relocpos, img_start, img_size, u;
+  unsigned lastsize, nblocks, nreloc, hdrsize, relocpos, ip, cs, img_start, img_size, u;
   unsigned char *relocsrc;
   unsigned relocofs, relocseg;
 
@@ -874,6 +874,8 @@ int main(int argc, char **argv) {
   nblocks = get_le16(exehd + 2 * 2);
   nreloc = get_le16(exehd + 3 * 2);
   hdrsize = get_le16(exehd + 4 * 2);
+  ip = get_le16(exehd + 10 * 2);
+  cs = get_le16(exehd + 11 * 2);
   relocpos = get_le16(exehd + 12 * 2);
   if (nblocks > 0x7ff) fatal_s("DOS .exe nblocks too large", srcfn);  /* Turbo C++ 3 BOSS NE stub has nblocks > 0x7ff. */
   if (nreloc != expected_nreloc) fatal_s("unexpected relocation count in source DOS .exe", srcfn);
@@ -892,6 +894,8 @@ int main(int argc, char **argv) {
   img_size = ((lastsize & 0x1ff) ? (lastsize & 0x1ff) : 0x200) + ((nblocks - 1) << 9) - img_start;
   if (fseek(src, img_start, SEEK_SET)) fatal_s("error seeking in source DOS .exe", srcfn);
   memcpy(preparator_buf, header, sizeof(preparator_buf));
+  set_le16(preparator_buf + 0x7a, ip);  /* U_IP. */
+  set_le16(preparator_buf + 0x7a + 2, cs);  /* U_CS. */
   if (fwrite(preparator_buf, 1, sizeof(preparator_buf), dst) != sizeof(preparator_buf)) fatal_s("error writing preparator exehdfer", dstfn);
   res = Compress(dst, src, img_size, probes, show);
   if (res <= 0) { fflush(dst); fprintf(stderr, "fatal: pmwliteraw compression error: %d\n", res); return 2; }
