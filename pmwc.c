@@ -825,7 +825,7 @@ static const char header[] =
     /* @0x060 */ "\x2d\x31\x39\x39\x37\x2c\x20\x44\x61\x72\x65\x64\x65\x76\x69\x6c"  /* -1997, Daredevil */
     /* @0x070 */ "\x20\x61\x6e\x64\x20\x54\x72\x61\x6e\x2e"                          /*  and Tran. */
     /* @0x07a */                                         "\x00\x00\x00\x00"  /* Will be overwritten with ip (U_IP) and cs (U_CS) below. */
-#if COMPRESS_BITS==16 && COMPRESS_BITREV==1 && COMPRESS_M1BITFIRST==0 && COMPRESS_EARLYNEXTBLOCK==0  /* The compressor below corresponds to these settings. */
+#if COMPRESS_BITS==16 && COMPRESS_BITREV==1 && COMPRESS_M1BITFIRST==0 && COMPRESS_EARLYNEXTBLOCK==0  /* The decompressor below corresponds to these settings. */
     /* @0x07e */                                                         "\xfc\x16"
     /* @0x080 */ "\x07\xbf\x00\x01\x8b\xf7\x57\xb9\x5e\x16\xf3\xa5\x06\x1e\x07\x1f"
     /* @0x090 */ "\x5f\xbe\x22\x02\x06\x0e\xa4\xad\x8b\xe8\xb2\x10\x1e\xb8\xd9\x01"
@@ -837,13 +837,14 @@ static const char header[] =
     /* @0x0f0 */ "\xf7\xdb\x4b\x26\x8a\x01\xaa\xe2\xfa\xe8\xa6\xff\x72\x03\xa4\xeb"
     /* @0x100 */ "\xf8\x33\xdb\xac\x8a\xd8\xe8\x99\xff\x72\xa3\xe8\x94\xff\x72\x07"
     /* @0x110 */ "\x80\xeb\x01\x72\x0d\xeb\xd7\xb1\x03\xe8\x86\xff\xd0\xd7\xe2\xf9"
-    /* @0x120 */ "\xeb\xcc\x5a\x01\x16\x5c\x01\xb1\x00\xad\x8b\xd8\x26\x01\x17\xe2"  /* byte @0x128 will be overwritten with nreloc below. */
-    /* @0x130 */ "\xf8\x1f\xfa\x81\xc2\xd7\x03\x8e\xd2\xbc\x00\x04\xfb\x2e\xff\x2e"
-    /* @0x140 */ "\x5a\x01"
-    /* @0x142 */ "";
+    /* @0x120 */ "\xeb\xcc"
 #else
 #  error ERROR_DECOMPRESSOR_NOT_IMPLEMENTED
 #endif
+    /* @0x122 */         "\x5a\x01\x16\x5c\x01\xb1\x00\xad\x8b\xd8\x26\x01\x17\xe2"  /* byte @0x128 will be overwritten with nreloc below. */
+    /* @0x130 */ "\xf8\x1f\xfa\x81\xc2\xd7\x03\x8e\xd2\xbc\x00\x04\xfb\x2e\xff\x2e"
+    /* @0x140 */ "\x5a\x01"
+    /* @0x142 */ "";
 
 static unsigned char preparator_buf[sizeof(header) - 1];  /* -1 for the terminting NUL. */
 
