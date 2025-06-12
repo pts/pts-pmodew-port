@@ -1189,7 +1189,7 @@ endif
         movzx ebx,_pm_pmstacks          ;  for callbacks
         shl ecx,4
         mov pmstacklen,ecx              ; protected mode stack size in bytes
-        imul ebx,ecx
+        db 66h, 0fh, 0afh, 0d9h          ; `imul ebx,ecx' instuction, TASM 2.0 incorrectly generates `imul bx,cx'.
         add ebx,eax
         mov pmstacktop,ebx              ; protected mode stack area top
 
@@ -1879,7 +1879,7 @@ intrredirect:
         cmp dx,cs:rmstackbase           ; exceeded real mode stack space?
         jb abort_INTtoRM                ; if yes, abort
 
-        mov ds:[ebp-2],ss               ; store SS:ESP on real mode stack
+        mov word ptr ds:[ebp-2],ss      ; store SS:ESP on real mode stack
         mov ds:[ebp-6],esp
 
         sub ax,off intrmatrix+1         ; AX = int number
@@ -3340,7 +3340,7 @@ int31030201:                            ; common to 0300h, 0301h, and 0302h
         pop es:pmstackesp               ; restore old stack parameter length
         pop es:pmstackss
 
-        mov es,[esp+36]                 ; get structure ES:EDI from stack
+        mov es,word ptr [esp+36]        ; get structure ES:EDI from stack
         mov edi,[esp]
         mov esi,ebp                     ; copy return regs from real mode
         mov ecx,15h                     ;  stack to register structure
@@ -3377,7 +3377,7 @@ int310303:                              ; allocate real mode callback address
         mov bx,[esp+38]                 ; BX = caller DS from stack
         mov [edx+3],bx                  ; store callback parms in callback
         mov [edx+7],esi
-        mov [edx+12],es
+        mov word ptr [edx+12],es
         mov [edx+16],edi
 
         sub edx,ecx                     ; DX = offset of callback

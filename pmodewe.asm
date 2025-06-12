@@ -2514,7 +2514,7 @@ _int214B:
         pop es
 
         push es ds
-        mov ds,es:[ebx+10]
+        mov ds,word ptr es:[ebx+10]
         mov esi,es:[ebx+6]
         mov es,cs:_int21datasel
         mov edi,cs:_int21lowbufptr
@@ -2527,7 +2527,7 @@ _int214B:
 
         push ds es
         mov edi,es:[ebx]
-        mov es,es:[ebx+4]
+        mov es,word ptr es:[ebx+4]
         mov esi,edi
         or ecx,-1
         xor al,al
