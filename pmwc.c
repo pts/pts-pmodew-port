@@ -2,20 +2,20 @@
  * pmwc.c: PMODE/W stub compressor
  * by pts@fazekas.hu at Wed Jun 11 01:25:35 CEST 2025
  *
- * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_LONGDIST=0 -DDEBUG -o pmwc pmwc.c
+ * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 -DDEBUG -o pmwc pmwc.c
  *
  * This compressor is similar to PMWLITE 1.34, but there are some feature
  * differences (see FD?) below.
  *
  * Feature differences (FD?):
  *
- * D1. Block size is 16 bits rather than 32 bits because of -DCOMPRESS_BITS=16 in the compressor. This matches the PMOE/W 1.33 stub compressor. PMWLITE 1.34 uses -DCOMPRESS_BITS=32.
- * D2. Bit order within a block is lowest bit first because of -DCOMPRESS_BITREV=1 in the compressor. This matches the PMOE/W 1.33 stub compressor. PMWLITE 1.34 uses -DCOMPRESS_BITREV=0.
- * D3. The distance byte of match_1 is read after the next bit. This matches PMWLITE 1.34, but doesn't match the PMODE/W 1.33 stub compressor.
- * D4. The next block is read at the end of the previous block, not later (when its first bit is needed). This matches PMWLITE 1.34, but doesn't match the PMODE/W 1.33 stub compressor.
- * D5. The compressor doesn't emit the smallest possible distance for the given length (but it seems to use the largest??). !! Solution: Patch the compressor?
+ * FD1. Block size is 16 bits rather than 32 bits because of -DCOMPRESS_BITS=16 in the compressor. This matches the PMOE/W 1.33 stub compressor. PMWLITE 1.34 uses -DCOMPRESS_BITS=32.
+ * FD2. Bit order within a block is lowest bit first because of -DCOMPRESS_BITREV=1 in the compressor. This matches the PMOE/W 1.33 stub compressor. PMWLITE 1.34 uses -DCOMPRESS_BITREV=0.
+ * FD3. The distance byte of match_1 is read after the next bit if -DCOMPRESS_M1BITFIRST=1 is specified. -DCOMPRESS_M1BITFIRST=0 matches PMWLITE 1.34, but doesn't match the PMODE/W 1.33 stub compressor.
+ * FD4. The next block is read at the end of the previous block, not later (when its first bit is needed) if -DCOMPRESS_EARLYNEXTBLOCK=1 is specified. -DCOMPRESS_EARLYNEXTBLOCK=0 matches PMWLITE 1.34, but doesn't match the PMODE/W 1.33 stub compressor.
+ * FD5. The compressor doesn't emit the smallest possible distance for the given length (but it seems to use the largest??). !! Solution: Patch the compressor?
  *
- * !! make it bitwise identical by addressing D5
+ * !! make it bitwise identical by addressing FD5
  * !! get rid of inline assembly #pragma
  * !! use unsigned char everywhere
  * !! get rid of forcing little-endian
@@ -63,6 +63,27 @@
 #  define COMPRESS_LONGDIST 0
 #endif
 
+#ifndef COMPRESS_M1BITFIRST
+#  error ERROR_MISSING_COMPRESS_M1BITFIRST
+#elif COMPRESS_M1BITFIRST
+#  undef  COMPRESS_M1BITFIRST
+#  define COMPRESS_M1BITFIRST 1
+#  error ERROR_COMPRESS_M1BITFIRST_1_NOT_IMPLEMENTED
+#else
+#  undef  COMPRESS_M1BITFIRST
+#  define COMPRESS_M1BITFIRST 0
+#endif
+
+#ifndef COMPRESS_EARLYNEXTBLOCK
+#  error ERROR_MISSING_COMPRESS_EARLYNEXTBLOCK
+#elif COMPRESS_EARLYNEXTBLOCK
+#  undef  COMPRESS_EARLYNEXTBLOCK
+#  define COMPRESS_EARLYNEXTBLOCK 1
+#  error ERROR_COMPRESS_EARLYNEXTBLOCK_1_NOT_IMPLEMENTED
+#else
+#  undef  COMPRESS_EARLYNEXTBLOCK
+#  define COMPRESS_EARLYNEXTBLOCK 0
+#endif
 
 #define ENCODE_NOTENOUGHMEM     -1
 #define ENCODE_ERRORREADING     -2
@@ -221,9 +242,9 @@ static char *OBuf;
     BufPutByte(b);
   }
 #else
-  #define BufPutLiteral(b) BufPutbyte(b)
-  #define BufPutM1(b) BufPutbyte(b)
-  #define BufPutM1101(b) BufPutbyte(b)
+#  define BufPutLiteral(b) BufPutByte(b)
+#  define BufPutM1(b) BufPutByte(b)
+#  define BufPutM1101(b) BufPutByte(b)
 #endif
 
 #define HashBits        12
@@ -790,11 +811,10 @@ static void set_le16(unsigned char *p, unsigned v) {
   *p = v >> 8;
 }
 
-static unsigned char preparator_buf[0x142];
-
 enum sizes_t { expected_csize = 11110, expected_nreloc = 0x1a };  /* !! Make it more generic, update header fields and code. */
 
-static const char header[] =  /* Works with compressor +FD1, +FD2, +FD3, +FD4, ?FD5. */
+static const char header[] =
+#if COMPRESS_BITS==16 && COMPRESS_BITREV==1 && COMPRESS_M1BITFIRST==0 && COMPRESS_EARLYNEXTBLOCK==0  /* The compressor below corresponds to these settings. */
     /* @0x000 */ "\x4d\x5a\xdc\x00\x17\x00\x00\x00\x02\x00\xb4\x06\xff\xff\xd7\x03"  /* MZ.............. */
     /* @0x010 */ "\x00\x01\x00\x00\x5e\x00\x00\x00\x3e\x00\x00\x00\x00\x00\x00\x00"  /* ....^...>....... */
     /* @0x020 */ "\x04\x00\x01\x40\x00\x80\x00\x08\x08\x20\x01\x01\x00\x00\x01\xff"  /* ...@..... ...... */
@@ -817,6 +837,11 @@ static const char header[] =  /* Works with compressor +FD1, +FD2, +FD3, +FD4, ?
     /* @0x130 */ "\xf8\x1f\xfa\x81\xc2\xd7\x03\x8e\xd2\xbc\x00\x04\xfb\x2e\xff\x2e"  /* ................ */
     /* @0x140 */ "\x5a\x01"                                                          /* Z. */
     /* @0x142 */ "";
+#else
+#  error ERROR_DECOMPRESSOR_NOT_IMPLEMENTED
+#endif
+
+static unsigned char preparator_buf[sizeof(header) - 1];  /* -1 for the terminting NUL. */
 
 unsigned char exehd[0x200];
 
