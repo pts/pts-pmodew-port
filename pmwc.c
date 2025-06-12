@@ -811,7 +811,9 @@ static void set_le16(unsigned char *p, unsigned v) {
   *p = v >> 8;
 }
 
-enum sizes_t { expected_csize = 11110, expected_nreloc = 0x1a };  /* !! Make it more generic, update header fields and code. */
+#define set_byte(p, v) (*(p) = (v))
+
+enum sizes_t { expected_csize = 11110 };  /* !! Make it more generic, update header fields and code. */
 
 static const char header[] =
     /* @0x000 */ "\x4d\x5a\xdc\x00\x17\x00\x00\x00\x02\x00\xb4\x06\xff\xff\xd7\x03"  /* MZ.............. */
@@ -835,7 +837,7 @@ static const char header[] =
     /* @0x0f0 */ "\xf7\xdb\x4b\x26\x8a\x01\xaa\xe2\xfa\xe8\xa6\xff\x72\x03\xa4\xeb"
     /* @0x100 */ "\xf8\x33\xdb\xac\x8a\xd8\xe8\x99\xff\x72\xa3\xe8\x94\xff\x72\x07"
     /* @0x110 */ "\x80\xeb\x01\x72\x0d\xeb\xd7\xb1\x03\xe8\x86\xff\xd0\xd7\xe2\xf9"
-    /* @0x120 */ "\xeb\xcc\x5a\x01\x16\x5c\x01\xb1\x1a\xad\x8b\xd8\x26\x01\x17\xe2"
+    /* @0x120 */ "\xeb\xcc\x5a\x01\x16\x5c\x01\xb1\x00\xad\x8b\xd8\x26\x01\x17\xe2"  /* byte @0x128 will be overwritten with nreloc below. */
     /* @0x130 */ "\xf8\x1f\xfa\x81\xc2\xd7\x03\x8e\xd2\xbc\x00\x04\xfb\x2e\xff\x2e"
     /* @0x140 */ "\x5a\x01"
     /* @0x142 */ "";
@@ -878,8 +880,9 @@ int main(int argc, char **argv) {
   cs = get_le16(exehd + 11 * 2);
   relocpos = get_le16(exehd + 12 * 2);
   if (nblocks > 0x7ff) fatal_s("DOS .exe nblocks too large", srcfn);  /* Turbo C++ 3 BOSS NE stub has nblocks > 0x7ff. */
-  if (nreloc != expected_nreloc) fatal_s("unexpected relocation count in source DOS .exe", srcfn);
   if (nreloc) {
+    if (nreloc > 0xff) fatal_s("too many relocations in DOS .exe\n", srcfn);  /* Won't fit to single byte in preparator_buf. */
+    /* Not supported reading that many relocations to exehd. */
     if (relocpos >= sizeof(exehd) || ((sizeof(exehd) - relocpos) >> 1) < nreloc) fatal_s("unsupported: too many relocations in DOS .exe", srcfn);
     for (relocsrc = exehd + relocpos, u = 0; u < nreloc; ++u) {  /* Keep the original relocation order, for bitwise identical .exe output. */
       relocofs = get_le16(relocsrc + (u << 2));
@@ -896,6 +899,7 @@ int main(int argc, char **argv) {
   memcpy(preparator_buf, header, sizeof(preparator_buf));
   set_le16(preparator_buf + 0x7a, ip);  /* U_IP. */
   set_le16(preparator_buf + 0x7a + 2, cs);  /* U_CS. */
+  set_byte(preparator_buf + 0x128, nreloc);  /* U_NRELOC. */
   if (fwrite(preparator_buf, 1, sizeof(preparator_buf), dst) != sizeof(preparator_buf)) fatal_s("error writing preparator exehdfer", dstfn);
   res = Compress(dst, src, img_size, probes, show);
   if (res <= 0) { fflush(dst); fprintf(stderr, "fatal: pmwliteraw compression error: %d\n", res); return 2; }
