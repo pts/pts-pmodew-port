@@ -880,18 +880,17 @@ int main(int argc, char **argv) {
   cs = get_le16(exehd + 11 * 2);
   relocpos = get_le16(exehd + 12 * 2);
   if (nblocks > 0x7ff) fatal_s("DOS .exe nblocks too large", srcfn);  /* Turbo C++ 3 BOSS NE stub has nblocks > 0x7ff. */
-  if (nreloc) {
-    if (nreloc > 0xff) fatal_s("too many relocations in DOS .exe\n", srcfn);  /* Won't fit to single byte in preparator_buf. */
-    /* Not supported reading that many relocations to exehd. */
-    if (relocpos >= sizeof(exehd) || ((sizeof(exehd) - relocpos) >> 1) < nreloc) fatal_s("unsupported: too many relocations in DOS .exe", srcfn);
-    for (relocsrc = exehd + relocpos, u = 0; u < nreloc; ++u) {  /* Keep the original relocation order, for bitwise identical .exe output. */
-      relocofs = get_le16(relocsrc + (u << 2));
-      relocseg = get_le16(relocsrc + (u << 2) + 2);
-      if (((relocseg + (relocofs >> 4)) & 0xffff) < relocseg) fatal_s("relocation overflow in source DOS .exe", srcfn);
-      relocofs += (relocseg << 4) + 0x100;
-      if (relocofs < 0x100 || relocofs - 0x100 + 2 > img_size) fatal_s("relocation beyond image size in source DOS .exe", srcfn);
-      set_le16(exehd + (u << 1), relocofs);  /* Compressed relocation location: dw (2 bytes). */
-    }
+  if (!nreloc) fatal_s("DOS .exe hsa no relocations", srcfn);  /* The `loop' in the preparator code doesn't work without relocations. */
+  if (nreloc > 0xff) fatal_s("too many relocations in DOS .exe\n", srcfn);  /* Won't fit to single byte in preparator_buf. */
+  /* Not supported reading that many relocations to exehd. */
+  if (relocpos >= sizeof(exehd) || ((sizeof(exehd) - relocpos) >> 1) < nreloc) fatal_s("unsupported: too many relocations in DOS .exe", srcfn);
+  for (relocsrc = exehd + relocpos, u = 0; u < nreloc; ++u) {  /* Keep the original relocation order, for bitwise identical .exe output. */
+    relocofs = get_le16(relocsrc + (u << 2));
+    relocseg = get_le16(relocsrc + (u << 2) + 2);
+    if (((relocseg + (relocofs >> 4)) & 0xffff) < relocseg) fatal_s("relocation overflow in source DOS .exe", srcfn);
+    relocofs += (relocseg << 4) + 0x100;
+    if (relocofs < 0x100 || relocofs - 0x100 + 2 > img_size) fatal_s("relocation beyond image size in source DOS .exe", srcfn);
+    set_le16(exehd + (u << 1), relocofs);  /* Compressed relocation location: dw (2 bytes). */
   }
   img_start = hdrsize << 4;
   img_size = ((lastsize & 0x1ff) ? (lastsize & 0x1ff) : 0x200) + ((nblocks - 1) << 9) - img_start;
