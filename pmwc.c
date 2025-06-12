@@ -2,7 +2,7 @@
  * pmwc.c: PMODE/W stub compressor
  * by pts@fazekas.hu at Wed Jun 11 01:25:35 CEST 2025
  *
- * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 -DDEBUG -o pmwc pmwc.c
+ * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 -DDEBUG -o pmwc pmwc.c
  *
  * This compressor is similar to PMWLITE 1.34, but there are some feature
  * differences (see FD?) below.
@@ -68,7 +68,6 @@
 #elif COMPRESS_M1BITFIRST
 #  undef  COMPRESS_M1BITFIRST
 #  define COMPRESS_M1BITFIRST 1
-#  error ERROR_COMPRESS_M1BITFIRST_1_NOT_IMPLEMENTED
 #else
 #  undef  COMPRESS_M1BITFIRST
 #  define COMPRESS_M1BITFIRST 0
@@ -355,8 +354,13 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
   if (!r)
   {
     BufPutBit(1);
+#if COMPRESS_M1BITFIRST
+    BufPutBit(0);
+    BufPutM1(0);
+#else
     BufPutM1(0);
     BufPutBit(0);
+#endif
     BufPutBit(0);
 
     r = BufFlush ();
@@ -414,8 +418,13 @@ static int PutCode (void)
     offb = (unsigned char)off;
     if (len == 2 && off < 255) ++offb;
     BufPutBit(1);
+#if COMPRESS_M1BITFIRST
+    BufPutBit(len != 2);
+    BufPutM1(offb);
+#else
     BufPutM1(offb);
     BufPutBit(len != 2);
+#endif
     BufPutBit(off + (len == 2) >= 0x100);
     if (len == 2) {
       if (off >= 255) {
@@ -827,6 +836,19 @@ static const char header[] =
     /* @0x0e0 */ "\xe8\xbf\xff\xd0\xd6\xe2\xf9\x80\xc6\x07\x8a\xce\xeb\x02\xb1\x02"
     /* @0x0f0 */ "\xf7\xdb\x4b\x26\x8a\x01\xaa\xe2\xfa\xe8\xa6\xff\x72\x03\xa4\xeb"
     /* @0x100 */ "\xf8\x33\xdb\xac\x8a\xd8\xe8\x99\xff\x72\xa3\xe8\x94\xff\x72\x07"
+    /* @0x110 */ "\x80\xeb\x01\x72\x0d\xeb\xd7\xb1\x03\xe8\x86\xff\xd0\xd7\xe2\xf9"
+    /* @0x120 */ "\xeb\xcc"
+#elif COMPRESS_BITS==16 && COMPRESS_BITREV==1 && COMPRESS_M1BITFIRST==1 && COMPRESS_EARLYNEXTBLOCK==0  /* The decompressor below corresponds to these settings. */
+    /* @0x07e */                                                         "\xfc\x16"
+    /* @0x080 */ "\x07\xbf\x00\x01\x8b\xf7\x57\xb9\x5e\x16\xf3\xa5\x06\x1e\x07\x1f"
+    /* @0x090 */ "\x5f\xbe\x22\x02\x06\x0e\xa4\xad\x8b\xe8\xb2\x10\x1e\xb8\xd9\x01"
+    /* @0x0a0 */ "\x50\xcb\x80\xea\x01\x73\x04\xb2\x0f\xad\x95\xd1\xed\xc3\xe8\xf1"
+    /* @0x0b0 */ "\xff\x73\x0f\xe8\xec\xff\x80\xd1\x01\xd0\xe1\xe8\xe4\xff\xd0\xd7"
+    /* @0x0c0 */ "\xe2\xf9\xb6\x02\xb1\x04\xfe\xc6\xe8\xd7\xff\x72\x1d\xe2\xf7\xe8"
+    /* @0x0d0 */ "\xd0\xff\x73\x08\xac\x8a\xc8\x83\xc1\x0f\xeb\x14\x32\xf6\xb1\x03"
+    /* @0x0e0 */ "\xe8\xbf\xff\xd0\xd6\xe2\xf9\x80\xc6\x07\x8a\xce\xeb\x02\xb1\x02"
+    /* @0x0f0 */ "\xf7\xdb\x4b\x26\x8a\x01\xaa\xe2\xfa\xe8\xa6\xff\x72\x03\xa4\xeb"
+    /* @0x100 */ "\xf8\x33\xdb\xe8\x9c\xff\xac\x8a\xd8\x72\xa3\xe8\x94\xff\x72\x07"
     /* @0x110 */ "\x80\xeb\x01\x72\x0d\xeb\xd7\xb1\x03\xe8\x86\xff\xd0\xd7\xe2\xf9"
     /* @0x120 */ "\xeb\xcc"
 #else
