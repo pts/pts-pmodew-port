@@ -779,13 +779,20 @@ static void fatal_s(const char *msg, const char *arg1) {
   exit(2);
 }
 
+/* !! TODO(pts): Make it smaller for x86. */
 static unsigned get_le16(const unsigned char *p) {
   return p[0] | p[1] << 8;
 }
 
+/* !! TODO(pts): Make it smaller for x86. */
+static void set_le16(unsigned char *p, unsigned v) {
+  *p++ = v;
+  *p = v >> 8;
+}
+
 static unsigned char preparator_buf[0x142];
 
-enum sizes_t { expected_csize = 11110 };  /* !! Make it more generic. */
+enum sizes_t { expected_csize = 11110, expected_nreloc = 0x1a };  /* !! Make it more generic, update header fields and code. */
 
 static const char header[] =  /* Works with compressor +FD1, +FD2, +FD3, +FD4, ?FD5. */
     /* @0x000 */ "\x4d\x5a\xdc\x00\x17\x00\x00\x00\x02\x00\xb4\x06\xff\xff\xd7\x03"  /* MZ.............. */
@@ -811,27 +818,18 @@ static const char header[] =  /* Works with compressor +FD1, +FD2, +FD3, +FD4, ?
     /* @0x140 */ "\x5a\x01"                                                          /* Z. */
     /* @0x142 */ "";
 
-static const short relocs[0x1a] = {  /* !! Copy from the uncompressed .exe. !! Use let_be16(...). */
-#if 0  /* Ascending order is incorrect, also we have to add +0x100 to each. */
-    0x0006, 0x0562, 0x0986, 0x0c26, 0x0cae, 0x0dce, 0x0e91, 0x0f3f, 0x0fdc,
-    0x1881, 0x1a00, 0x1a1f, 0x1b32, 0x2643, 0x26df, 0x26fa, 0x2724, 0x2744,
-    0x301a, 0x30ce, 0x3144, 0x31f2, 0x325f, 0x343e, 0x3ce4, 0x3d5b,
-#else
-    0x2743, 0x27df, 0x27fa, 0x2824, 0x2844, 0x311a, 0x31ce, 0x3244, 0x32f2,
-    0x335f, 0x353e, 0x3de4, 0x3e5b, 0x0106, 0x0662, 0x0a86, 0x0d26, 0x0dae,
-    0x0ece, 0x0f91, 0x103f, 0x10dc, 0x1981, 0x1b00, 0x1b1f, 0x1c32,
-#endif
-};
+unsigned char exehd[0x200];
 
 int main(int argc, char **argv) {
-  unsigned char exehd[28];
   const unsigned level = 9;
   char *srcfn, *dstfn;
   FILE *src, *dst;
   unsigned probes = probes_ary[level];
   const int show = 0;
   int res;  /* Either a positive file size or an error. */
-  unsigned lastsize, nblocks, nreloc, hdrsize, img_start, img_size;
+  unsigned lastsize, nblocks, nreloc, hdrsize, relocpos, img_start, img_size, u;
+  unsigned char *relocsrc;
+  unsigned relocofs, relocseg;
 
   (void)argc;
   if (!argv[0] || !argv[1] || !argv[2]) {
@@ -843,23 +841,35 @@ int main(int argc, char **argv) {
   srcfn = argv[1]; dstfn = argv[2];
   if (!(src = fopen(srcfn, "rb"))) fatal_s("error opening source file", srcfn);
   if (!(dst = fopen(dstfn, "wb"))) fatal_s("error opening destination file", dstfn);
-  if (fread(exehd, 1, 28, src) != 28) fatal_s("error reading DOS .exe header", srcfn);
+  if (fread(exehd, 1, sizeof(exehd), src) != sizeof(exehd)) fatal_s("error reading DOS .exe header", srcfn);
   if (get_le16(exehd) != ('M' | 'Z' << 8)) fatal_s("missing DOS .exe signature", srcfn);
   lastsize = get_le16(exehd + 1 * 2);
   nblocks = get_le16(exehd + 2 * 2);
   nreloc = get_le16(exehd + 3 * 2);
   hdrsize = get_le16(exehd + 4 * 2);
+  relocpos = get_le16(exehd + 12 * 2);
   if (nblocks > 0x7ff) fatal_s("DOS .exe nblocks too large", srcfn);  /* Turbo C++ 3 BOSS NE stub has nblocks > 0x7ff. */
+  if (nreloc != expected_nreloc) fatal_s("unexpected relocation count in source DOS .exe", srcfn);
+  if (nreloc) {
+    if (relocpos >= sizeof(exehd) || ((sizeof(exehd) - relocpos) >> 1) < nreloc) fatal_s("unsupported: too many relocations in DOS .exe", srcfn);
+    for (relocsrc = exehd + relocpos, u = 0; u < nreloc; ++u) {  /* Keep the original relocation order, for bitwise identical .exe output. */
+      relocofs = get_le16(relocsrc + (u << 2));
+      relocseg = get_le16(relocsrc + (u << 2) + 2);
+      if (((relocseg + (relocofs >> 4)) & 0xffff) < relocseg) fatal_s("relocation overflow in source DOS .exe", srcfn);
+      relocofs += (relocseg << 4) + 0x100;
+      if (relocofs < 0x100 || relocofs - 0x100 + 2 > img_size) fatal_s("relocation beyond image size in source DOS .exe", srcfn);
+      set_le16(exehd + (u << 1), relocofs);  /* Compressed relocation location: dw (2 bytes). */
+    }
+  }
   img_start = hdrsize << 4;
   img_size = ((lastsize & 0x1ff) ? (lastsize & 0x1ff) : 0x200) + ((nblocks - 1) << 9) - img_start;
   if (fseek(src, img_start, SEEK_SET)) fatal_s("error seeking in source DOS .exe", srcfn);
   memcpy(preparator_buf, header, sizeof(preparator_buf));
-  if (fwrite(preparator_buf, 1, sizeof(preparator_buf), dst) != sizeof(preparator_buf)) fatal_s("error writing preparator buffer", dstfn);
+  if (fwrite(preparator_buf, 1, sizeof(preparator_buf), dst) != sizeof(preparator_buf)) fatal_s("error writing preparator exehdfer", dstfn);
   res = Compress(dst, src, img_size, probes, show);
   if (res <= 0) { fflush(dst); fprintf(stderr, "fatal: pmwliteraw compression error: %d\n", res); return 2; }
   if (res != expected_csize) { fflush(dst); fprintf(stderr, "fatal: unexpected compressed size: expecting %u, got %u\n", expected_csize, res); return 2; }
-  if (nreloc != sizeof(relocs) / sizeof(relocs[0])) fatal_s("fatal: bad relocation count in source DOS .exe", srcfn);
-  if (fwrite(relocs, 1, nreloc << 1, dst) != (nreloc << 1)) fatal_s("error writing relocation locations", dstfn);
+  if (fwrite(exehd, 1, nreloc << 1, dst) != (nreloc << 1)) fatal_s("error writing compressed relocation locations", dstfn);
   if (fflush(dst) || fclose(dst)) fatal_s("error closing destination file", dstfn);
   fclose(src);
   return res > 0 ? 0 : 3;
