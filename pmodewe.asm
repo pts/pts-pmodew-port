@@ -2759,7 +2759,7 @@ _int2156:
         mov word ptr [ebp+_edx],bx
         call _realmodeint21
 
-        jmp _endint21error_eax50h_0
+        jmp short _endint21error_eax50h_0
 
 ;같같같같같같같같같같같같같같같같같같같같같같같같같같같같같같같같같같같같같같�
 ; INT 21h Service 62h - Get PSP Segment (returns selector)
