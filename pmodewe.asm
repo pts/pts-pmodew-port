@@ -181,7 +181,15 @@ _int330Ccalloff         dd ?
 _int330Ccallsel         dw ?
 ENDIF
 
-IFDEF INT33 OR INT1B
+IFDEF INT33
+  INT33_OR_INT1B = 1
+ELSE
+  IFDEF INT1B
+    INT33_OR_INT1B = 1
+  ENDIF
+ENDIF
+
+IFDEF INT33_OR_INT1B
 _int33cursorbufseg      dw ?
 ENDIF
 
@@ -278,7 +286,7 @@ _noborfix1:
         add ax,STACKLEN
         mov _membase,eax
 
-IFDEF INT1B OR INT33
+IFDEF INT33_OR_INT1B
                                         ; INT 33h Function 9 inherits the old
         mov _int33cursorbufseg,ss       ; real mode stack for its buffer
 ENDIF
@@ -1380,7 +1388,7 @@ _initdosextnoerror:
 _ret:
         ret
 
-IFDEF   INT1B OR INT33
+IFDEF INT33_OR_INT1B
 _initgetcallback:
         push ds es
         mov ax,303h

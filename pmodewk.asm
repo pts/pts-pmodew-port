@@ -2198,7 +2198,7 @@ exception:                              ; main exception dispatch
         lea esi,[2*esi+esi]             ; EDI = position of exception address
         shl si,1
 
-        push large cs                   ; push addresses for exception
+        db 66h, 0eh                     ; `push large cs' instruction. (TASM 2.51 would emit just `db eh' == `push cs')  ; push addresses for exception
         push large offset exception_done
         push dword ptr cs:exceptionevect[si+4]
         push dword ptr cs:exceptionevect[si]
