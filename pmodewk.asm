@@ -581,11 +581,11 @@ passupintregs   = $
         xor eax,ebx                     ; ID bit fliped?
         jz short @@detect_processordone2; if no, CPU is 486
 
-.586p
+;.586p
         push ecx edx
 
         mov eax,1                       ; get CPU features
-        cpuid
+        db 0fh, 0a2h                    ; cpuid instruction, for TASM <=3.2
 
         and ah,0fh
 

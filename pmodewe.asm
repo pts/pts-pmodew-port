@@ -461,7 +461,7 @@ _nomeminit1:
 _loadexe:
         add _lowmin,(FIXUPBUFMIN SHR 4)+1
         jnc short _l1f1
-        or _lowmin,0ffffh
+        or _lowmin,-1
 _l1f1:
 
         mov gs,_selbuf                  ; Get LE/PMW1 location from EXE header
