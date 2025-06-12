@@ -6,10 +6,16 @@
 locals
 jumps
 
+IFDEF PMWV
+  PMWVV=PMWV  ; TASM 2.0 can't handle PMWVV being the same as PMWV.
+ELSE
+  PMWVV=33
+ENDIF
+
 STACKLEN        = 40h       ; Stub stack size in para - KEEP THIS 40h OR ABOVE!
 
 PMWVER_MAJOR    = 1
-PMWVER_MINOR    = 34
+PMWVER_MINOR    = PMWVV
 
 OPENTYPE        = 1
 VARTYPE         = 1
@@ -78,8 +84,13 @@ errmsg7         db 'Error Loading EXE!',36
 errmsg8         db 'Unrecognized Fixup Data!',36
 errmsg9         db '16bit Fixup Overflow!',36
 
+IF PMWVV-33
 _copyrightmsg   db 'PMODE/W DOS Extender v1.34',10,13
                 db 'Copyright (C) 1994-2000, Charles Scheffold and Thomas Pytel'
+ELSE
+_copyrightmsg   db 'PMODE/W DOS Extender v1.33',10,13
+                db 'Copyright (C) 1994-1997, Charles Scheffold and Thomas Pytel'
+ENDIF
                 db 0,10,13,'$'
 
 align 4
@@ -172,16 +183,6 @@ _int21dtasel            dw ?
 _int21dtaoff            dd ?
 
 IFDEF INT33
-_int33vectoff           dd ?
-_int33vectsel           dw ?
-_int33mousebufsize      dd ?
-_int33callback          dd 0
-_int33entryflag         db 0
-_int330Ccalloff         dd ?
-_int330Ccallsel         dw ?
-ENDIF
-
-IFDEF INT33
   INT33_OR_INT1B = 1
 ELSE
   IFDEF INT1B
@@ -189,8 +190,28 @@ ELSE
   ENDIF
 ENDIF
 
-IFDEF INT33_OR_INT1B
-_int33cursorbufseg      dw ?
+IFDEF INT33
+_int33vectoff           dd ?
+_int33vectsel           dw ?
+ENDIF
+
+IF PMWVV-33
+ELSE
+  IFDEF INT33_OR_INT1B
+    _int33cursorbufseg  dw ?
+  ENDIF
+ENDIF
+IFDEF INT33
+  _int33mousebufsize    dd ?
+  _int33callback        dd 0
+  _int33entryflag       db 0
+  _int330Ccalloff       dd ?
+  _int330Ccallsel       dw ?
+ENDIF
+IF PMWVV-33
+  IFDEF INT33_OR_INT1B
+    _int33cursorbufseg  dw ?
+  ENDIF
 ENDIF
 
 IFDEF INT1B
