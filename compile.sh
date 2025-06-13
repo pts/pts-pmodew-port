@@ -76,7 +76,7 @@ test "$(sha256sum pmodew.exe)" = "8f8dfc58a6b4936b872cf81498ef98326f5e38d666fa0c
 #test "$(sha256sum pmodew.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodew.exe" # /dPMWV=1.34.
 
 test -d "$WATCOM/lh"
-owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DDEBUG -o pmwc pmwc.c
+owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DPMWV=33 -DDEBUG -o pmwc pmwc.c
 ./pmwc pmodew.exe pmodewc.exe >pmodewc.log
 #test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
 #test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .

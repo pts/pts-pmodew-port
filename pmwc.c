@@ -4,8 +4,13 @@
  *
  * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DDEBUG -o pmwc pmwc.c
  *
- * This compressor is similar to PMWLITE 1.34, but there are some feature
- * differences (see FD?) below.
+ * This compressor is not a general DOS .exe executable compressor (packer),
+ * it has many hidden assumption of its input, not only its size (<~60 KiB,
+ * typically 16 KiB).
+ *
+ * This compressor implements a variant of LZSS, with a stream encoding
+ * similar to PMWLITE 1.34, but there are some feature differences (see FD?)
+ * below.
  *
  * Feature differences (FD?) between the PMODE/W 1.33 stub compressor and PMWLITE (both 1.33 and 1.34) compression stream format:
  *
@@ -30,6 +35,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef PMWV
+#  define PMWV 33  /* PMODE/W Minor version number. The full version number is 1.33. */
+#endif
 
 #ifndef COMPRESS_BITS  /* !! Provide good defaults. */
 #  error ERROR_MISSING_COMPRESS_BITS
@@ -875,21 +884,50 @@ static void set_le16(unsigned char *p, unsigned v) {
 
 #define set_byte(p, v) (*(p) = (v))
 
-enum sizes_t { expected_csize = 11110 };  /* !! Make it more generic, update header fields and code. */
+#if PMWV == 33
+static const char copyright[] = "PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.";
+#elif PMWV == 34
+static const char copyright[] = "PMODE/W v1.34 DOS extender - Copyright 1994-2000, Daredevil and Tran.";
+#else
+#  error ERROR_UNSUPPORTER_PMWV PMWV
+#endif
+typedef char assert_sizeof_copyright[sizeof(copyright) - 1 == 0x45 ? 1 : -1];
 
-static const char header[] =
-    /* @0x000 */ "\x4d\x5a\xdc\x00\x17\x00\x00\x00\x02\x00\xb4\x06\xff\xff\xd7\x03"  /* MZ.............. */
-    /* @0x010 */ "\x00\x01\x00\x00\x5e\x00\x00\x00\x3e\x00\x00\x00\x00\x00\x00\x00"  /* ................ */
-    /* @0x020 */ "\x04\x00\x01\x40\x00\x80\x00\x08\x08\x20\x01\x01\x00\x00\x01\xff"  /* ......... ...... */
-    /* @0x030 */ "\xff\xff\x7f\x00\x00\x50\x4d\x4f\x44\x45\x2f\x57\x20\x76\x31\x2e"  /* .....PMODE/W v1. */
-    /* @0x040 */ "\x33\x33\x20\x44\x4f\x53\x20\x65\x78\x74\x65\x6e\x64\x65\x72\x20"  /* 33 DOS extender  */
-    /* @0x050 */ "\x2d\x20\x43\x6f\x70\x79\x72\x69\x67\x68\x74\x20\x31\x39\x39\x34"  /* - Copyright 1994 */
-    /* @0x060 */ "\x2d\x31\x39\x39\x37\x2c\x20\x44\x61\x72\x65\x64\x65\x76\x69\x6c"  /* -1997, Daredevil */
-    /* @0x070 */ "\x20\x61\x6e\x64\x20\x54\x72\x61\x6e\x2e"                          /*  and Tran. */
-    /* @0x07a */                                         "\x00\x00\x00\x00"  /* Will be overwritten with ip (U_IP) and cs (U_CS) below. */
+/* The PMODE/W function _openexe2 (with VARTYPE == 1) will load these 0x15
+ * bytes starting at file offset hrdsize << 4 ((word [8]) << 4) to the
+ * _pm_... and _lowmin variables.
+ *
+ * pmwsetup.exe is a menu-driven text-mode tool to modify these config
+ * values interactively.
+ *
+ * 0000   ??        _pm_pagetables: .pagetables: db 4  ; Number of page tables under VCPI.
+ * 0001   ????      _pm_selectors: .selectors: dw 0x100  ; Max selectors under VCPI/XMS/raw.
+ * 0003   ????      _pm_rmstacklen: .rmstacklen: dw 0x40  ; Real mode stack length, in para.
+ * 0005   ????      _pm_pmstacklen: .pmstacklen: dw 0x80  ; Protected mode stack length, in para.
+ * 0007   ??        _pm_rmstacks: .rmstacks: db 8  ; Real mode stack nesting.
+ * 0008   ??        _pm_pmstacks: .pmstacks: db 8  ; Protected mode stack nesting.
+ * 0009   ??        _pm_callbacks: .callbacks: db 0x20  ; Number of real mode callbacks.
+ * 000A   ??        _pm_mode: .mode: db 1  ; Mode bits.
+ * 000B   ??        _pm_pampagemax: .pamapping: db 1  ; Physical address mappings pages max.
+ * 000C   ????      .crap: dw 0
+ * 000E   ??        _pm_options: .options: db 1  ; Option flags. 0 = hide copyright message; 1 == display copyright message
+ * 000F   ????????  _pm_maxextmem: .extmax: dd 0x7fffffff  ; Maximum extended memory to allocate.
+ * 0013   ????      _lowmin: .lowmin: dw 0  ; Amount of low memory to try and save. Loaded by _openexe2 to somewhere else.
+ * 0015
+ *
+ * @0x... offsets below are output compressed DOS .exe file offsets, and
+ * also offsets within preparator_buf.
+ */
+static const char pmodew_config[] =
+    /* @0x020 */ "\x04\x00\x01\x40\x00\x80\x00\x08\x08\x20\x01\x01\x00\x00\x01\xff"
+    /* @0x030 */ "\xff\xff\x7f\x00\x00";
+typedef char assert_sizeof_pmodew_config[sizeof(pmodew_config) - 1 == 0x15 ? 1 : -1];
+
+/* TODO(pts): Add a TASM source for this. dec.nasm already has similar code. */
+static const char preparator_code[] =
 #if COMPRESS_BITS==16 && COMPRESS_BITREV==1  /* The decompressor below corresponds to these settings. */
     /* @0x07e */                                                         "\xfc\x16"
-    /* @0x080 */ "\x07\xbf\x00\x01\x8b\xf7\x57\xb9\x5e\x16\xf3\xa5\x06\x1e\x07\x1f"
+    /* @0x080 */ "\x07\xbf\x00\x01\x8b\xf7\x57\xb9\x00\x00\xf3\xa5\x06\x1e\x07\x1f"  /* word [0x88] will be overwritten below. */
     /* @0x090 */ "\x5f\xbe\x22\x02\x06\x0e\xa4\xad\x8b\xe8\xb2\x10\x1e\xb8\xd9\x01"
 #  if COMPRESS_EARLYNEXTBLOCK  /* The decompressor below corresponds to these settings. */
     /* @0x0a0 */ "\x50\xcb\xd1\xed\xfe\xca\x75\x05\xad\x8b\xe8\xb2\x10\xc3\xe8\xf1"  /* COMPRESS_EARLYNEXTBLOCK==1 code here */
@@ -911,14 +949,15 @@ static const char header[] =
 #else
 #  error ERROR_DECOMPRESSOR_NOT_IMPLEMENTED
 #endif
-    /* @0x122 */         "\x5a\x01\x16\x5c\x01\xb1\x00\xad\x8b\xd8\x26\x01\x17\xe2"  /* byte @0x128 will be overwritten with nreloc below. */
-    /* @0x130 */ "\xf8\x1f\xfa\x81\xc2\xd7\x03\x8e\xd2\xbc\x00\x04\xfb\x2e\xff\x2e"
+    /* @0x122 */         "\x5a\x01\x16\x5c\x01\xb1\x00\xad\x8b\xd8\x26\x01\x17\xe2"  /* byte [0x128] will be overwritten with U_NRELOC below. */
+    /* @0x130 */ "\xf8\x1f\xfa\x81\xc2\x00\x00\x8e\xd2\xbc\x00\x00\xfb\x2e\xff\x2e"  /* word [0x135] will be overwritten with U_SS and word [0x13a] will be overwritten with U_SP below. */
     /* @0x140 */ "\x5a\x01"
     /* @0x142 */ "";
+typedef char assert_sizeof_preprartor_code[sizeof(preparator_code) - 1 == 0x142 - 0x7e ? 1 : -1];
 
-static unsigned char preparator_buf[sizeof(header) - 1];  /* -1 for the terminting NUL. */
+static unsigned char preparator_buf[0x142];  /* -1 for the terminting NUL. */
 
-unsigned char exehd[0x200];
+unsigned char exehd[0x200];  /* Input, uncompressed DOS .exe. */
 
 int main(int argc, char **argv) {
   const unsigned level = 9;
@@ -926,8 +965,9 @@ int main(int argc, char **argv) {
   FILE *src, *dst;
   unsigned probes = probes_ary[level];
   const int show = 0;
-  int res;  /* Either a positive file size or an error. */
-  unsigned lastsize, nblocks, nreloc, hdrsize, relocpos, ip, cs, img_start, img_size, u;
+  unsigned csize, cimg_size, cnblocks;
+  unsigned lastsize, nblocks, nreloc, hdrsize, minalloc, maxalloc, ss, sp, ip, cs, relocpos;
+  unsigned img_start, img_size, u, mem_para;
   unsigned char *relocsrc;
   unsigned relocofs, relocseg;
 
@@ -947,14 +987,21 @@ int main(int argc, char **argv) {
   nblocks = get_le16(exehd + 2 * 2);
   nreloc = get_le16(exehd + 3 * 2);
   hdrsize = get_le16(exehd + 4 * 2);
+  minalloc = get_le16(exehd + 5 * 2);
+  maxalloc = get_le16(exehd + 6 * 2);
+  ss = get_le16(exehd + 7 * 2);
+  sp = get_le16(exehd + 8 * 2);
   ip = get_le16(exehd + 10 * 2);
   cs = get_le16(exehd + 11 * 2);
   relocpos = get_le16(exehd + 12 * 2);
-  if (nblocks > 0x7ff) fatal_s("DOS .exe nblocks too large", srcfn);  /* Turbo C++ 3 BOSS NE stub has nblocks > 0x7ff. */
+  if (nblocks > 0x7ff) fatal_s("DOS .exe nblocks too large", srcfn);  /* Turbo C++ 3 BOSS NE stub has nblocks > 0x7ff. We could do nblocks &= 0x7ff. */
   if (!nreloc) fatal_s("DOS .exe hsa no relocations", srcfn);  /* The `loop' in the preparator code doesn't work without relocations. */
-  if (nreloc > 0xff) fatal_s("too many relocations in DOS .exe\n", srcfn);  /* Won't fit to single byte in preparator_buf. */
+  if (nreloc > 0xff) fatal_s("too many relocations in DOS .exe", srcfn);  /* Won't fit to single byte in preparator_buf. */
+  if (minalloc == 0 || minalloc == 0xffff) fatal_s("unexpected minalloc in DOS .exe", srcfn);
+  if (maxalloc != 0xffff) fatal_s("unexpected maxalloc in DOS .exe", srcfn);
   /* Not supported reading that many relocations to exehd. */
   if (relocpos >= sizeof(exehd) || ((sizeof(exehd) - relocpos) >> 1) < nreloc) fatal_s("unsupported: too many relocations in DOS .exe", srcfn);
+  /* !! Sort the relocations by (segment, offset). TASM <=4.1 does the sorting, but TASM >=5.0 doesn't. It doesn't depend on the TLINK version. */
   for (relocsrc = exehd + relocpos, u = 0; u < nreloc; ++u) {  /* Keep the original relocation order, for bitwise identical .exe output. */
     relocofs = get_le16(relocsrc + (u << 2));
     relocseg = get_le16(relocsrc + (u << 2) + 2);
@@ -964,18 +1011,46 @@ int main(int argc, char **argv) {
     set_le16(exehd + (u << 1), relocofs);  /* Compressed relocation location: dw (2 bytes). */
   }
   img_start = hdrsize << 4;
-  img_size = ((lastsize & 0x1ff) ? (lastsize & 0x1ff) : 0x200) + ((nblocks - 1) << 9) - img_start;
-  if (fseek(src, img_start, SEEK_SET)) fatal_s("error seeking in source DOS .exe", srcfn);
-  memcpy(preparator_buf, header, sizeof(preparator_buf));
+  img_size = ((lastsize & 0x1ff) ? (lastsize & 0x1ff) : 0x200) + ((nblocks - 1) << 9);  /* !! Check 16-bit overflow, or use `unsigned long'. */
+  if (img_size <= img_start) fatal_s("source DOS .exe image size too small for header", srcfn);
+  img_size -= img_start;
+  mem_para = (nblocks << 5) - hdrsize;
+  if (mem_para + minalloc < minalloc || mem_para + minalloc > 0xfffe) fatal_s("memory usage too large in source DOS .exe", srcfn);
+  mem_para += minalloc;
+  if (mem_para < ss + ((sp + 0xf) >> 4)) fatal_s("stack does not fit in preallocated memory in DOS .exe", srcfn);
+  memset(preparator_buf, 0, sizeof(preparator_buf));
+  set_le16(preparator_buf + 0 * 2, 'M' | 'Z' << 8);  /* DOS .exe signature. */
+  set_le16(preparator_buf + 4 * 2, 2);  /* hdrsize. */
+  set_le16(preparator_buf + 6 * 2, 0xffff);  /* maxalloc. */
+  set_le16(preparator_buf + 7 * 2, ss);  /* ss. */
+  set_le16(preparator_buf + 8 * 2, 0x100);  /* sp. The value 0x100 is hardcoded in many places of the preparator code. */
+  set_le16(preparator_buf + 10 * 2, 0x5e);  /* ip. */
+  set_le16(preparator_buf + 12 * 2, 0x3e);  /* relocpos. Arbitrary, because nreloc == 0. */
+  memcpy(preparator_buf + 0x20, pmodew_config, sizeof(pmodew_config) - 1);  /* 0x15 bytes. */
+  memcpy(preparator_buf + 0x35, copyright, sizeof(copyright) - 1);  /* 0x45 bytes. */
+  memcpy(preparator_buf + 0x7e, preparator_code, sizeof(preparator_code) - 1);  /* 0x142 - 0x7e bytes. */
   set_le16(preparator_buf + 0x7a, ip);  /* U_IP. */
   set_le16(preparator_buf + 0x7a + 2, cs);  /* U_CS. */
   set_byte(preparator_buf + 0x128, nreloc);  /* U_NRELOC. */
-  if (fwrite(preparator_buf, 1, sizeof(preparator_buf), dst) != sizeof(preparator_buf)) fatal_s("error writing preparator exehdfer", dstfn);
-  res = Compress(dst, src, img_size, probes, show);
-  if (res <= 0) { fflush(dst); fprintf(stderr, "fatal: pmwliteraw compression error: %d\n", res); return 2; }
-  if (res != expected_csize) { fflush(dst); fprintf(stderr, "fatal: unexpected compressed size: expecting %u, got %u\n", expected_csize, res); return 2; }
+  set_le16(preparator_buf + 0x135, ss);  /* U_SS. */
+  set_le16(preparator_buf + 0x13a, sp);  /* U_SP. */
+  if (fseek(src, img_start, SEEK_SET)) fatal_s("error seeking in source DOS .exe", srcfn);
+  if (fwrite(preparator_buf, 1, sizeof(preparator_buf), dst) != sizeof(preparator_buf)) fatal_s("error writing compressed DOS .exe preparator", dstfn);
+  csize = Compress(dst, src, img_size, probes, show);
+  if ((int)csize <= 0) { fflush(dst); fprintf(stderr, "fatal: pmwliteraw compression error: %d\n", (int)csize); return 2; }
   if (fwrite(exehd, 1, nreloc << 1, dst) != (nreloc << 1)) fatal_s("error writing compressed relocation locations", dstfn);
-  if (fflush(dst) || fclose(dst)) fatal_s("error closing destination file", dstfn);
+  if (fseek(dst, 0, SEEK_SET)) fatal_s("error seeking in compressed DOS .exe", dstfn);
+  cimg_size = csize + (nreloc << 1) + (0x142 - 0x20);
+  set_le16(preparator_buf + 1 * 2, (cimg_size + 0x20) & 0x1ff);  /* lastsize. */
+  set_le16(preparator_buf + 2 * 2, cnblocks = (cimg_size + 0x20 + 0x1ff) >> 9);  /* nblocks. */
+  set_le16(preparator_buf + 0x88, (cimg_size + 1) >> 1);  /* Number of data and preparator code words to copy before decompression. */
+#if 0  /* This would be a safe but tight way to specify minalloc, but PMODE/W 1.33 seems to be using a more generous, more wasteful formula. */
+  set_le16(preparator_buf + 5 * 2, (ss + ((0x100 + 0xf) >> 4) + ((cimg_size + 0xf) >> 4)) - ((cnblocks << 5) - (0x20 >> 4)));  /* minalloc. */
+#else
+  set_le16(preparator_buf + 5 * 2, (ss + ((0x100 + 0xf) >> 4)) + ((cimg_size + 0xf) >> 4) + 1);  /* minalloc. */  /* !! Why this wasteful formula? */ /* !! Why the +1? */
+#endif
+  if (fwrite(preparator_buf, 1, sizeof(preparator_buf), dst) != sizeof(preparator_buf)) fatal_s("error writing compressed DOS .exe preparator again", dstfn);
+  if (fflush(dst) || fclose(dst)) fatal_s("error closing compressed DOS .exe", dstfn);
   fclose(src);
-  return res > 0 ? 0 : 3;
+  return 0;
 }
