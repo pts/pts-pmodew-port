@@ -451,6 +451,10 @@ static int PutCode (void)
         BufPutM1101(len - 15);
       }
     }
+#ifdef DEBUG
+    fprintf(stdout, "D%04x\n", off);
+    fprintf(stdout, "E%04x\n", len);
+#endif
   }
 
   return len;

@@ -82,4 +82,18 @@ owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPR
 #test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 .
 test "$(sha256sum pmodewc.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodewc.exe"  # For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 .
 
+nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodewc.exe'" -o dec.com dec.nasm
+"$kvikdos" dec.com >dec.log  # This is slow, it takes a few seconds.
+<pmodewc.log grep '^[LDE]' >pmodewc.lde.log
+<dec.log grep '^[LDE]' >dec.lde.log
+diff pmodewc.lde.log dec.lde.log
+
+if test -f pmodew133.exe; then
+  nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodew133.exe'" -o deco133.com dec.nasm
+  "$kvikdos" deco133.com >deco133.log  # This is slow, it takes a few seconds.
+  <deco133.log grep '^[LDE]' >deco133.lde.log
+  <deco133.log grep '^[LE]' >deco133.le.log
+  <dec.log grep '^[LE]' >dec.le.log
+fi
+
 : "$0" OK.
