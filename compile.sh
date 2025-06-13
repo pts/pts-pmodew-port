@@ -1,6 +1,8 @@
 #! /bin/sh --
 # by pts@fazekas.hu at Thu Jun 12 11:50:15 CEST 2025
 set -ex
+unset LANG LANGUAGE
+export LC_ALL=C TZ=GMT
 
 test "$0" = "${0%/*}" || cd "${0%/*}"
 
