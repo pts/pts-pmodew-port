@@ -2,7 +2,7 @@
  * pmwc.c: PMODE/W stub compressor
  * by pts@fazekas.hu at Wed Jun 11 01:25:35 CEST 2025
  *
- * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 -DDEBUG -o pmwc pmwc.c
+ * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DDEBUG -o pmwc pmwc.c
  *
  * This compressor is similar to PMWLITE 1.34, but there are some feature
  * differences (see FD?) below.
@@ -13,7 +13,7 @@
  * FD2. The PMODE/W 1.33 stub uses -DCOMPRESS_BITREV=1 in the compressor.(bit order within a block is lowest bit first); PMWLITE uses -DCOMPRESS_BITREV=0.
  * FD3. The PMODE/W 1.33 stub uses -DCOMPRESS_M1BITFIRST=1 (the distance byte of match_1 is read after the next bit); PMWLITE uses -DCOMPRESS_M1BITFIRST=0.
  * FD4. The PMODE/W 1.33 stub uses -DCOMPRESS_EARLYNEXTBLOCK=1 (the next block is read at the end of the previous block, not later, when its first bit is first needed); PMWLITE uses -DCOMPRESS_EARLYNEXTBLOCK=0.
- * FD5. In the PMODE/W 1.33 stub, the compressor doesn't emit the smallest possible distance for the given length (but it seems to use the largest??). !! Solution: Patch the compressor?
+ * FD5. The PMODE/W 1.33 stub compressor uses -DCOMPRESS_LONGDIST=1 (for each match, the longest distance whose bit encoding is not longer than of the shortest distance is used, rather than the shortest distance), the decompressor doesn't care; PMWLITE uses -DCOMPRESS_LONGDIST=0.
  *
  * !! make it bitwise identical by addressing FD5
  * !! get rid of inline assembly #pragma
@@ -423,18 +423,19 @@ static int PutCode (void)
     }
 #endif
 
-#if COMPRESS_LONGDIST
-    /* Pick the longest found distance (off). Hopefully this moves closer to PMODE/W 1.33 compression. However, it makes the compressed output longer. */
-    if (i1 > len || (i1 == len && i0 > off))
-#else
-    if (i1 > len)
-#endif
-    {
+    if (i1 > len) {
       off = i0;
       len = i1;
-    } else if (i1 == len && i0 <= off) {
-      fprintf(stderr, "fatal: assert: distances are not in increasing order\n");  /* !! Return an error code instead. */
-      exit(102);
+    } else if (i1 == len && len >= 2) {
+      if (i0 <= off) {
+        fprintf(stderr, "fatal: assert: distances are not in increasing order\n");  /* !! Return an error code instead. */
+        exit(102);
+      }
+#if COMPRESS_LONGDIST  /* Keep the largest (longest) distance whose bitstream encoding will be the same number of bits (not longer). */
+      if (len == 2 ? (off > 0xfe || i0 <= 0xfe) : (off > 0x3ff || i0 <= (off <= 0xff ? 0xff : 0x3ff))) {
+        off = i0;
+      }
+#endif
     }
   }
 

@@ -76,63 +76,71 @@ test "$(sha256sum pmodew.exe)" = "8f8dfc58a6b4936b872cf81498ef98326f5e38d666fa0c
 #test "$(sha256sum pmodew.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodew.exe" # /dPMWV=1.34.
 
 test -d "$WATCOM/lh"
-owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 -DDEBUG -o pmwc pmwc.c
+owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DDEBUG -o pmwc pmwc.c
 ./pmwc pmodew.exe pmodewc.exe >pmodewc.log
-#test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 .
-#test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 .
-test "$(sha256sum pmodewc.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodewc.exe"  # For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 .
+#test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
+#test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
+#test "$(sha256sum pmodewc.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodewc.exe"  # Same as of pmodew133rrr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 .
+test "$(sha256sum pmodewc.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodewc.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01). For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 .
 
-nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodewc.exe'" -o dec.com dec.nasm
-"$kvikdos" dec.com >dec.log  # This is slow, it takes a few seconds.
-<pmodewc.log grep '^[LDE]' >pmodewc.lde.log
-<dec.log grep '^[LDE]' >dec.lde.log
-diff pmodewc.lde.log dec.lde.log
+if true; then  # No need for debugging.
+  nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodewc.exe'" -o dec.com dec.nasm
+  "$kvikdos" dec.com >dec.out
+  nasm-0.98.39 -O0 -w+orphan-labels -f bin -o pmodew.uprog.exe uprog.nasm  # Reeds the DOS .exe header from pmodew.exe and the the uncompressed .exe image from dec.out.
+  cmp pmodew.uprog.exe pmodew.exe
+else  # Debugging.
+  nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodewc.exe'" -DDEBUG -o dec.com dec.nasm
+  "$kvikdos" dec.com >dec.log  # This is slow, it takes a few seconds.
+  <pmodewc.log grep '^[LDE]' >pmodewc.lde.log
+  <dec.log grep '^[LDE]' >dec.lde.log
+  diff pmodewc.lde.log dec.lde.log
 
-if test -f pmodew133.exe; then
-  nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodew133.exe'" -o deco133.com dec.nasm
-  "$kvikdos" deco133.com >deco133.log  # This is slow, it takes a few seconds.
-  <deco133.log grep '^[LDE]' >deco133.lde.log
-  <deco133.log grep '^[LE]' >deco133.le.log
-  <dec.log grep '^[LE]' >dec.le.log
-  <pmodewc.log grep '^[LdDE]' >pmodewc.ldde.log
-fi
+  if test -f pmodew133.exe; then
+    nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodew133.exe'" -DDEBUG -o deco133.com dec.nasm
+    "$kvikdos" deco133.com >deco133.log  # This is slow, it takes a few seconds.
+    <deco133.log grep '^[LDE]' >deco133.lde.log
+    <deco133.log grep '^[LE]' >deco133.le.log
+    <dec.log grep '^[LE]' >dec.le.log
+    <pmodewc.log grep '^[LdDE]' >pmodewc.ldde.log
+  fi
 
-perl -we 'use integer; use strict;
-    die("fatal: open A: $ARGV[0]\n") if !open(A, "< $ARGV[0]");
-    die("fatal: open B: $ARGV[1]\n") if !open(B, "< $ARGV[1]");
-    my $lb;
-    my $bigc = 0; my $nonbigc = 0; my $last_length = "0000";
-    while (defined($lb = <B>)) {
-      if ($lb =~ s@^d,(?=[^,\r\n])@@) {
-        chomp($lb);
-        my @hex_distances = split(/,/, $lb);
-        my $length = hex($last_length);
-        die("fatal: missing E before D\n") if !$length;
-        die("fatal: bad length\n") if $length < 2;
-        my $min_distance = hex($hex_distances[-1]);  # Smallest.
-        my $max_distance_limit = ($length == 2) ? (($min_distance <= 0xfe) ? 0xfe : 0xffff) : (($min_distance <= 0xff) ? 0xff : ($min_distance <= 0x3ff) ? 0x3ff : 0xffff);
-        my @limited_hex_distances = grep { hex($_) <= $max_distance_limit } @hex_distances;
-        die("fatal: unexpected EOF in B after d\n") if !defined($lb = <B>);
-        die("fatal: expected D in B after d\n") if $lb !~ m@^D@;
-        my $la = <A>;
-        die("fatal: unexpected EOF in A after D in b\n") if !defined($la);
-        die("fatal: expected D in A after d in B\n") if $la !~ s@^D@@;
-        chomp($la);
-        if ($la eq $limited_hex_distances[0]) {
-          ++$bigc;
+  perl -we 'use integer; use strict;
+      die("fatal: open A: $ARGV[0]\n") if !open(A, "< $ARGV[0]");
+      die("fatal: open B: $ARGV[1]\n") if !open(B, "< $ARGV[1]");
+      my $lb;
+      my $bigc = 0; my $nonbigc = 0; my $last_length = "0000";
+      while (defined($lb = <B>)) {
+        if ($lb =~ s@^d,(?=[^,\r\n])@@) {
+          chomp($lb);
+          my @hex_distances = split(/,/, $lb);
+          my $length = hex($last_length);
+          die("fatal: missing E before D\n") if !$length;
+          die("fatal: bad length\n") if $length < 2;
+          my $min_distance = hex($hex_distances[-1]);  # Smallest.
+          my $max_distance_limit = ($length == 2) ? (($min_distance <= 0xfe) ? 0xfe : 0xffff) : (($min_distance <= 0xff) ? 0xff : ($min_distance <= 0x3ff) ? 0x3ff : 0xffff);
+          my @limited_hex_distances = grep { hex($_) <= $max_distance_limit } @hex_distances;
+          die("fatal: unexpected EOF in B after d\n") if !defined($lb = <B>);
+          die("fatal: expected D in B after d\n") if $lb !~ m@^D@;
+          my $la = <A>;
+          die("fatal: unexpected EOF in A after D in b\n") if !defined($la);
+          die("fatal: expected D in A after d in B\n") if $la !~ s@^D@@;
+          chomp($la);
+          if ($la eq $limited_hex_distances[0]) {
+            ++$bigc;
+          } else {
+            ++$nonbigc;
+            print("$la -- @limited_hex_distances -- $last_length\n");
+          }
         } else {
-          ++$nonbigc;
-          print("$la -- @limited_hex_distances -- $last_length\n");
+          $last_length = $1 if $lb =~ m@^E(.*)@;
+          my $la = <A>;
+          die("fatal: unexpected EOF in A\n") if !defined($la);
+          chomp($la), chomp($lb), die("fatal: mismatch in A and B: ($la) vs ($lb)\n") if $la ne $lb;
         }
-      } else {
-        $last_length = $1 if $lb =~ m@^E(.*)@;
-        my $la = <A>;
-        die("fatal: unexpected EOF in A\n") if !defined($la);
-        chomp($la), chomp($lb), die("fatal: mismatch in A and B: ($la) vs ($lb)\n") if $la ne $lb;
       }
-    }
-    { my $la; die("fatal: missing EOF in A\n") if defined($la = <A>); }
-    print(STDERR "info: bigc=$bigc nonbigc=$nonbigc\n");
-    ' deco133.lde.log pmodewc.ldde.log
+      { my $la; die("fatal: missing EOF in A\n") if defined($la = <A>); }
+      print(STDERR "info: bigc=$bigc nonbigc=$nonbigc\n");
+      ' deco133.lde.log pmodewc.ldde.log
+fi
 
 : "$0" OK.

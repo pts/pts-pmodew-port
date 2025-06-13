@@ -43,7 +43,7 @@
   ;%define CEXEFN 'pmodewc.exe'
 %endif
 
-%define DEBUG 1
+;%define DEBUG 1
 
 bits 16
 cpu 8086
@@ -57,7 +57,7 @@ start:		mov si, cdata
 		mov di, udata
 		jmp short decompress
 
-%if DEBUG
+%ifdef DEBUG
 print_nibble:	push ax
 		add al, '0'
 		cmp al, '9'
@@ -146,12 +146,12 @@ print_m1101:	push ax
 ; --- PMWLITE-like decompressor.
 
 decompress:
-%if DEBUG
+%ifdef DEBUG
 		call print_literal
 %endif
 		movsb  ; Copy initial literal token.
 		lodsw  ; AX := initial 16-bit block (tag) word value.
-%if DEBUG
+%ifdef DEBUG
 		call print_block
 %endif
 		mov bp, ax  ; BP will keep holding the block word throught decompression. `xchg bp, ax' would have been shorter.
@@ -162,8 +162,11 @@ decompress:
 		shr bp, 1  ; CF := the first bit in a block to be used is its lowest bit.
 		dec dl  ; Doesn't modify CF.
 		jnz .get_bit.ret
-  %if DEBUG
 		lodsw
+  %ifdef DEBUG
+		pushf
+		call print_block
+		popf
   %endif
 		mov bp, ax  ; `xchg bp, ax' would have been shorter here.
 		mov dl, 0x10  ; Again, 0x10 == 16 are available in BP.
@@ -172,14 +175,14 @@ decompress:
 		jnc short .skip
 		mov dl, 0xf
 		lodsw
-  %if DEBUG
+  %ifdef DEBUG
 		call print_block
   %endif
 		xchg ax, bp
 .skip:		shr bp, 1
 %endif
 .get_bit.ret:
-%if DEBUG
+%ifdef DEBUG
 		pushf
 		mov al, 'B'
 		int 0x29
@@ -214,7 +217,7 @@ decompress:
 		jnc short .match_1_1_0_0
 .match_1_1_0_1:
 		lodsb
-%if DEBUG
+%ifdef DEBUG
 		call print_m1101
 %endif
 		mov cl, al
@@ -234,21 +237,21 @@ decompress:
 .copy_match_2_bytes:
 		mov cl, 0x2  ; CX := 2. Assumes CH == 0. Falls through to .copy_match.
 .copy_match:  ; Copies a match with (distance, length) == (BX, CX). The distance 0 means: copy the previously emitted byte (at [ES:DI-1]).
-%if DEBUG
+%ifdef DEBUG
 		call print_length  ; In CX.
 		call print_distance  ; In BX.
 %endif
 		neg bx  ; BX := -orig_distance.
 		dec bx  ; BX := -orig_distance - 1.
 .copy_match.next:
-		mov al, [es:bx+di]
+		mov al, [es:bx+di]  ; [es:..] prefix is not needed.
 		stosb
 		loop .copy_match.next
 .next_token:
 		call .get_bit
 		jc short .match_1
 .literal_0:  ; Indicated by CF==0.
-%if DEBUG
+%ifdef DEBUG
 		call print_literal
 %endif
 		movsb  ; Copy literal byte from byte stream.
@@ -259,7 +262,7 @@ decompress:
 		call .get_bit
 %endif
 		lodsb  ; Get distance byte. Keeps CF intact.
-  %if DEBUG
+  %ifdef DEBUG
 		call print_m1  ; Keeps CF intact.
   %endif
 		mov bl, al  ; BX (distance) := AL.  Keeps CF intact.
@@ -282,7 +285,16 @@ decompress:
 		loop .match_1_0_1.next
 		jmp short .copy_match_2_bytes
 
-after_decompress: ret
+after_decompress:
+%ifndef DEBUG
+		mov ah, 0x40  ; Write to file using handle.
+		mov bx, 1  ; STDOUT_FILENO.
+		mov dx, udata  ; Start address to write from.
+		mov cx, di  ; DI == address of end of just-decompressed udata.
+		sub cx, dx  ; CX := Number of bytes to write.
+		int 0x21  ; DOS syscall.
+%endif
+		ret
 
 cdata:		incbin CEXEFN, 0x142, 11110
 
