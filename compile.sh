@@ -39,6 +39,8 @@ esac
 # consistent anyway.
 if false; then
   if true; then
+    test "$WATCOM"
+    test -f "$WATCOM/lh/stdio.h"
     owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -o execons execons.c
     ./execons pmodewu.exe
   elif false; then
@@ -77,7 +79,8 @@ if false; then
   #test "$(sha256sum pmodewu.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodewu.exe" # /dPMWV=1.34.
 fi
 
-test -d "$WATCOM/lh"
+test "$WATCOM"
+test -f "$WATCOM/lh/stdio.h"
 owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DPMWV=33 -DDEBUG -o pmwc pmwc.c
 ./pmwc pmodewu.exe pmodewc.exe >pmodewc.log
 #test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
