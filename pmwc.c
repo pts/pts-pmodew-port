@@ -2,7 +2,7 @@
  * pmwc.c: PMODE/W stub compressor
  * by pts@fazekas.hu at Wed Jun 11 01:25:35 CEST 2025
  *
- * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 -DDEBUG -o pmwc pmwc.c
+ * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 -DDEBUG -o pmwc pmwc.c
  *
  * This compressor is similar to PMWLITE 1.34, but there are some feature
  * differences (see FD?) below.
@@ -78,7 +78,6 @@
 #elif COMPRESS_EARLYNEXTBLOCK
 #  undef  COMPRESS_EARLYNEXTBLOCK
 #  define COMPRESS_EARLYNEXTBLOCK 1
-#  error ERROR_COMPRESS_EARLYNEXTBLOCK_1_NOT_IMPLEMENTED
 #else
 #  undef  COMPRESS_EARLYNEXTBLOCK
 #  define COMPRESS_EARLYNEXTBLOCK 0
@@ -109,6 +108,11 @@ static void HashAdd(unsigned short h, int v);
 static void HashDelete(unsigned short h);
 static int HashFind(unsigned short h);
 static int StringMatch(const char *s1, const char *s2, unsigned size);
+#if COMPRESS_EARLYNEXTBLOCK
+static void BufInitBitOPos(void);
+#else
+#  define BufInitBitOPos() do {} while (0)
+#endif
 
 #ifdef DEBUG
 #  include <stdio.h>
@@ -123,7 +127,7 @@ static int StringMatch(const char *s1, const char *s2, unsigned size);
 #else
 #  error ERROR_BAD_COMPRESS_BITS COMPRESS_BITS
 #endif
-typedef char static_assert_sizeof_bufbit_t[sizeof(bufbit_t) == COMPRESS_BITS >> 3 ? 1 : -1];
+typedef char static_assert_sizeof_bufbit_t[sizeof(bufbit_t) == COMPRESS_BITS >> 3 ? 1 : -1];  /* A larger bufbit_t would overwrite too many bytes in `*BufBitOPos = BufBitBuf;'. */
 typedef char static_assert_sizeof_unsignedt[sizeof(unsigned) == 4];  /* !! Make it work without this. */
 
 /*
@@ -318,6 +322,7 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
 
   BufPutLiteral(*IBuf);
   ++IBuf;
+  BufInitBitOPos();
 
   MaxProbes = probes;
 
@@ -451,6 +456,16 @@ static int PutCode (void)
   return len;
 }
 
+#if COMPRESS_EARLYNEXTBLOCK
+static void BufInitBitOPos(void) {
+#  ifdef DEBUG
+  fprintf(stdout, "W?\n");
+#  endif
+  BufBitOPos = (bufbit_t *)OBuf;
+  OBuf += COMPRESS_BITS >> 3;
+}
+#endif
+
 static int BufInit (FILE *dst, FILE *src, unsigned size)
 {
   int r;
@@ -480,6 +495,7 @@ static int BufInit (FILE *dst, FILE *src, unsigned size)
   BufTSize = size;
   BufEncodedSize = 0;
 
+  BufBitOPos = (bufbit_t*)0;
   BufBitBuf = 0;
   BufBitCount = 0;
 
@@ -513,22 +529,31 @@ static void BufPutBit (int b)
   BufBitBuf = (BufBitBuf << 1) | b;
 #endif
 
-  if (++BufBitCount == 1)
-  {
+#if COMPRESS_EARLYNEXTBLOCK
+  ++BufBitCount;
+#else
+  if (++BufBitCount == 1) {
 #ifdef DEBUG
-  fprintf(stdout, "W?\n");
+    fprintf(stdout, "W?\n");
 #endif
     BufBitOPos = (bufbit_t *)OBuf;
     OBuf += COMPRESS_BITS >> 3;
-  }
-  else if (BufBitCount == COMPRESS_BITS)
-  {
+  } else
+#endif
+  if (BufBitCount == COMPRESS_BITS) {
 #ifdef DEBUG
-  fprintf(stdout, "W%04x\n", BufBitBuf);
+    fprintf(stdout, "W%04x\n", BufBitBuf);
 #endif
     *BufBitOPos = BufBitBuf;
     BufBitBuf = 0;
     BufBitCount = 0;
+#if COMPRESS_EARLYNEXTBLOCK
+#  ifdef DEBUG
+    fprintf(stdout, "W?\n");
+#  endif
+    BufBitOPos = (bufbit_t *)OBuf;
+    OBuf += COMPRESS_BITS >> 3;
+#endif
   }
 #ifdef DEBUG
   fprintf(stdout, "B%u\n", b);
@@ -616,11 +641,16 @@ static int BufFlush (void)
 {
   int i;
 
-  if (BufBitCount) {
+#if COMPRESS_EARLYNEXTBLOCK
+  if (1 /*BufBitOPos*/)  /* Always true, because end-of-stream (EOS) is expressed as bits. */
+#else
+  if (BufBitCount)
+#endif
+  {
 #if COMPRESS_BITREV
     *BufBitOPos = BufBitBuf;
 #else
-    *BufBitOPos = BufBitBuf << (COMPRESS_BITS - BufBitCount);
+    *BufBitOPos = BufBitBuf << (COMPRESS_BITS - BufBitCount);  /* This shift is OK (to be done as modulo 32 on the i386) even if BufBitCount == 0, beause then BufBitBuf is also 0. */
 #endif
 #ifdef DEBUG
     fprintf(stdout, "W%04x\n", *BufBitOPos);
@@ -829,7 +859,11 @@ static const char header[] =
     /* @0x07e */                                                         "\xfc\x16"
     /* @0x080 */ "\x07\xbf\x00\x01\x8b\xf7\x57\xb9\x5e\x16\xf3\xa5\x06\x1e\x07\x1f"
     /* @0x090 */ "\x5f\xbe\x22\x02\x06\x0e\xa4\xad\x8b\xe8\xb2\x10\x1e\xb8\xd9\x01"
+#  if COMPRESS_EARLYNEXTBLOCK  /* The decompressor below corresponds to these settings. */
+    /* @0x0a0 */ "\x50\xcb\xd1\xed\xfe\xca\x75\x05\xad\x8b\xe8\xb2\x10\xc3\xe8\xf1"  /* COMPRESS_EARLYNEXTBLOCK==1 code here */
+#  else
     /* @0x0a0 */ "\x50\xcb\x80\xea\x01\x73\x04\xb2\x0f\xad\x95\xd1\xed\xc3\xe8\xf1"  /* COMPRESS_EARLYNEXTBLOCK==0 code here */
+#  endif
     /* @0x0b0 */ "\xff\x73\x0f\xe8\xec\xff\x80\xd1\x01\xd0\xe1\xe8\xe4\xff\xd0\xd7"
     /* @0x0c0 */ "\xe2\xf9\xb6\x02\xb1\x04\xfe\xc6\xe8\xd7\xff\x72\x1d\xe2\xf7\xe8"
     /* @0x0d0 */ "\xd0\xff\x73\x08\xac\x8a\xc8\x83\xc1\x0f\xeb\x14\x32\xf6\xb1\x03"
