@@ -382,6 +382,10 @@ static int PutCode (void)
   int  off, len, hash, i0, i1, i2;
   char *c;
   unsigned char offb;
+#if DEBUG  /* These variables are not thread-safe. */
+  static unsigned short distances[0x1000];
+  static unsigned short distancec;
+#endif
 
   if (LSize == 1)
   {
@@ -395,6 +399,10 @@ static int PutCode (void)
 
   HashFindInit ();
 
+#if DEBUG
+  distancec = 0;
+#endif
+
   for (i2=0; ((i0 = HashFind (hash)) != -1) && (i2 < MaxProbes); i2++)
   {
     c = BufPPos (i0);
@@ -403,6 +411,17 @@ static int PutCode (void)
 
     if ((i1 == 2) && (i0 >= 0x800))
       continue;
+
+#if DEBUG
+    if (i1 > len) distancec = 0;  /* Discard shorter distances. */
+    if (i1 >= len) {
+      if (distancec == sizeof(distances) / sizeof(distances[0])) {
+        fprintf(stderr, "fatal: too many distances for debug\n");
+        exit(101);
+      }
+      distances[distancec++] = i0;  /* The order seems to be increasing. */
+    }
+#endif
 
 #if COMPRESS_LONGDIST
     /* Pick the longest found distance (off). Hopefully this moves closer to PMODE/W 1.33 compression. However, it makes the compressed output longer. */
@@ -413,6 +432,9 @@ static int PutCode (void)
     {
       off = i0;
       len = i1;
+    } else if (i1 == len && i0 <= off) {
+      fprintf(stderr, "fatal: assert: distances are not in increasing order\n");  /* !! Return an error code instead. */
+      exit(102);
     }
   }
 
@@ -452,8 +474,13 @@ static int PutCode (void)
       }
     }
 #ifdef DEBUG
-    fprintf(stdout, "D%04x\n", off);
     fprintf(stdout, "E%04x\n", len);
+    fprintf(stdout, "d");
+    while (distancec--) {
+      fprintf(stdout, ",%04x", distances[distancec]);
+    }
+    fprintf(stdout, "\n");
+    fprintf(stdout, "D%04x\n", off);
 #endif
   }
 

@@ -235,8 +235,8 @@ decompress:
 		mov cl, 0x2  ; CX := 2. Assumes CH == 0. Falls through to .copy_match.
 .copy_match:  ; Copies a match with (distance, length) == (BX, CX). The distance 0 means: copy the previously emitted byte (at [ES:DI-1]).
 %if DEBUG
-		call print_distance  ; In BX.
 		call print_length  ; In CX.
+		call print_distance  ; In BX.
 %endif
 		neg bx  ; BX := -orig_distance.
 		dec bx  ; BX := -orig_distance - 1.

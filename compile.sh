@@ -94,6 +94,45 @@ if test -f pmodew133.exe; then
   <deco133.log grep '^[LDE]' >deco133.lde.log
   <deco133.log grep '^[LE]' >deco133.le.log
   <dec.log grep '^[LE]' >dec.le.log
+  <pmodewc.log grep '^[LdDE]' >pmodewc.ldde.log
 fi
+
+perl -we 'use integer; use strict;
+    die("fatal: open A: $ARGV[0]\n") if !open(A, "< $ARGV[0]");
+    die("fatal: open B: $ARGV[1]\n") if !open(B, "< $ARGV[1]");
+    my $lb;
+    my $bigc = 0; my $nonbigc = 0; my $last_length = "0000";
+    while (defined($lb = <B>)) {
+      if ($lb =~ s@^d,(?=[^,\r\n])@@) {
+        chomp($lb);
+        my @hex_distances = split(/,/, $lb);
+        my $length = hex($last_length);
+        die("fatal: missing E before D\n") if !$length;
+        die("fatal: bad length\n") if $length < 2;
+        my $min_distance = hex($hex_distances[-1]);  # Smallest.
+        my $max_distance_limit = ($length == 2) ? (($min_distance <= 0xfe) ? 0xfe : 0xffff) : (($min_distance <= 0xff) ? 0xff : ($min_distance <= 0x3ff) ? 0x3ff : 0xffff);
+        my @limited_hex_distances = grep { hex($_) <= $max_distance_limit } @hex_distances;
+        die("fatal: unexpected EOF in B after d\n") if !defined($lb = <B>);
+        die("fatal: expected D in B after d\n") if $lb !~ m@^D@;
+        my $la = <A>;
+        die("fatal: unexpected EOF in A after D in b\n") if !defined($la);
+        die("fatal: expected D in A after d in B\n") if $la !~ s@^D@@;
+        chomp($la);
+        if ($la eq $limited_hex_distances[0]) {
+          ++$bigc;
+        } else {
+          ++$nonbigc;
+          print("$la -- @limited_hex_distances -- $last_length\n");
+        }
+      } else {
+        $last_length = $1 if $lb =~ m@^E(.*)@;
+        my $la = <A>;
+        die("fatal: unexpected EOF in A\n") if !defined($la);
+        chomp($la), chomp($lb), die("fatal: mismatch in A and B: ($la) vs ($lb)\n") if $la ne $lb;
+      }
+    }
+    { my $la; die("fatal: missing EOF in A\n") if defined($la = <A>); }
+    print(STDERR "info: bigc=$bigc nonbigc=$nonbigc\n");
+    ' deco133.lde.log pmodewc.ldde.log
 
 : "$0" OK.
