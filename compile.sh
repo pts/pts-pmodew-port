@@ -32,7 +32,7 @@ case "$tasm_exe" in
   "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
   ;;
 esac
-"$kvikdos" "$tlink_exe" /3 /x pmodewe pmodewk,pmodew.exe
+"$kvikdos" "$tlink_exe" /3 /x pmodewe pmodewk,pmodewu.exe
 
 # No need to make the output consistent (i.e. bitwise identical) across TASM
 # (and TLINK) versions, because pmwc.c below would make its output
@@ -40,10 +40,10 @@ esac
 if false; then
   if true; then
     owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -o execons execons.c
-    ./execons pmodew.exe
+    ./execons pmodewu.exe
   elif false; then
     gcc -W -Wall -s -O2 -o execons execons.c
-    ./execons pmodew.exe
+    ./execons pmodewu.exe
   elif false; then
     # Turbo C++ 1.01 free (??) license and free download (not available anymore):
     # https://web.archive.org/web/20090307213905/https://edn.embarcadero.com/article/21751
@@ -59,27 +59,27 @@ if false; then
     rm -f execons.exe
     # Needs: tcc.exe, tlink.exe, tcch/*.h, c0s.obj, fp87.lib, maths.lib, cs.lib.
     "$kvikdos" tcc.exe -ms -Itcch -f87 execons.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)? Also for pmwc.c.
-    "$kvikdos" execons.exe pmodew.exe
+    "$kvikdos" execons.exe pmodewu.exe
   elif false; then
     rm -f execons.exe
     owcc -bdos -Os -s -fno-stack-check -march=i086 -W -Wall -o execons.exe execons.c
-    "$kvikdos" execons.exe pmodew.exe
+    "$kvikdos" execons.exe pmodewu.exe
   elif false; then
     minicc -o execons execons.c
-    ./execons pmodew.exe
+    ./execons pmodewu.exe
   else
     : '! Missing compiler for execons.c' >&2
     false
   fi
 
-  #cmp ../pmodew.exe pmodew.exe
-  test "$(sha256sum pmodew.exe)" = "8f8dfc58a6b4936b872cf81498ef98326f5e38d666fa0c3574b6757b53fe7119  pmodew.exe"  # /dPMWV=1.33.
-  #test "$(sha256sum pmodew.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodew.exe" # /dPMWV=1.34.
+  #cmp ../pmodewu.exe pmodewu.exe
+  test "$(sha256sum pmodewu.exe)" = "8f8dfc58a6b4936b872cf81498ef98326f5e38d666fa0c3574b6757b53fe7119  pmodewu.exe"  # /dPMWV=1.33.
+  #test "$(sha256sum pmodewu.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodewu.exe" # /dPMWV=1.34.
 fi
 
 test -d "$WATCOM/lh"
 owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DPMWV=33 -DDEBUG -o pmwc pmwc.c
-./pmwc pmodew.exe pmodewc.exe >pmodewc.log
+./pmwc pmodewu.exe pmodewc.exe >pmodewc.log
 #test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
 #test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
 #test "$(sha256sum pmodewc.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodewc.exe"  # Same as of pmodew133rrr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 .
@@ -88,8 +88,8 @@ test "$(sha256sum pmodewc.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8
 if true; then  # No need for debugging.
   nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodewc.exe'" -o dec.com dec.nasm
   "$kvikdos" dec.com >dec.out
-  nasm-0.98.39 -O0 -w+orphan-labels -f bin -o pmodew.uprog.exe uprog.nasm  # Reeds the DOS .exe header from pmodew.exe and the the uncompressed .exe image from dec.out.
-  cmp pmodew.uprog.exe pmodew.exe
+  nasm-0.98.39 -O0 -w+orphan-labels -f bin -o pmodew.uprog.exe uprog.nasm  # Reeds the DOS .exe header from pmodewu.exe and the the uncompressed .exe image from dec.out.
+  cmp pmodew.uprog.exe pmodewu.exe
 else  # Debugging.
   nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodewc.exe'" -DDEBUG -o dec.com dec.nasm
   "$kvikdos" dec.com >dec.log  # This is slow, it takes a few seconds.

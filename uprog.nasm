@@ -1,2 +1,2 @@
-incbin 'pmodew.exe', 0, 0x200
+incbin 'pmodewu.exe', 0, 0x200
 incbin 'dec.out'
