@@ -884,6 +884,24 @@ static void set_le16(unsigned char *p, unsigned v) {
 
 #define set_byte(p, v) (*(p) = (v))
 
+/* Comprares two DOS .exe relocation entries for qsort(3). */
+static int cmp_reloc(const void *va, const void *vb) {
+  const unsigned aofs = get_le16((const unsigned char*)va);
+  const unsigned aseg = get_le16((const unsigned char*)va + 2);
+  const unsigned bofs = get_le16((const unsigned char*)vb);
+  const unsigned bseg = get_le16((const unsigned char*)vb + 2);
+#if 0  /* Compare by value. */
+  /* TODO(pts): If sizeof(unsigned) >= 4, then just use `unsigned' instead of `unsigned long'. */
+  const unsigned long aaddr = (aofs + ((unsigned long)aseg << 4)) & 0xfffffUL;
+  const unsigned long baddr = (bofs + ((unsigned long)bseg << 4)) & 0xfffffUL;
+  return aaddr < baddr ? -1 : aaddr != baddr;
+#else  /* Compare by the order in pmw133src/PMODEW.EXE in http://www.sid6581.net/pmodew/pmw133src.zip */
+  if (aseg != bseg) return bseg < aseg ? -1 : 1;  /* Segment descending. */
+  return aofs < bofs ? -1 : aofs != bofs;  /* Offset ascending. */
+#endif
+}
+
+
 #if PMWV == 33
 static const char copyright[] = "PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.";
 #elif PMWV == 34
@@ -1001,7 +1019,14 @@ int main(int argc, char **argv) {
   if (maxalloc != 0xffff) fatal_s("unexpected maxalloc in DOS .exe", srcfn);
   /* Not supported reading that many relocations to exehd. */
   if (relocpos >= sizeof(exehd) || ((sizeof(exehd) - relocpos) >> 1) < nreloc) fatal_s("unsupported: too many relocations in DOS .exe", srcfn);
-  /* !! Sort the relocations by (segment, offset). TASM <=4.1 does the sorting, but TASM >=5.0 doesn't. It doesn't depend on the TLINK version. */
+  /* Sort relocations for consistency.
+   *
+   * TASM <=4.1 does the sorting (so this call is unnecesary), but TASM
+   * >=5.0 doesn't. It doesn't depend on the TLINK version. Without this
+   * call, the DOS .exe output of (TASM 5.3 + TLINK 4.01) would differ from
+   * of (TASM 4.1 + TLINK 4.01).
+   */
+  qsort(exehd + relocpos, nreloc, 4, cmp_reloc);
   for (relocsrc = exehd + relocpos, u = 0; u < nreloc; ++u) {  /* Keep the original relocation order, for bitwise identical .exe output. */
     relocofs = get_le16(relocsrc + (u << 2));
     relocseg = get_le16(relocsrc + (u << 2) + 2);

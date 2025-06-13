@@ -33,47 +33,49 @@ case "$tasm_exe" in
   ;;
 esac
 "$kvikdos" "$tlink_exe" /3 /x pmodewe pmodewk,pmodew.exe
-if true; then
-  owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -o execons execons.c
-  ./execons pmodew.exe
-elif false; then
-  gcc -W -Wall -s -O2 -o execons execons.c
-  ./execons pmodew.exe
-elif false; then
-  # Turbo C++ 1.01 free (??) license and free download (not available anymore):
-  # https://web.archive.org/web/20090307213905/https://edn.embarcadero.com/article/21751
-  #
-  # > These historical files are provided to the Borland community free of
-  # charge. They may be downloaded and used "as is" for personal use only.
-  # No developer support is provided. Each individual product contains
-  # copyright notices that are still in force. These files may not be made
-  # available via the Internet or any hard copy media (e.g. diskette,
-  # CDROM).
-  #
-  # Also works with Turbo C++ 1.00.
-  rm -f execons.exe
-  # Needs: tcc.exe, tlink.exe, tcch/*.h, c0s.obj, fp87.lib, maths.lib, cs.lib.
-  "$kvikdos" tcc.exe -ms -Itcch -f87 execons.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)? Also for pmwc.c.
-  "$kvikdos" execons.exe pmodew.exe
-elif false; then
-  rm -f execons.exe
-  owcc -bdos -Os -s -fno-stack-check -march=i086 -W -Wall -o execons.exe execons.c
-  "$kvikdos" execons.exe pmodew.exe
-elif false; then
-  minicc -o execons execons.c
-  ./execons pmodew.exe
-else
-  : '! Missing compiler for execons.c' >&2
-  false
+
+# No need to make the output consistent (i.e. bitwise identical) across TASM
+# (and TLINK) versions, because pmwc.c below would make its output
+# consistent anyway.
+if false; then
+  if true; then
+    owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -o execons execons.c
+    ./execons pmodew.exe
+  elif false; then
+    gcc -W -Wall -s -O2 -o execons execons.c
+    ./execons pmodew.exe
+  elif false; then
+    # Turbo C++ 1.01 free (??) license and free download (not available anymore):
+    # https://web.archive.org/web/20090307213905/https://edn.embarcadero.com/article/21751
+    #
+    # > These historical files are provided to the Borland community free of
+    # charge. They may be downloaded and used "as is" for personal use only.
+    # No developer support is provided. Each individual product contains
+    # copyright notices that are still in force. These files may not be made
+    # available via the Internet or any hard copy media (e.g. diskette,
+    # CDROM).
+    #
+    # Also works with Turbo C++ 1.00.
+    rm -f execons.exe
+    # Needs: tcc.exe, tlink.exe, tcch/*.h, c0s.obj, fp87.lib, maths.lib, cs.lib.
+    "$kvikdos" tcc.exe -ms -Itcch -f87 execons.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)? Also for pmwc.c.
+    "$kvikdos" execons.exe pmodew.exe
+  elif false; then
+    rm -f execons.exe
+    owcc -bdos -Os -s -fno-stack-check -march=i086 -W -Wall -o execons.exe execons.c
+    "$kvikdos" execons.exe pmodew.exe
+  elif false; then
+    minicc -o execons execons.c
+    ./execons pmodew.exe
+  else
+    : '! Missing compiler for execons.c' >&2
+    false
+  fi
+
+  #cmp ../pmodew.exe pmodew.exe
+  test "$(sha256sum pmodew.exe)" = "8f8dfc58a6b4936b872cf81498ef98326f5e38d666fa0c3574b6757b53fe7119  pmodew.exe"  # /dPMWV=1.33.
+  #test "$(sha256sum pmodew.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodew.exe" # /dPMWV=1.34.
 fi
-
-# Change the byte at 0x1c+3 from anything to 0x50. This is some kind of
-# linker version number not used by DOS when loading the .exe.
-#perl -pi -0777 -e 'substr($_, 0x1c, 4) = "\1\0\xfb\x50"' pmodew.exe
-
-#cmp ../pmodew.exe pmodew.exe
-test "$(sha256sum pmodew.exe)" = "8f8dfc58a6b4936b872cf81498ef98326f5e38d666fa0c3574b6757b53fe7119  pmodew.exe"  # /dPMWV=1.33.
-#test "$(sha256sum pmodew.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodew.exe" # /dPMWV=1.34.
 
 test -d "$WATCOM/lh"
 owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DPMWV=33 -DDEBUG -o pmwc pmwc.c
