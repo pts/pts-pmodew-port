@@ -86,9 +86,9 @@ fi
 test "$WATCOM"
 test -f "$WATCOM/lh/stdio.h"
 export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
-owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -DDEBUG -o pmwc pmwc.c
+owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -o pmwc pmwc.c
 unset INCLUDE
-./pmwc pmodewu.exe pmodewc.exe >pmodewc.log
+./pmwc pmodewu.exe pmodewc.exe
 #test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
 #test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
 #test "$(sha256sum pmodewc.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodewc.exe"  # Same as of pmodew133rrr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 .
@@ -100,6 +100,13 @@ if true; then  # No need for debugging.
   nasm-0.98.39 -O0 -w+orphan-labels -o pmodew.uprog.exe uprog.nasm  # Reeds the DOS .exe header from pmodewu.exe and the the uncompressed .exe image from dec.out.
   cmp pmodew.uprog.exe pmodewu.exe
 else  # Debugging.
+  test "$WATCOM"
+  test -f "$WATCOM/lh/stdio.h"
+  export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
+  owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -DDEBUG -o pmwc pmwc.c
+  unset INCLUDE
+  ./pmwc pmodewu.exe pmodewc.exe >pmodewc.log
+
   nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodewc.exe'" -DDEBUG -o dec.com dec.nasm
   "$kvikdos" dec.com >dec.log  # This is slow, it takes a few seconds.
   <pmodewc.log grep '^[LDE]' >pmodewc.lde.log
