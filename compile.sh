@@ -40,6 +40,7 @@ esac
 # (and TLINK) versions, because pmwc.c below would make its output
 # consistent anyway.
 if false; then
+  rm -f pmodewu.exe
   if true; then
     test "$WATCOM"
     test -f "$WATCOM/lh/stdio.h"
@@ -68,7 +69,11 @@ if false; then
     "$kvikdos" execons.exe pmodewu.exe
   elif false; then
     rm -f execons.exe
+    test "$WATCOM"
+    test -f "$WATCOM/h/stdio.h"
+    export INCLUDE="$WATCOM/h"  # For OpenWatcom.
     owcc -bdos -Os -s -fno-stack-check -march=i086 -W -Wall -o execons.exe execons.c
+    unset INCLUDE
     "$kvikdos" execons.exe pmodewu.exe
   elif false; then
     minicc -o execons execons.c
@@ -83,12 +88,28 @@ if false; then
   #test "$(sha256sum pmodewu.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodewu.exe" # /dPMWV=1.34.
 fi
 
-test "$WATCOM"
-test -f "$WATCOM/lh/stdio.h"
-export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
-owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -o pmwc pmwc.c
-unset INCLUDE
-./pmwc pmodewu.exe pmodewc.exe
+rm -f pmodewc.exe
+if false; then
+  minicc -DPMWV=33 -o pmwc pmwc.c
+  ./pmwc pmodewu.exe pmodewc.exe
+elif false; then
+  gcc -g -O2 -g -W -Wall -DPMWV=33 -o pmwc pmwc.c
+  valgrind ./pmwc pmodewu.exe pmodewc.exe
+elif true; then
+  test "$WATCOM"
+  test -f "$WATCOM/lh/stdio.h"
+  export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
+  owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -o pmwc pmwc.c
+  unset INCLUDE
+  ./pmwc pmodewu.exe pmodewc.exe
+elif true; then
+  test "$WATCOM"
+  test -f "$WATCOM/h/stdio.h"
+  export INCLUDE="$WATCOM/h"  # For OpenWatcom.
+  owcc -bdos -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc pmwc.c
+  unset INCLUDE
+  "$kvikdos" pmodewu.exe pmodewc.exe
+fi
 #test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
 #test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
 #test "$(sha256sum pmodewc.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodewc.exe"  # Same as of pmodew133rrr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 .

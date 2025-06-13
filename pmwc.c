@@ -27,10 +27,79 @@
  * !! get rid of requirement of unaligned access
  * !! make sure it works with sizeof(unsigned) < 4
  * !! make sure it works with signed char and unsigned char
+ *
+ * Pseudo-logic to decompress data:
+ *
+ * movestring2:
+ *   len = 2;
+ *
+ * movestring:
+ *   MOVE ($ - off, len);
+ *
+ * decode:
+ *   literal_0:
+ *     PUT (GETBYTE ());
+ *
+ *     GOTO decode;
+ *
+ *   match_1:
+ *     off[0-7] = GETBYTE ();
+ *
+ *     match_1_0:
+ *       match_1_0_0:
+ *         if (!off)
+ *           GOTOEXE ();
+ *         off -= 1;
+ *
+ *         GOTO movestring2;
+ *
+ *       match_1_0_1:
+ *         off[10] = GETBIT ();
+ *         off[9] = GETBIT ();
+ *         off[8] = GETBIT ();
+ *
+ *         GOTO movestring2;
+ *
+ *     match_1_1:
+ *       match_1_1_1:
+ *         count = GETBIT ();
+ *
+ *         REPEAT ((count + 1) * 2)
+ *         {
+ *           SHL (off[8-15], 1);
+ *           off[8] = GETBIT ();
+ *         }
+ *
+ *       match_1_1_0:
+ *         len = 2;
+ *
+ *         REPEAT (4)
+ *         {
+ *           len ++;
+ *
+ *           if (GETBIT ())
+ *             GOTO movestring;
+ *         }
+ *
+ *         match_1_1_0_0:
+ *           len = (len << 1) | GETBIT ();
+ *           len = (len << 1) | GETBIT ();
+ *           len = (len << 1) | GETBIT ();
+ *           len += 7;
+ *
+ *           GOTO movestring;
+ *
+ *         match_1_1_0_1:
+ *           len[0-7] = GETBYTE ();
+ *           len += 15;
+ *
+ *           GOTO movestring;
  */
 
 #include <malloc.h>
-#include <mem.h>
+#if 0
+#  include <mem.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -117,6 +186,7 @@
 #define ENCODE_NOTENOUGHMEM     -1
 #define ENCODE_ERRORREADING     -2
 #define ENCODE_ERRORWRITING     -3
+#define ENCODE_EMPTY            -4
 
 #define ENCODE_PROBESMAX        4080
 #define ENCODE_PROBESMANY       100
@@ -138,7 +208,7 @@ static void HashUninit(void);
 static void HashAdd(unsigned short h, int v);
 static void HashDelete(unsigned short h);
 static int HashFind(unsigned short h);
-static int StringMatch(const char *s1, const char *s2, unsigned size);
+static int FindCommonPrefixLength(const char *s1, const char *s2, int size);
 #if COMPRESS_EARLYNEXTBLOCK
 static void BufInitBitOPos(void);
 #else
@@ -161,100 +231,56 @@ static void BufInitBitOPos(void);
 typedef char static_assert_sizeof_bufbit_t[sizeof(bufbit_t) == COMPRESS_BITS >> 3 ? 1 : -1];  /* A larger bufbit_t would overwrite too many bytes in `*BufBitOPos = BufBitBuf;'. */
 typedef char static_assert_sizeof_unsignedt[sizeof(unsigned) == 4];  /* !! Make it work without this. */
 
-/*
-  INFO
-*/
-// Disk to disk compression.
-//
+/* __WATCOMC__ has min(3), but glibc doesn't have min(3). */
+static int mymin(int a, int b) { return a < b ? a : b; }
 
-// Pseudo-logic to decompress data:
-//
-// movestring2:
-//   len = 2;
-//
-// movestring:
-//   MOVE ($ - off, len);
-//
-// decode:
-//   literal_0:
-//     PUT (GETBYTE ());
-//
-//     GOTO decode;
-//
-//   match_1:
-//     off[0-7] = GETBYTE ();
-//
-//     match_1_0:
-//       match_1_0_0:
-//         if (!off)
-//           GOTOEXE ();
-//         off -= 1;
-//
-//         GOTO movestring2;
-//
-//       match_1_0_1:
-//         off[10] = GETBIT ();
-//         off[9] = GETBIT ();
-//         off[8] = GETBIT ();
-//
-//         GOTO movestring2;
-//
-//     match_1_1:
-//       match_1_1_1:
-//         count = GETBIT ();
-//
-//         REPEAT ((count + 1) * 2)
-//         {
-//           SHL (off[8-15], 1);
-//           off[8] = GETBIT ();
-//         }
-//
-//       match_1_1_0:
-//         len = 2;
-//
-//         REPEAT (4)
-//         {
-//           len ++;
-//
-//           if (GETBIT ())
-//             GOTO movestring;
-//         }
-//
-//         match_1_1_0_0:
-//           len = (len << 1) | GETBIT ();
-//           len = (len << 1) | GETBIT ();
-//           len = (len << 1) | GETBIT ();
-//           len += 7;
-//
-//           GOTO movestring;
-//
-//         match_1_1_0_1:
-//           len[0-7] = GETBYTE ();
-//           len += 15;
-//
-//           GOTO movestring;
+static char *mymincp(char *a, char *b) { return a < b ? a : b; }
 
-/*
-  INTERFACE
-*/
-
-#pragma aux StringMatch = \
-        "mov ebx,ecx",\
-        "repe cmpsb",\
-        "mov eax,0",\
-        "setne al",\
-        "add ecx,eax",\
-        "sub ebx,ecx",\
-        parm [edi] [esi] [ecx] modify [eax ebx ecx esi edi] value [ebx];
+#if defined(__WATCOMC__) && defined(_M_I386) && !defined(__COMPACT__) && !defined(__LARGE__)  /* _M_I86 is not defined. */
+#  pragma aux FindCommonPrefixLength = \
+        "xor eax, eax", \
+        "mov ebx, ecx", \
+        "repe cmpsb", \
+        "setne al", \
+        "add ecx, eax", \
+        "sub ebx, ecx", \
+        __parm [__edi] [__esi] [__ecx] __modify [__eax __ebx __ecx __esi __edi] __value [__ebx];
+#elif defined(__WATCOMC__) && !defined(_M_I386) && defined(_M_I86) && !defined(__HUGE__)
+#  if defined(__SMALL__) || defined(__MEDIUM__)  /* Default pointers are segment:offset. */
+#    pragma aux FindCommonPrefixLength = \
+        "mov bx, cx", \
+        "repe cmpsb", \
+        "je L1", \
+        "inc cx", \
+        "L1: sub bx, cx", \
+        __parm [__di] [__si] [__cx] __modify [__bx __cx __si __di] __value [__bx];
+#  else  /* Default pointers contain offset only, segment is DS. */
+#    pragma aux FindCommonPrefixLength = \
+        "mov bx, cx", \
+        "repe cmpsb", \
+        "je L1", \
+        "inc cx", \
+        "L1: sub bx, cx", \
+        __parm [__es __di] [__ds __si] [__cx] __modify [__bx __cx __si __di] __value [__bx];
+#  endif
+#else
+/* TODO(pts): Add optimized inline assembly implementation for GCC i386 and amd64. */
+/* Fallback implementation. Architecture-independent. */
+static int FindCommonPrefixLength(const char *s1, const char *s2, int size) {
+  int i;
+  for (i = 0; i < size && s1[i] == s2[i]; ++i) {}
+  return i;
+}
+#endif
 
 #define DictBits        12
 #define DictSize        (1 << DictBits)
 
-#define BufInSize       0x20000
-#define BufOutSize      0x2000
+#define BufInSize       0x2000
+#define BufOutSize      0x1000
 
 #define BufOutThreshold 512
-#define BufInThreshold  512
+#define BufInThreshold  512  /* This must be at least 270 (or a few more) because of the  while (CodeLen--)' in Compress(...). */
 
 #define BufLPos(p)      ((int)((p) - BufIBase + BufLBase))
 #define BufPPos(l)      (BufIBase + (l) - BufLBase)
@@ -292,8 +318,8 @@ static char *OBuf;
 /*
   DATA
 */
-static int      LPos, LSize, Show;
-static unsigned MaxProbes;
+static int LPos, LSize, Show;
+static int MaxProbes;
 
 static FILE *BufIHandle, *BufOHandle;
 
@@ -338,12 +364,14 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
 {
   int r, i, CodeLen;
 
-  Show = show;
+  Show = show;  /* !! Get rid of both Show and show. */
+
+  if (!size) return ENCODE_EMPTY;
 
   if (!HashInit ())
     return ENCODE_NOTENOUGHMEM;
 
-  if (r = BufInit (dst, src, size))
+  if ((r = BufInit (dst, src, size)))
   {
     HashUninit ();
     return r;
@@ -355,16 +383,18 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
   ++IBuf;
   BufInitBitOPos();
 
-  MaxProbes = probes;
+  MaxProbes = (int)probes;
+  if (MaxProbes < 1) MaxProbes = 1;
 
   LPos = 1;
   LSize = size-1;
 
-  while (LSize)
-  {
-    CodeLen = PutCode ();
+  if (LSize) {
+  for (;;) {
+    CodeLen = PutCode ();  /* Returns: 1 <= CodeLen <= 270. */
 
-    LSize -= CodeLen;
+    /* The `break;' here prevents the readning of uninitialized memory at NEXT_TO_ADD below. */
+    if (!(LSize -= CodeLen)) break;
 
     if (LPos >= DictSize)
     {
@@ -379,12 +409,13 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
 
     while (CodeLen--)
     {
-      i = *(unsigned short *)(IBuf++);
+      i = *(const unsigned short *)(IBuf++);  /* This is NEXT_TO_ADD, see above. */
       HashAdd (HashVal (i), LPos++);
     }
 
-    if (r = BufUpdate ())
+    if ((r = BufUpdate ()))
       break;
+  }
   }
 
   if (!r)
@@ -427,6 +458,7 @@ static int PutCode (void)
 
   hash = HashVal (*(unsigned short *)IBuf);
   len = 1;
+  off = 0;  /* Pacify GCC (__GNCUC__) warning about off being used uninitialized. */
 
   HashFindInit ();
 
@@ -438,7 +470,7 @@ static int PutCode (void)
   {
     c = BufPPos (i0);
     i0 = (IBuf-1) - c;
-    i1 = StringMatch (c, IBuf, min (270, LSize));
+    i1 = FindCommonPrefixLength(c, IBuf, mymin(270, LSize));
 
     if ((i1 == 2) && (i0 >= 0x800))
       continue;
@@ -474,6 +506,7 @@ static int PutCode (void)
     BufPutBit(0);
     BufPutLiteral(*IBuf);
   } else {
+    /* Maximum distance (off): 0xfff == 4095. Maximum length (len): 270. */
     offb = (unsigned char)off;
     if (len == 2 && off < 255) ++offb;
     BufPutBit(1);
@@ -494,12 +527,12 @@ static int PutCode (void)
       } else if (off < 0x400) {
         BufPutBits((off >> 8) & 3, 3);
       } else {
-        BufPutBits(0x10 | (off >> 8) & 15, 5);
+        BufPutBits(0x10 | ((off >> 8) & 15), 5);
       }
       if (len < 7) {
         BufPutBits(1, len - 2);
       } else if (len < 15) {
-        BufPutBits((len-7) & 7, 8);
+        BufPutBits((len - 7) & 7, 8);
       } else {
         BufPutBits(1, 5);
         BufPutM1101(len - 15);
@@ -533,10 +566,10 @@ static int BufInit (FILE *dst, FILE *src, unsigned size)
 {
   int r;
 
-  if (!(BufOBase = malloc (BufOutSize)))
+  if (!(BufOBase = malloc(BufOutSize)))
     return ENCODE_NOTENOUGHMEM;
 
-  if (!(BufIBase = malloc (BufInSize)))
+  if (!(BufIBase = malloc(BufInSize)))
   {
     free (BufOBase);
     return ENCODE_NOTENOUGHMEM;
@@ -562,7 +595,7 @@ static int BufInit (FILE *dst, FILE *src, unsigned size)
   BufBitBuf = 0;
   BufBitCount = 0;
 
-  if (r = BufUpdate ())
+  if ((r = BufUpdate ()))
   {
     BufUninit ();
     return r;
@@ -653,10 +686,10 @@ static int BufUpdate (void)
 
   if (IBuf >= BufIThreshold)
   {
-    c = IBuf - 0x10000;
+    c = IBuf - (BufInSize >> 1);
     i0 = BufITop - c;
     i1 = c - BufIBase;
-    i2 = min (i1, BufLSize);
+    i2 = mymin(i1, BufLSize);
 
     memmove (BufIBase, c, i0);
 
@@ -666,14 +699,14 @@ static int BufUpdate (void)
         if((fread(BufITop-i1,i2,1,BufIHandle))<1)
         return ENCODE_ERRORREADING;
     }
-    IBuf = BufIBase + 0x10000;
+    IBuf = BufIBase + (BufInSize >> 1);
     BufLBase += i1;
     BufLSize -= i2;
   }
 
   if (OBuf >= BufOThreshold)
   {
-    c = (char *)min ((int)OBuf, (int)BufBitOPos);
+    c = mymincp(OBuf, (char*)BufBitOPos);
     i0 = BufOTop - c;
     i1 = c - BufOBase;
 
@@ -749,32 +782,12 @@ static int BufFlush (void)
 
 static int HashInit (void)
 {
-  if (!(HashVal = malloc (DictSize * sizeof (int))))
-    return 0;
-
-  if (!(HashNext = malloc (DictSize * sizeof (short))))
-  {
-    free (HashVal);
-    return 0;
-  }
-
-  if (!(HashPrev = malloc (DictSize * sizeof (short))))
-  {
-    free (HashNext);
-    free (HashVal);
-    return 0;
-  }
-
-  if (!(HashBase = malloc (HashCount * sizeof (short))))
-  {
-    free (HashPrev);
-    free (HashNext);
-    free (HashVal);
-    return 0;
-  }
-
-  if (!(HashTop = malloc (HashCount * sizeof (short))))
-  {
+  HashNext = HashPrev = HashBase = HashTop = 0;
+  if (!(HashVal = malloc(DictSize * sizeof (int)))) goto err_cleanup;
+  if (!(HashNext = malloc(DictSize * sizeof (short)))) goto err_cleanup;
+  if (!(HashPrev = malloc(DictSize * sizeof (short)))) goto err_cleanup;
+  if (!(HashBase = malloc(HashCount * sizeof (short)))) goto err_cleanup;
+  if (!(HashTop = malloc(HashCount * sizeof (short)))) { err_cleanup:
     free (HashBase);
     free (HashPrev);
     free (HashNext);
@@ -805,6 +818,9 @@ static void HashAdd (unsigned short h, int v)
 {
   int i;
 
+#if 0  /* This check seems unnecesary. */
+  if (h >= DictSize) { fprintf(stderr, "fatal: assert: hash base location too large: 0x%x\n", h); exit(102); }
+#endif
   i = HashBase[h];
   HashBase[h] = HashLink;
 
@@ -1013,7 +1029,7 @@ int main(int argc, char **argv) {
 
   (void)argc;
   if (!argv[0] || !argv[1] || !argv[2]) {
-    fprintf(stderr, "Usage: %s <input.exe> <compressed-output.exe>\n");
+    fprintf(stderr, "Usage: %s <input.exe> <compressed-output.exe>\n", argv[0]);
     return 1;
   }
   /* For probes >= 113 && probes <= 10000, the file size is the same. */
@@ -1041,6 +1057,15 @@ int main(int argc, char **argv) {
   if (maxalloc != 0xffff) fatal_s("unexpected maxalloc in DOS .exe", srcfn);
   /* Not supported reading that many relocations to exehd. */
   if (relocpos >= sizeof(exehd) || ((sizeof(exehd) - relocpos) >> 1) < nreloc) fatal_s("unsupported: too many relocations in DOS .exe", srcfn);
+  img_start = hdrsize << 4;
+  img_size = ((lastsize & 0x1ff) ? (lastsize & 0x1ff) : 0x200) + ((nblocks - 1) << 9);  /* !! Check 16-bit overflow, or use `unsigned long'. */
+  if (img_size <= img_start) fatal_s("source DOS .exe image size too small for header", srcfn);
+  img_size -= img_start;
+  mem_para = (nblocks << 5) - hdrsize;
+  if (mem_para + minalloc < minalloc || mem_para + minalloc > 0xfffe) fatal_s("memory usage too large in source DOS .exe", srcfn);
+  mem_para += minalloc;
+  if (mem_para < ss + ((sp + 0xf) >> 4)) fatal_s("stack does not fit in preallocated memory in DOS .exe", srcfn);
+
   /* Sort relocations for consistency.
    *
    * TASM <=4.1 does the sorting (so this call is unnecesary), but TASM
@@ -1057,14 +1082,6 @@ int main(int argc, char **argv) {
     if (relocofs < 0x100 || relocofs - 0x100 + 2 > img_size) fatal_s("relocation beyond image size in source DOS .exe", srcfn);
     set_le16(exehd + (u << 1), relocofs);  /* Compressed relocation location: dw (2 bytes). */
   }
-  img_start = hdrsize << 4;
-  img_size = ((lastsize & 0x1ff) ? (lastsize & 0x1ff) : 0x200) + ((nblocks - 1) << 9);  /* !! Check 16-bit overflow, or use `unsigned long'. */
-  if (img_size <= img_start) fatal_s("source DOS .exe image size too small for header", srcfn);
-  img_size -= img_start;
-  mem_para = (nblocks << 5) - hdrsize;
-  if (mem_para + minalloc < minalloc || mem_para + minalloc > 0xfffe) fatal_s("memory usage too large in source DOS .exe", srcfn);
-  mem_para += minalloc;
-  if (mem_para < ss + ((sp + 0xf) >> 4)) fatal_s("stack does not fit in preallocated memory in DOS .exe", srcfn);
   memset(preparator_buf, 0, sizeof(preparator_buf));
   set_le16(preparator_buf + 0 * 2, 'M' | 'Z' << 8);  /* DOS .exe signature. */
   set_le16(preparator_buf + 4 * 2, 2);  /* hdrsize. */
