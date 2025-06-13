@@ -7,13 +7,13 @@
  * This compressor is similar to PMWLITE 1.34, but there are some feature
  * differences (see FD?) below.
  *
- * Feature differences (FD?):
+ * Feature differences (FD?) between the PMODE/W 1.33 stub compressor and PMWLITE (both 1.33 and 1.34) compression stream format:
  *
- * FD1. Block size is 16 bits rather than 32 bits because of -DCOMPRESS_BITS=16 in the compressor. This matches the PMOE/W 1.33 stub compressor. PMWLITE 1.34 uses -DCOMPRESS_BITS=32.
- * FD2. Bit order within a block is lowest bit first because of -DCOMPRESS_BITREV=1 in the compressor. This matches the PMOE/W 1.33 stub compressor. PMWLITE 1.34 uses -DCOMPRESS_BITREV=0.
- * FD3. The distance byte of match_1 is read after the next bit if -DCOMPRESS_M1BITFIRST=1 is specified. -DCOMPRESS_M1BITFIRST=0 matches PMWLITE 1.34, but doesn't match the PMODE/W 1.33 stub compressor.
- * FD4. The next block is read at the end of the previous block, not later (when its first bit is needed) if -DCOMPRESS_EARLYNEXTBLOCK=1 is specified. -DCOMPRESS_EARLYNEXTBLOCK=0 matches PMWLITE 1.34, but doesn't match the PMODE/W 1.33 stub compressor.
- * FD5. The compressor doesn't emit the smallest possible distance for the given length (but it seems to use the largest??). !! Solution: Patch the compressor?
+ * FD1. The PMODE/W 1.33 stub uses -DCOMPRESS_BITS=16 (block size is 16 bits rather than 32 bits); PMWLITE uses -DCOMPRESS_BITS=32.
+ * FD2. The PMODE/W 1.33 stub uses -DCOMPRESS_BITREV=1 in the compressor.(bit order within a block is lowest bit first); PMWLITE uses -DCOMPRESS_BITREV=0.
+ * FD3. The PMODE/W 1.33 stub uses -DCOMPRESS_M1BITFIRST=1 (the distance byte of match_1 is read after the next bit); PMWLITE uses -DCOMPRESS_M1BITFIRST=0.
+ * FD4. The PMODE/W 1.33 stub uses -DCOMPRESS_EARLYNEXTBLOCK=1 (the next block is read at the end of the previous block, not later, when its first bit is first needed); PMWLITE uses -DCOMPRESS_EARLYNEXTBLOCK=0.
+ * FD5. In the PMODE/W 1.33 stub, the compressor doesn't emit the smallest possible distance for the given length (but it seems to use the largest??). !! Solution: Patch the compressor?
  *
  * !! make it bitwise identical by addressing FD5
  * !! get rid of inline assembly #pragma
