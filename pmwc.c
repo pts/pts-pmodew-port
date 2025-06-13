@@ -29,12 +29,34 @@
  * !! make sure it works with signed char and unsigned char
  */
 
-#include <io.h>
 #include <malloc.h>
 #include <mem.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32) || defined(MSDOS) || defined(__MSDOS__) || defined(__NT__) || defined(__DOS__)
+#  include <io.h>
+#else
+#  include <unistd.h>
+#endif
+
+#ifdef PMWV  /* Apply defaults to make the compiler command line shorter for DOS. */
+#  ifndef COMPRESS_BITS
+#    define COMPRESS_BITS 16
+#  endif
+#  ifndef COMPRESS_BITREV
+#    define COMPRESS_BITREV 1
+#  endif
+#  ifndef COMPRESS_M1BITFIRST
+#    define COMPRESS_M1BITFIRST 1
+#  endif
+#  ifndef COMPRESS_EARLYNEXTBLOCK
+#    define COMPRESS_EARLYNEXTBLOCK 1
+#  endif
+#  ifndef COMPRESS_LONGDIST
+#    define COMPRESS_LONGDIST 1
+#  endif
+#endif
 
 #ifndef PMWV
 #  define PMWV 33  /* PMODE/W Minor version number. The full version number is 1.33. */

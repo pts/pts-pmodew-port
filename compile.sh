@@ -1,7 +1,7 @@
 #! /bin/sh --
 # by pts@fazekas.hu at Thu Jun 12 11:50:15 CEST 2025
 set -ex
-unset LANG LANGUAGE
+unset LANG LANGUAGE INC LIB INCLUDE
 export LC_ALL=C TZ=GMT
 
 test "$0" = "${0%/*}" || cd "${0%/*}"
@@ -43,7 +43,9 @@ if false; then
   if true; then
     test "$WATCOM"
     test -f "$WATCOM/lh/stdio.h"
-    owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -o execons execons.c
+    export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
+    owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -o execons execons.c
+    unset INCLUDE
     ./execons pmodewu.exe
   elif false; then
     gcc -W -Wall -s -O2 -o execons execons.c
@@ -83,7 +85,9 @@ fi
 
 test "$WATCOM"
 test -f "$WATCOM/lh/stdio.h"
-owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DPMWV=33 -DDEBUG -o pmwc pmwc.c
+export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
+owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -DDEBUG -o pmwc pmwc.c
+unset INCLUDE
 ./pmwc pmodewu.exe pmodewc.exe >pmodewc.log
 #test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
 #test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
@@ -91,19 +95,19 @@ owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -DCOMPR
 test "$(sha256sum pmodewc.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodewc.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01). For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 .
 
 if true; then  # No need for debugging.
-  nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodewc.exe'" -o dec.com dec.nasm
+  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodewc.exe'" -o dec.com dec.nasm
   "$kvikdos" dec.com >dec.out
-  nasm-0.98.39 -O0 -w+orphan-labels -f bin -o pmodew.uprog.exe uprog.nasm  # Reeds the DOS .exe header from pmodewu.exe and the the uncompressed .exe image from dec.out.
+  nasm-0.98.39 -O0 -w+orphan-labels -o pmodew.uprog.exe uprog.nasm  # Reeds the DOS .exe header from pmodewu.exe and the the uncompressed .exe image from dec.out.
   cmp pmodew.uprog.exe pmodewu.exe
 else  # Debugging.
-  nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodewc.exe'" -DDEBUG -o dec.com dec.nasm
+  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodewc.exe'" -DDEBUG -o dec.com dec.nasm
   "$kvikdos" dec.com >dec.log  # This is slow, it takes a few seconds.
   <pmodewc.log grep '^[LDE]' >pmodewc.lde.log
   <dec.log grep '^[LDE]' >dec.lde.log
   diff pmodewc.lde.log dec.lde.log
 
   if test -f pmodew133.exe; then
-    nasm-0.98.39 -O0 -w+orphan-labels -f bin -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCEXEFN="'pmodew133.exe'" -DDEBUG -o deco133.com dec.nasm
+    nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew133.exe'" -DDEBUG -o deco133.com dec.nasm
     "$kvikdos" deco133.com >deco133.log  # This is slow, it takes a few seconds.
     <deco133.log grep '^[LDE]' >deco133.lde.log
     <deco133.log grep '^[LE]' >deco133.le.log
