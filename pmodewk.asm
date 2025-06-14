@@ -11,10 +11,29 @@ public  _pm_info, _pm_init, _pm_cleanup
 
 .386p
 locals
-PMODE_TEXT      segment dword public use16 'CODE'
+PMODE_TEXT      segment word public use16 'CODE'
 assume  cs:PMODE_TEXT, ds:PMODE_TEXT
 
 off             equ     offset
+
+IFDEF UNC  ; By `tasm /dUNC'. Must be at te beginning of the .exe image, _openexe2 is looking for it there.
+pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the .exe image (hdrsize<<<4).
+@@pagetables: db 4  ; Number of page tables under VCPI. @00 _pm_pagetables
+@@selectors: dw 100h  ; Max selectors under VCPI/XMS/raw. @01 _pm_selectors
+@@rmstacklen: dw 40h  ; Real mode stack length, in para. @03 _pm_rmstacklen
+@@pmstacklen: dw 80h  ; Protected mode stack length, in para. @05 _pm_pmstacklen
+@@rmstacks: db 8  ; Real mode stack nesting. @07 _pm_rmstacks
+@@pmstacks: db 8  ; Protected mode stack nesting. @08 _pm_pmstacks
+@@callbacks: db 20h  ; Number of real mode callbacks. @09 _pm_callbacks
+@@mode: db 1  ; Mode bits. @0ah _pm_mode
+@@pamapping: db 1  ; Physical address mappings pages max. @0bh _pm_pampagemax
+@@crap: dw 0  ; @0ch
+@@options: db 1  ; Option flags. 0 = hide copyright message; 1 == display copyright message. @0eh _pm_options
+@@extmax: dd 7fffffffh  ; Maximum extended memory to allocate. @0fh _pm_maxextmem
+@@lowmin: dw 0  ; Amount of low memory to try and save. Loaded by _openexe2 to somewhere else. @13h _lowmin
+@@end:  ; @15h
+align 2
+ENDIF
 
 INT3108FUNC     = 1                     ; comment out to disable
 EXCEPTIONS      = 1                     ; comment out to disable
@@ -34,7 +53,7 @@ SELVCPITSS      = 48h                   ; TSS selector for VCPI
 SYSSELECTORS    = 10                    ; number of system selectors in GDT
 FREESELECTORS   = SYSSELECTORS+4        ; base of free selectors
 
-align 4
+align 2
 vcpistrucaddx   dd      off vcpi_cr3    ; VCPI switch structure linear address
 oldint15vector  dw      off int15       ; preserved INT 15h vector
                 dw      PMODE_TEXT

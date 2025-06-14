@@ -19,22 +19,40 @@ case "$tasm_exe" in
  t32*.exe | tasm32*.exe)
   dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
   dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
+  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
+  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
   ;;
  tasm[12]*.exe)  # The /zn flag has been introduced in TASM 3.0.
   "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 pmodewe
   "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 pmodewk
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 /dUNC pmodewe,pmodewev
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 /dUNC pmodewk,pmodewkv
   ;;
  *.exe)
   "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
   "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
   ;;
  *)
   if test "$tasm_exe" = "${tasm_exe#*/}"; then tasm_exe="./$tasm_exe"; fi
   "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
   "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
+  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
+  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
   ;;
 esac
-"$kvikdos" "$tlink_exe" /3 /x pmodewe pmodewk,pmodewu.exe
+"$kvikdos" "$tlink_exe" /3 /x pmodewe  pmodewk ,pmodewu.exe
+"$kvikdos" "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
+
+# Now pmodewv.exe is already ready to be used as a stub by OpenWatcom:
+#
+#   owcc -bpmodew -Wl,op -Wl,stub=pmodewv.exe -s -Os -fno-stack-check -march=i386 -W -Wall -o hdxc.exe hdx.c
+#   wcl386 -l=pmodew -'"op"' -'"stub=pmodewv.exe"' -os -s -W -w4 -3r -fo=.o -fr -q -fe=hdxc.exe hdx.c
+
+# We don't check the checksum, because DOS .exe headers depend on the TLINK
+# version. Processing the output with execons.c would make it consistent.
+#test "$(sha256sum pmodewv.exe)" = "4890ffd8fcf52b24bb91eb9896464a366851ac74849031288ecef935a767a7f1  pmodewv.exe"
 
 # No need to make the output consistent (i.e. bitwise identical) across TASM
 # (and TLINK) versions, because pmwc.c below would make its output
