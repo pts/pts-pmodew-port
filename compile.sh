@@ -106,9 +106,9 @@ elif true; then
   test "$WATCOM"
   test -f "$WATCOM/h/stdio.h"
   export INCLUDE="$WATCOM/h"  # For OpenWatcom.
-  owcc -bdos -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc pmwc.c
+  owcc -bdos -mcmodel=c -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc.exe pmwc.c
   unset INCLUDE
-  "$kvikdos" pmodewu.exe pmodewc.exe
+  "$kvikdos" pmwc.exe pmodewu.exe pmodewc.exe
 fi
 #test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
 #test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
