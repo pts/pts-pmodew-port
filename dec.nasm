@@ -2,7 +2,7 @@
 ; dec.nasm: decompressor for the PMODE/W 1.33 stub and PMWLITE (both 1.33 and 1.34), as a DOS 8086 .com program
 ; by pts@fazekas.hu at Wed Jun 11 15:48:16 CEST 2025
 ;
-; Compile with: nasm -O0 -w+orphan-labels -DPMWV -DCEXEFN='pmodewc.exe' -o dec.com dec.nasm
+; Compile with: nasm -O0 -w+orphan-labels -f bin -DPMWV -DCEXEFN="'pmodewc.exe'" -o dec.com dec.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
 
