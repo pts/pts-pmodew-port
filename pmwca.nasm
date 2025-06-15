@@ -5,7 +5,7 @@
 ; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.log && diff pmodewc.lde.log pmwca.log && echo OK
+; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
 ;
 ; !! This implementation is incomplete. It only implements the LZSS-based data compression. It doesn't have any DOS .exe header processing.
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
@@ -67,9 +67,10 @@ print_literal:	push ax
 print_distance:	push ax
 		mov al, 'D'
 		int 0x29
-		mov ax, bx
-.ax:		call print_ax
-		mov al, LF
+.ax:		pop ax
+		push ax
+		call print_ax
+.lf:		mov al, LF
 		int 0x29
 		pop ax
 		ret
@@ -77,25 +78,52 @@ print_distance:	push ax
 print_length:	push ax
 		mov al, 'E'
 		int 0x29
-		mov ax, cx
 		jmp short print_distance.ax
+
+; Prints the bit in CF. Also ruins CF.
+print_bit:	push ax
+		pushf
+		mov al, 'B'
+		int 0x29
+		mov al, '0'
+		popf
+		adc al, 0
+		int 0x29
+		jmp short print_distance.lf
+
+print_m1:	push ax
+		mov al, 'X'
+		int 0x29
+.al:		pop ax
+		push ax
+		call print_al
+		jmp short print_distance.lf
+
+print_m1101:	push ax
+		mov al, 'Y'
+		int 0x29
+		jmp short print_m1.al
 %endif
 
 ; Compresses bytes starting at DS:SI until DS:CX (CX is not a byte count,
 ; but an offset!), using a variant of LZSS. The input must not be empty.
 ;
-; Output: DS:SI: offset of the start of the uncompressed input data (same as input);
-;         DS:CX: offset of the end of the uncompressed input data (same as input).
+; Output: DS:SI == ES:SI: offset of the start of the uncompressed input data (same as input);
+;         DS:CX == ES:CX: offset of the end of the uncompressed input data (same as input).
 ; Ruins: AX, BX, DX, DI, BP, FLAGS.
 compress:	push cx  ; Save offset of the end of the uncompressed input data (udata_end).
 		push si  ; Save offset of the start of the uncompressed input data (udata_start).
-		jmp strict near .literal  ; Assume that the first byte was copied as a literal. Skip over it here.
+%ifdef DEBUG
+		call print_literal  ; Value: `byte [si]'.
+%endif
+		inc si  ; Skip over literal byte in the uncompressed input data.
+		jmp strict near .next_byte
 		; Registers through the .next_start loop below:
 		; * AX, BX: scratch.
 		; * CX: maximum match length starting at DS:SI. Remains until the next .next_byte (i.e. right after SI is increased).
 		; * DX: best (longest) match length so far.
-		; * DS:SI: points to the current byte of the udata to compress. Remains unchanged until .got_literal_or_match.
-		; * DS:DI: points to the first byte of the next match candidate (DI <= SI).
+		; * DS:SI == ES:SI: points to the current byte of the udata to compress. Remains unchanged until .got_literal_or_match.
+		; * DS:DI == ES:DI: points to the first byte of the next match candidate (DI <= SI).
 		; * BP: best distance corresponding to the length in the best match so far.
 .next_start:	dec di  ; Update match start.
 		inc ax  ; Update current distance.
@@ -110,13 +138,13 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		neg bx
 		inc bx  ; BX := DI-(udata_start-1).
 		cmp bx, cx
-		jae .cx_ok2
+		jae short .cx_ok2
 		mov cx, bx  ; CX := min(MAX_DISTANCE-AX, DI-(udata_start-1)).
 .cx_ok2:	xchg bx, ax  ; BX := AX; AX := junk.
 		add bx, di
 		mov al, [si]  ; First byte.
 		std
-		repne scasb  ; Try to find the first byte backward which matches the first byte (AL).
+		repne scasb  ; Uses ES:DI. Try to find the first byte backward which matches the first byte (AL).
 		cld
 		pop cx  ; Restore.
 		jne short .got_literal_or_match
@@ -132,7 +160,7 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		push si  ; Save.
 		push di  ; Save.
 		mov bx, cx
-		repe cmpsb  ; Also reads and modifies SI, DI and CX.
+		repe cmpsb  ; Uses DS:SI and ES:DI. Also reads and modifies SI, DI and CX.
 		je short .after_inc
 		inc cx
 .after_inc:	xchg bx, cx  ; CX := maximum match length starting at DS:SI.
@@ -186,18 +214,15 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		jae short .match
 .literal:
 %ifdef DEBUG
+		clc
+		call print_bit
 		call print_literal
 %endif
 		inc si  ; Skip over literal byte in the uncompressed input data.
 		jmp short .next_byte
 .match:
 		add si, dx  ; Skip over matched bytes in the uncompresed input data.
-%ifdef DEBUG
-		mov cx, dx
-		call print_length  ; In CX.
-		mov bx, bp
-		call print_distance  ; In BX.
-%endif
+		call emit_match  ; Ruins AX, BX, CX, DX, DI, BP, FLAGS. Keeps SI intact
 .next_byte:	mov bp, sp
 		mov cx, [bp+2]  ; udata_end.
 		sub cx, si
@@ -210,8 +235,128 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		xor dx, dx  ; Best length so far. No need to initialize BP (best distance) here.
 		mov ax, -1  ; Current distance.
 		jmp near .next_start
-.done:		pop si  ; Restore SI := udata_start.
+.done:		stc
+		call emit_bit  ; Emit end-of-stream (EOS) sequence.
+		clc
+		call emit_bit
+		mov al, 0
+		call emit_m1
+		clc
+		call emit_bit
+		pop si  ; Restore SI := udata_start.
 		pop cx  ; Restore CX := udata_end.
+		ret
+
+%ifdef DEBUG
+  ; Emits a bit in CF, ruins CF.
+  emit_bit: equ print_bit
+  ; Emits a byte in AL.
+  emit_m1: equ print_m1
+  ; Emits a byte in AL.
+  emit_m1101: equ print_m1101
+%else
+  ; Emits a bit in CF, ruins CF.
+  emit_bit:
+  ; Emits a byte in AL.
+  emit_m1:
+  ; Emits a byte in AL.
+  emit_m1101:
+		ret
+%endif
+
+; Emits CL (1 <= CL <= 7) bits from AH, highest (of the CL) bits first.
+; Ruins: CX (sets it to 0), FLAGS.
+emit_bits:
+		mov ch, 0
+.next:		push ax  ; Save.
+		shr ah, cl  ; CF := pint to print.
+		pop ax  ; Restore.
+		call emit_bit
+		loop .next
+		ret
+
+; Emits an encoded match == (distance, length) == (BP, DX) pair. 0 <= BP <= 0xfff; 2 <= DX <= 270. If DX == 2, then also BP <= 0x7ff.
+; Keeps SI intact.
+; Ruins: AX, BX, CX, DX, DI, BP, FLAGS.
+emit_match:
+%ifdef DEBUG
+		mov ax, bp
+%else
+		xchg ax, bp  ; AX := distance; BP := junk.
+%endif
+		stc
+		call emit_bit
+		cmp dx, byte 3  ; Also CF := (len == 2).
+		cmc  ; CF := (len != 2).
+		call emit_bit
+		cmp dx, byte 2
+		jne short .dist_3plus
+.dist_2:	cmp ax, strict word 0xff
+		jae short .dist_2_big
+.dist_2_small:	inc ax
+		call emit_m1
+		clc
+		call emit_bit
+		jmp short .after_bits
+.dist_2_big:	call emit_m1
+		stc
+		call emit_bit
+		mov cl, 3
+		call emit_bits
+		jmp short .after_bits
+.dist_3plus:	call emit_m1
+		test ah, ah
+		jnz short .dist_3plus_mid_or_big
+.dist_3plus_small:
+		clc
+		call emit_bit
+		jmp short .len
+.dist_3plus_mid_or_big:
+		stc
+		call emit_bit
+		mov cl, 3
+		cmp ah, 4
+		jae short .dist_3plus_big
+.dist_3plus_mid:
+		and ax, strict word 0x3ff  ; Same size as: `and ah, 3'. Makes the next `print bit' start with a 0 bit.
+		jmp short .dist_bits  ; With CL == 3.
+.dist_3plus_big:
+		stc
+		call emit_bit
+		inc cx  ; CL := 4.
+.dist_bits:	call emit_bits
+.len:
+%ifdef DEBUG
+		mov ax, dx
+%else
+		xchg ax, dx  ; AX := length; DX := junk.
+%endif
+		cmp ax, strict word 7
+		jae short .len_mid_or_big
+.len_short:	xchg cx, ax  ; CX := length; AX := junk.
+		times 2 dec cx  ; CX := length - 2.
+		mov ah, 1  ; Prints (1..3) 0 bits and a 1 bit.
+		jmp short .len_bits
+.len_mid_or_big:
+		sub ax, strict word 15
+		jae short .len_big
+.len_mid:	add al, 15-7
+		and al, 7
+		mov ah, al
+		mov cl, 8  ; Prints 5 0 bits and 3 length bits.
+.len_bits:	call emit_bits
+		jmp short .after_bits
+.len_big:	mov ah, 1
+		mov cl, 5   ; Prints 4 0 bits and a 1 bit.
+		call emit_bits
+		call emit_m1101  ; Prints AL.
+.after_bits:
+%ifdef DEBUG
+		xchg ax, dx  ; AX := DX (length); DX := junk.
+		call print_length
+		xchg ax, bp  ; AX := BP (distance); BP := junk.
+		call print_distance
+%endif
 		ret
 
 udata:		incbin UEXEFN, 0x200
