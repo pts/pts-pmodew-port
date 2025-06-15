@@ -198,10 +198,8 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		mov bx, bp
 		call print_distance  ; In BX.
 %endif
-.next_byte:	pop bx  ; Restore BX := udata_start.
-		pop cx  ; Restore CX := udata_end.
-		push cx  ; Save udata_end.
-		push bx  ; Save udata_start. From now on the value in BX is unused.
+.next_byte:	mov bp, sp
+		mov cx, [bp+2]  ; udata_end.
 		sub cx, si
 		jz short .done
 		cmp cx, MAX_LENGTH
