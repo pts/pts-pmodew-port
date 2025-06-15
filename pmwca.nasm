@@ -21,7 +21,9 @@ MAX_LENGTH equ 270
 MAX_DISTANCE_FOR_LENGTH_2 equ 0x800-1
 MAX_DISTANCE equ 0x1000-1
 
-start:		call compress
+start:		mov si, udata
+		mov cx, udata.end
+		call compress
 		ret
 
 %ifdef DEBUG
@@ -79,19 +81,15 @@ print_length:	push ax
 		jmp short print_distance.ax
 %endif
 
-compress:	mov si, udata
+; Compresses bytes starting at DS:SI until DS:CX (CX is not a byte count,
+; but an offset!), using a variant of LZSS. The input must not be empty.
+;
+; Output: DS:SI: offset of the start of the uncompressed input data (same as input);
+;         DS:CX: offset of the end of the uncompressed input data (same as input).
+; Ruins: AX, BX, DX, DI, BP, FLAGS.
+compress:	push cx  ; Save offset of the end of the uncompressed input data (udata_end).
+		push si  ; Save offset of the start of the uncompressed input data (udata_start).
 		jmp strict near .literal  ; Assume that the first byte was copied as a literal. Skip over it here.
-.done:		ret
-.next_byte:	mov cx, udata.end
-		sub cx, si
-		jz short .done
-		cmp cx, MAX_LENGTH
-		jb .cx_ok
-		mov cx, MAX_LENGTH
-.cx_ok:		; CX will keep holding the maximum match length starting at DS:SI, until the next .next_byte (i.e. when SI is increased).
-		mov di, si
-		xor dx, dx  ; Best length so far. No need to initialize BP (best distance) here.
-		mov ax, -1  ; Current distance.
 		; Registers through the .next_start loop below:
 		; * AX, BX: scratch.
 		; * CX: maximum match length starting at DS:SI. Remains until the next .next_byte (i.e. right after SI is increased).
@@ -103,13 +101,17 @@ compress:	mov si, udata
 		inc ax  ; Update current distance.
 		cmp ax, strict word MAX_DISTANCE
 		ja short .got_literal_or_match  ; If distance is too large, then ignore the match and all possible larger-distance matches.
+		pop bx  ; Restore BX := udata_start.
+		push bx  ; Save udata_start.
 		push cx  ; Save.
 		mov cx, MAX_DISTANCE
 		sub cx, ax
-		lea bx, [word di-(udata-1-$$+BASE)]  ; Shorter form of `mov bx, di' ++ `sub bx, strict word udata-1'.
+		sub bx, di
+		neg bx
+		inc bx  ; BX := DI-(udata_start-1).
 		cmp bx, cx
 		jae .cx_ok2
-		mov cx, bx  ; CX := min(MAX_DISTANCE-AX, DI-(udata-1)).
+		mov cx, bx  ; CX := min(MAX_DISTANCE-AX, DI-(udata_start-1)).
 .cx_ok2:	xchg bx, ax  ; BX := AX; AX := junk.
 		add bx, di
 		mov al, [si]  ; First byte.
@@ -175,7 +177,9 @@ compress:	mov si, udata
 		ja short .keep_best
 .new_best:	mov dx, bx  ; Found longer length. Update best length.
 		mov bp, ax  ; Update distance corresponding to best length.
-.keep_best:	cmp di, udata
+.keep_best:	pop bx  ; Restore BX := udata_start.
+		push bx  ; Save udata_start.
+		cmp di, bx
 		jne short .next_start
 .got_literal_or_match:
 		cmp dx, byte 2
@@ -184,17 +188,33 @@ compress:	mov si, udata
 %ifdef DEBUG
 		call print_literal
 %endif
-		inc si  ; Skip over literal byte in udata.
-		jmp short .cont
+		inc si  ; Skip over literal byte in the uncompressed input data.
+		jmp short .next_byte
 .match:
-		add si, dx  ; Skip over matched bytes in udata.
+		add si, dx  ; Skip over matched bytes in the uncompresed input data.
 %ifdef DEBUG
 		mov cx, dx
 		call print_length  ; In CX.
 		mov bx, bp
 		call print_distance  ; In BX.
 %endif
-.cont:		jmp near .next_byte
+.next_byte:	pop bx  ; Restore BX := udata_start.
+		pop cx  ; Restore CX := udata_end.
+		push cx  ; Save udata_end.
+		push bx  ; Save udata_start. From now on the value in BX is unused.
+		sub cx, si
+		jz short .done
+		cmp cx, MAX_LENGTH
+		jb .cx_ok
+		mov cx, MAX_LENGTH
+.cx_ok:		; CX will keep holding the maximum match length starting at DS:SI, until the next .next_byte (i.e. when SI is increased).
+		mov di, si
+		xor dx, dx  ; Best length so far. No need to initialize BP (best distance) here.
+		mov ax, -1  ; Current distance.
+		jmp near .next_start
+.done:		pop si  ; Restore SI := udata_start.
+		pop cx  ; Restore CX := udata_end.
+		ret
 
 udata:		incbin UEXEFN, 0x200
 .end:
