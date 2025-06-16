@@ -39,7 +39,7 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		cmp al, CR
 		jne short .fn1i
 		mov bp, 'MI'  ; Missing input filename.
-		jmp short .j_fatal
+		jmp short fatal
 .fn1i:		mov dx, si
 		dec dx  ; DX := offset of input filename.
 .fn1:		lodsb
@@ -50,7 +50,7 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		cmp al, CR
 		jne short .fn1
 .fatal_mo:	mov bp, 'MO'  ; Missing output filename.
-		jmp short .j_fatal
+		jmp short fatal
 .fn1e:		mov byte [si-1], 0  ; Modify command-line string in place: add terminating NUL for input filename.
 .ws2:		lodsb
 		cmp al, CR
@@ -78,8 +78,25 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		cmp al, CR
 		je short .done
 .fatal_ta:	mov bp, 'TA'  ; Too many command-line arguments.
-.j_fatal:	jmp strict near fatal
-.done:		; Now: DX == offset of input filename (uncompressed DOS .exe); DI == offset of output filename (compressed DOS .exe).
+		; Falls through to fatal.
+
+; Exits the process with a fatal error (2 bytes of error message in BP).
+fatal:		mov [fatal_msg.code], bp
+		mov ah, 0x40  ; Write to file using handle.
+		mov bx, 2  ; STDERR_FILENO.
+		mov dx, fatal_msg  ; DS:DI == pointer to start of buffer to be written.
+		mov cx, fatal_msg.end-fatal_msg  ; CX == number of bytes to write.
+		int 0x21  ; DOS syscall.
+		mov ax, 0x4c01  ; Exit with exit code EXIT_FAILURE (1).
+		int 0x21  ; DOS syscall. Doesn't return.
+
+; If CF == 1, exits the process with a fatal error (2 bytes of error message
+; in BP), otherwise returns. Keeps all registers including FLAGS intact.
+fatal_if_c:	jc short fatal
+		ret
+
+parse_command_line.done:
+		; Now: DX == offset of input filename (uncompressed DOS .exe); DI == offset of output filename (compressed DOS .exe).
 		; Falls through.
 
 EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK.
@@ -100,14 +117,14 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		cmp ax, strict word EXEHDRSIZE
 		je short .hdrsize_ok
 		mov bp, 'HT'  ; Input file headers too short.
-		jmp short parse_command_line.j_fatal
+		jmp short fatal
 .hdrsize_ok:	mov si, dx  ; DS:SI := DS:DX == pointer to start of uexehdr.
 		mov bp, 'MZ'
 		cmp [si+0*2], bp  ; signature.
-		jne short parse_command_line.j_fatal  ; Bad DOS .exe signature.
+		jne short fatal  ; Bad DOS .exe signature.
 		cmp word [si+4*2], byte EXEHDRSIZE>>4  ; hdrsize.
 		mov bp, 'HS'  ; Unsupported DOS .exe header size (hdrsize).
-		jne short parse_command_line.j_fatal
+		jne short fatal
 		mov ah, 0x3f  ; Read from file using handle.
 		;mov bx, ...  ; BX == filehandle of input file.
 		mov dx, udata  ; DS:DX == pointer to start of buffer to read to.
@@ -119,7 +136,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		cmp ax, strict word udata.bufend
 		jb short .usize_ok
 		mov bp, 'TL'  ; Input file too long.
-.j_fatal:	jmp short parse_command_line.j_fatal
+.j_fatal:	jmp short fatal
 .usize_ok:	push ax  ; Save offset of end of udata.
 		mov ah, 0x3e  ; Close file using handle.
 		int 0x21  ; DOS syscall.
@@ -222,21 +239,6 @@ write_cdata:	mov ah, 0x3c  ; Open file for writing, optionally create it, trunca
 		int 0x21  ; DOS syscall.
 %endif
 		ret  ; Exit successfully (EXIT_SUCCESS) from DOS .com program.
-
-; If CF == 1, exits the process with a fatal error (2 bytes of error message
-; in BP), otherwise returns. Keeps all registers including FLAGS intact.
-fatal_if_c:	jc short fatal
-		ret
-
-; Exits the process with a fatal error (2 bytes of error message in BP).
-fatal:		mov [fatal_msg.code], bp
-		mov ah, 0x40  ; Write to file using handle.
-		mov bx, 2  ; STDERR_FILENO.
-		mov dx, fatal_msg  ; DS:DI == pointer to start of buffer to be written.
-		mov cx, fatal_msg.end-fatal_msg  ; CX == number of bytes to write.
-		int 0x21  ; DOS syscall.
-		mov ax, 0x4c01  ; Exit with exit code EXIT_FAILURE (1).
-		int 0x21  ; DOS syscall. Doesn't return.
 
 ; Compares relocation dword [ds:si] to dword [ds:di]. It compares by
 ; (segment descending, then offset ascending). Thus first it compares the
