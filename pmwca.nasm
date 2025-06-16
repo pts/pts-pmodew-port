@@ -5,6 +5,7 @@
 ; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
+; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.out && cmp pmodewc.lit.out pmwca.out && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
 ;
 ; !! This implementation is incomplete. It only implements the LZSS-based data compression. It doesn't have any DOS .exe header processing.
@@ -23,8 +24,17 @@ MAX_DISTANCE equ 0x1000-1
 
 start:		mov si, udata
 		mov cx, udata.end
+		mov di, cdata
 		call compress
-		ret
+%ifndef DEBUG
+		mov ah, 0x40  ; Write to file using handle.
+		mov bx, 1  ; STDOUT_FILENO.
+		mov dx, cdata  ; DS:DI == pointer to start of buffer to be written.
+		mov cx, di
+		sub cx, dx  ; CX := DI - cdata. CX == number of bytes to write.
+		int 0x21  ; DOS syscall.
+%endif
+		ret  ; Exit successfully (EXIT_SUCCESS) from DOS .com program.
 
 %ifdef DEBUG
 print_nibble:	push ax
@@ -105,14 +115,20 @@ print_m1101:	push ax
 		jmp short print_m1.al
 %endif
 
-; Compresses bytes starting at DS:SI until DS:CX (CX is not a byte count,
-; but an offset!), using a variant of LZSS. The input must not be empty.
+; Compresses bytes starting at DS:SI == ES:SI until DS:CX == ES:CX (CX is
+; not a byte count, but an offset!), writing the compressed stream to DS:DI
+; == ES:DI, using a variant of LZSS. The input must not be empty.
 ;
-; Output: DS:SI == ES:SI: offset of the start of the uncompressed input data (same as input);
+; Output: DS:DI == ES:DI: offset of the end of the compressed output data.
+;         DS:SI == ES:SI: offset of the start of the uncompressed input data (same as input).
 ;         DS:CX == ES:CX: offset of the end of the uncompressed input data (same as input).
 ; Ruins: AX, BX, DX, DI, BP, FLAGS.
-compress:	push cx  ; Save offset of the end of the uncompressed input data (udata_end).
-		push si  ; Save offset of the start of the uncompressed input data (udata_start).
+; !! Check for overflow when populating cdata.
+compress:	push cx  ; Save offset of the end of the uncompressed input data (udata_end). Remains constant throughout the function.
+		movsb  ; Uses DS:SI and ES:DI. Copy literal byte to compressed output data.
+		push di  ; Save offset of the end of the compressed output data (cdata_end == cdata_cur). Will be incremented throughout the function.
+		dec si
+		push si  ; Save offset of the start of the uncompressed input data (udata_start). Remains constant throughout the function.
 %ifdef DEBUG
 		call print_literal  ; Value: `byte [si]'.
 %endif
@@ -218,13 +234,19 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		call print_bit
 		call print_literal
 %endif
-		inc si  ; Skip over literal byte in the uncompressed input data.
+		;mov bp, sp  ; !! Do this in .got_literal_or_match, with some `xchg bp, ...'.
+		;mov di, [bp+1*2]  ; cdata_end == cdata_cur.
+		pop bx  ; Restore BX := udata_start. Will be used only for `push bx' below.
+		pop di  ; Restore DI := cdata_end == cdata_cur.
+		movsb  ; Copies literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
+		push di  ; Save cdata_end == cdata_cur.
+		push bx  ; Save udata_start.
 		jmp short .next_byte
 .match:
 		add si, dx  ; Skip over matched bytes in the uncompresed input data.
 		call emit_match  ; Ruins AX, BX, CX, DX, DI, BP, FLAGS. Keeps SI intact
 .next_byte:	mov bp, sp
-		mov cx, [bp+2]  ; udata_end.
+		mov cx, [bp+2*2]  ; udata_end.
 		sub cx, si
 		jz short .done
 		cmp cx, MAX_LENGTH
@@ -244,6 +266,7 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		clc
 		call emit_bit
 		pop si  ; Restore SI := udata_start.
+		pop di  ; Restore DI := cdata_end == cdata_cur.
 		pop cx  ; Restore CX := udata_end.
 		ret
 
@@ -365,4 +388,6 @@ udata:		incbin UEXEFN, 0x200
 absolute $
 		resb ($-$$)&1
 _bss:
-cdata:
+cdata:		resb 0x5000
+
+; __END__
