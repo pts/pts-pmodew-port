@@ -162,7 +162,7 @@ compress_relocs:
 		ja short .fatal_tr
 		lea ax, [word di+uexehdr]  ; AX := uexehdr+relocpos.
 		mov dx, cx  ; nreloc.
-		call heapsort4  ; Sorts relocations by (segment descending, then offset ascending). Ruins AX, BX, DX, SI, BP and FLAGS. Keeps CX and DI.
+		call sort4  ; Sorts relocations by (segment descending, then offset ascending). Ruins AX, BX, DX, SI, BP and FLAGS. Keeps CX and DI.
 .squeeze_relocs:  ; Convert each relocation from dword-sized (offset, segment) pair to word-sized offset+0x100.
 		lea si, [word di+uexehdr]  ; SI := uexehdr+relocpos.  Source of (offset, segment) pairs.
 		mov di, creloc  ; DS:DI := pointer to the squeezed relocations.
@@ -258,27 +258,13 @@ is_reloc_less:
 		; CF is already correct: CF == 1 if first is less, CF == 0 otherwise.
 .done:		ret
 
-; Swaps dword [ds:si] with dword [ds:di].
-; Ruins: AX and FLAGS.
-memswap4:
-		mov ax, [si+2]
-		xchg ax, [di+2]
-		mov [si+2], ax
-		mov ax, [si]
-		xchg ax, [di]
-		mov [si], ax
-		ret
-
 ; Sorts an array of 4 bytes each using the comparison function is_reloc_less.
-; Based on heapsort algorithm H from Knuth TAOCP 5.2.3H. Not stable.
-; Worst case execution time: O(n*log(n)), 3*n*log_2(n) comparisons, and
-; fewer swaps.
+; May or may not be stable.
+;
+; Uses a constant amount of memory in addition to the input/output array.
 ;
 ; Inputs: DS:AX: pointer to the start of the array; DX: number of array elements.
 ; Ruins: AX, DX, FLAGS.
-;
-; Compared to Knuth's algorith, this implementation contains swaps instead
-; of assignments to temporary variable with swaps.
 ;
 ; typedef unsigned size_t;
 ; #define SIZE 4
@@ -286,35 +272,42 @@ memswap4:
 ; #pragma aux is_reloc_less __parm [__si] [__di] __modify [__ax] __value [__cf]  /* OpenWatcom C compiler doesn't actually support __value [__cf]. */
 ; extern void memswap4(void *a, void *b);
 ; #pragma aux memswap4 __parm [__si] [__di] __modify [__ax]
-; void heapsort4(void *base, size_t n);
+; void sort4(void *base, size_t n);
 ; #pragma aux heapsort4 __parm [__ax] [__dx] __modify [__ax __bx __dx __si __bp]
-; void heapsort4(void *base, size_t n) {
-;   char *ap = (char*)base, *lp = ap + SIZE * (n >> 1), *rp = ap + SIZE * (n - 1), *tp, *ip, *jp;
-;   if (n < 2) return;
-;   for (;;) {
-;     if (lp != ap) {
-;       tp = lp -= SIZE;
-;     } else {
-;       memswap4(ap, rp);
-;       if ((rp -= SIZE) == ap) break;
-;       tp = ap;
-;     }
-;     jp = lp;
-;     for (;;) {
-;       ip = jp;
-;       jp += (jp - ap) + SIZE;
-;       if (jp > rp) break;
-;       if (jp < rp && is_reloc_less(jp, jp + SIZE)) jp += SIZE;
-;       if (!is_reloc_less(tp, jp)) break;
-;       memswap4(ip, jp);
-;       tp = jp;
-;     }
-;     memswap4(ip, tp);
-;   }
-; }
-;
-; !! size optimization: Replace this heapsort implementation with a shorter but slower (O(n*n)) insertion sort.
-heapsort4:
+sort4:
+%ifdef FASTSORT
+  ; Based on heapsort algorithm H from Knuth TAOCP 5.2.3H. Not stable.
+  ; Worst case execution time: O(n*log(n)), 3*n*log_2(n) comparisons, and
+  ; fewer swaps.
+  ;
+  ; Compared to Knuth's algorith, this implementation contains swaps instead
+  ; of assignments to temporary variable with swaps.
+  ;
+  ; void sort4(void *base, size_t n) {
+  ;   char *ap = (char*)base, *lp = ap + SIZE * (n >> 1), *rp = ap + SIZE * (n - 1), *tp, *ip, *jp;
+  ;   if (n < 2) return;
+  ;   for (;;) {
+  ;     if (lp != ap) {
+  ;       tp = lp -= SIZE;
+  ;     } else {
+  ;       memswap4(ap, rp);
+  ;       if ((rp -= SIZE) == ap) break;
+  ;       tp = ap;
+  ;     }
+  ;     jp = lp;
+  ;     for (;;) {
+  ;       ip = jp;
+  ;       jp += (jp - ap) + SIZE;
+  ;       if (jp > rp) break;
+  ;       if (jp < rp && is_reloc_less(jp, jp + SIZE)) jp += SIZE;
+  ;       if (!is_reloc_less(tp, jp)) break;
+  ;       memswap4(ip, jp);
+  ;       tp = jp;
+  ;     }
+  ;     memswap4(ip, tp);
+  ;   }
+  ; }
+  heapsort4:
 		push cx  ; Save.
 		push di  ; Save.
 		mov bp, sp
@@ -334,22 +327,22 @@ heapsort4:
 		add bx, ax
 		cmp dx, byte 2
 		jb short .done
-.1:		mov ax, word [bp-2]
+  .1:		mov ax, word [bp-2]
 		cmp cx, ax
 		je short .2
 		sub word [bp-2], byte 4
 		mov ax, word [bp-2]
 		mov word [bp-4], ax
 		jmp short .3
-.2:		mov di, bx
+  .2:		mov di, bx
 		mov si, ax
 		call memswap4
 		sub bx, byte 4
 		cmp bx, cx
 		je short .done
 		mov word [bp-4], cx
-.3:		mov dx, word [bp-2]
-.4:		mov word [bp-8], dx
+  .3:		mov dx, word [bp-2]
+  .4:		mov word [bp-8], dx
 		mov ax, dx
 		sub ax, cx
 		add ax, strict word 4
@@ -367,7 +360,7 @@ heapsort4:
 		;je short .5  ; Jump if not less.
 		jnc short .5  ; Jump if not less.
 		mov dx, word [bp-6]
-.5:		mov di, dx  ; jp += SIZE.
+  .5:		mov di, dx  ; jp += SIZE.
 		mov si, word [bp-4]
 		call is_reloc_less
 		;test al, al
@@ -378,14 +371,129 @@ heapsort4:
 		call memswap4
 		mov word [bp-4], dx
 		jmp short .4
-.7:		mov di, word [bp-4]
+  .7:		mov di, word [bp-4]
 		mov si, word [bp-8]
 		call memswap4
 		jmp short .1
-.done:		mov sp, bp
+  .done:	mov sp, bp
 		pop di  ; Restore.
 		pop cx  ; Restore.
 		ret
+
+  ; Swaps dword [ds:si] with dword [ds:di].
+  ; Ruins: AX and FLAGS.
+  memswap4:
+		mov ax, [si+2]
+		xchg ax, [di+2]
+		mov [si+2], ax
+		mov ax, [si]
+		xchg ax, [di]
+		mov [si], ax
+		ret
+%else
+  ; It implements insertion sort. It is stable. Its worst case is slower than
+  ; of heapsort.
+  ;
+  ; Worst case number of comparisons and swaps: n*(n-1)/2. Best case is when
+  ; the input is sorted: n-1 comparisons and 0 swaps.
+
+  ; It implements swapping of elements by rotating a sequence of elements to
+  ; the right by 1 element. It rotates one word at a time (unlike the C code).
+  ;
+  ; void sort4(void *base, size_t n) {
+  ;   char *oldcur, *end, *newcur, *mid, tmp, *cur;
+  ;   if (n > 1) {
+  ;     for (cur = (char*)base + SIZE, end = (char*)base + (SIZE * n);
+  ;          cur != end;
+  ;          cur = newcur) {
+  ;       newcur = cur + SIZE;
+  ;       if (cmp(cur, cur - SIZE) < 0) {
+  ;         oldcur = cur;
+  ;         do {
+  ;           cur -= SIZE;
+  ;         } while (cur != (char*)base && cmp(oldcur, cur - SIZE) < 0);
+  ;         /* memrotate(cur, oldcur, SIZE); */
+  ;         while (oldcur != newcur) {
+  ;           mid = oldcur;
+  ;           tmp = *mid;
+  ;           while (mid != cur) {
+  ;             *mid = *(mid - SIZE);
+  ;             mid -= SIZE;
+  ;           }
+  ;           *mid = tmp;
+  ;           ++oldcur;
+  ;           ++cur;
+  ;         }
+  ;       }
+  ;     }
+  ;   }
+  ; }
+  insertion_sort4:
+  .var4 equ -2
+  .var8 equ -4
+  .arg_base_copy equ -6
+		push cx  ; Save.
+		push di  ; Save.
+		mov bp, sp
+		sub sp, byte 4
+		push ax  ; arg_base_copy := AX (argument base).
+		xchg ax, dx  ; AX := DX (argument n); DX := old_AX (argument base).
+		cmp ax, byte 1
+		jbe short .done
+		mov bx, dx  ; Argument base.
+		add bx, byte 4
+		times 2 add ax, ax  ; AX *= 4.
+		add dx, ax
+		mov [bp+.var8], dx
+  .1:		cmp bx, [bp+.var8]
+		je short .done
+		lea ax, [bx+4]
+		mov [bp+.var4], ax
+		mov ax, bx
+		sub ax, byte 4
+		xchg si, bx  ; SI := BX; BX := old_SI (saved).
+		xchg di, ax  ; DI := AX; AX := junk.
+		call is_reloc_less
+		xchg si, bx  ; Restore old_SI.
+		;test ax, ax
+		;jge short .6
+		jnc short .6  ; Jump if not less.
+		mov si, bx
+  .2:		sub bx, byte 4
+		cmp bx, [bp+.arg_base_copy]
+		je short .3
+		mov ax, bx
+		sub ax, byte 4
+		xchg di, ax  ; DI := AX; AX := junk.
+		call is_reloc_less
+		;test ax, ax
+		;jl short .2
+		jc short .2  ; Jump if less.
+  .3:		cmp si, [bp+.var4]
+		je short .6
+		mov dx, [si]
+		push si ; Save.
+		;cmp si, bx
+		;jne short .4
+		;hlt  ; !! It never happens, optimize the loop below.
+  .4:		cmp si, bx
+		je short .5
+		mov cx, [si-4]
+		mov [si], cx
+		lea si, [si-4]
+		jmp short .4
+  .5:		pop si  ; Restore.
+		mov [bx], dx
+		lodsw  ; times 2 inc si
+		times 2 inc bx
+		jmp short .3
+  .6:		mov bx, [bp+.var4]
+		jmp short .1
+  .done:	mov sp, bp
+		pop di  ; Restore.
+		pop cx  ; Restore.
+		ret
+%endif
 
 %ifdef DEBUG
   LF equ 10
