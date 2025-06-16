@@ -50,7 +50,7 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		cmp al, CR
 		jne short .fn1
 .fatal_mo:	mov bp, 'MO'  ; Missing output filename.
-.j_fatal:	jmp near fatal  ; !! size optimization: Reorganize to save 1 byte for `jmp short'.
+		jmp short .j_fatal
 .fn1e:		mov byte [si-1], 0  ; Modify command-line string in place: add terminating NUL for input filename.
 .ws2:		lodsb
 		cmp al, CR
@@ -78,7 +78,7 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		cmp al, CR
 		je short .done
 .fatal_ta:	mov bp, 'TA'  ; Too many command-line arguments.
-		jmp short .j_fatal
+.j_fatal:	jmp strict near fatal
 .done:		; Now: DX == offset of input filename (uncompressed DOS .exe); DI == offset of output filename (compressed DOS .exe).
 		; Falls through.
 
@@ -100,14 +100,14 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		cmp ax, strict word EXEHDRSIZE
 		je short .hdrsize_ok
 		mov bp, 'HT'  ; Input file headers too short.
-		jmp short .j_fatal
+		jmp short parse_command_line.j_fatal
 .hdrsize_ok:	mov si, dx  ; DS:SI := DS:DX == pointer to start of uexehdr.
 		mov bp, 'MZ'
 		cmp [si+0*2], bp  ; signature.
-		jne short .j_fatal  ; Bad DOS .exe signature.
+		jne short parse_command_line.j_fatal  ; Bad DOS .exe signature.
 		cmp word [si+4*2], byte EXEHDRSIZE>>4  ; hdrsize.
 		mov bp, 'HS'  ; Unsupported DOS .exe header size (hdrsize).
-		jne short .j_fatal
+		jne short parse_command_line.j_fatal
 		mov ah, 0x3f  ; Read from file using handle.
 		;mov bx, ...  ; BX == filehandle of input file.
 		mov dx, udata  ; DS:DX == pointer to start of buffer to read to.
@@ -119,7 +119,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		cmp ax, strict word udata.bufend
 		jb short .usize_ok
 		mov bp, 'TL'  ; Input file too long.
-.j_fatal:	jmp strict near fatal
+.j_fatal:	jmp short parse_command_line.j_fatal
 .usize_ok:	push ax  ; Save offset of end of udata.
 		mov ah, 0x3e  ; Close file using handle.
 		int 0x21  ; DOS syscall.
