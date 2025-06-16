@@ -439,13 +439,8 @@ fatal_msg:	db 'pmwca: fatal: '
 .code:		db '??', 13, 10
 .end:
 
-; --- Code below here is not executed by compressor, but it is copied near
-; the beginning of the compressed .exe.
-;
-; Code below here is not written by pts, but it was copied from the
-; disassembly of pmodew.exe of PMODE/W 1.33. pts has added automatic
-; adjustment of offsets etc. To make it easier to understand, pts has also
-; added comments, function names, labels and variable names.
+; --- These relocation locations have been copied from the last 2*0x1a bytes
+; of pmodew.exe in PMODE/W 1.33.
 
 creloc:
 ; * There are 0x1a == 26 relocations.
@@ -459,6 +454,15 @@ creloc:
 		dw 0x00f3f+0x100, 0x00fdc+0x100, 0x01881+0x100, 0x01a00+0x100
 		dw 0x01a1f+0x100, 0x01b32+0x100
 .end:
+
+; --- Code below here is not executed by compressor, but it is copied near
+; the beginning of the compressed .exe.
+;
+; -- Code below here is not written by pts, but it was copied from the
+; disassembly of the first 0x142 bytes of pmodew.exe in PMODE/W 1.33. pts
+; has added automatic adjustment of offsets etc. To make it easier to
+; understand, pts has also added comments, function names, labels and
+; variable names.
 
 preparator_buf:
 
