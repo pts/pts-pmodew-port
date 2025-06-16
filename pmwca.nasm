@@ -418,6 +418,14 @@ emit_match:
 udata:		incbin UEXEFN, 0x200
 .end:
 
+; --- Code below here is not executed by compressor, but it is copied near
+; the beginning of the compressed .exe.
+;
+; Code below here is not written by pts, but it was copied from the
+; disassembly of pmodew.exe of PMODE/W 1.33. pts has added automatic
+; adjustment of offsets etc. To make it easier to understand, pts has also
+; added comments, function names, labels and variable names.
+
 creloc:
 ; * There are 0x1a == 26 relocations.
 ; * For each relocation location, the file contains `dw location_value+0x100'.
@@ -430,14 +438,6 @@ creloc:
 		dw 0x00f3f+0x100, 0x00fdc+0x100, 0x01881+0x100, 0x01a00+0x100
 		dw 0x01a1f+0x100, 0x01b32+0x100
 .end:
-
-; --- Code below here is not executed by compressor, but it is copied near
-; the beginning of the compressed .exe.
-;
-; Code below here is not written by pts, but it was copied from the
-; disassembly of pmodew.exe of PMODE/W 1.33. pts has added automatic
-; adjustment of offsets etc. To make it easier to understand, pts has also
-; added comments, function names, labels and variable names.
 
 preparator_buf:
 
