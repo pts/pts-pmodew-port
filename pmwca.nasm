@@ -5,13 +5,14 @@
 ; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: nasm-0.98.39 -O999999999 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe && cmp pmodew133.exe pmodewc.exe && echo OK
+; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe && cmp pmodew133.exe pmodewc.exe && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodewc.exe && echo OK
 ;
 ; !! add writing of the compressed .exe to file whose name is specified on the command line
 ; !! add automatic adjustment of offsets etc.
 ; !! add loading and sorting the relocations from the uncompressed .exe.
 ; !! convert from NASM to TASM syntax
+; !! check diff with `nasm -O999999999'
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
 ;
 
@@ -101,7 +102,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		mov bp, 'MZ'
 		cmp [si+0*2], bp
 		jne short .j_fatal  ; Bad DOS .exe signature.
-		cmp word [si+4*2], EXEHDRSIZE>>4
+		cmp word [si+4*2], byte EXEHDRSIZE>>4
 		mov bp, 'HS'  ; Unsupported DOS .exe header size (hdrsize).
 		jne short .j_fatal
 		mov ah, 0x3f  ; Read from file using handle.
