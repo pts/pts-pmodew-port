@@ -8,6 +8,11 @@
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe && cmp pmodew133.exe pmodewc.exe && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodewc.exe && echo OK
 ;
+; This compressor is quite slow because scans the same data may times
+; looking for longer and longer repetition. On a real 386 CPU from 1985) it
+; may take several minutes. (How long would it take on an 586 CPU in 1997?)
+; Adding a hashtable or lookup table would make it significantly faster.
+;
 ; !! Convert from NASM to TASM syntax.
 ; !! Check diff with `nasm -O999999999'. It seems to be OK now.
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
