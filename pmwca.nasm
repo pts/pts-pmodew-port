@@ -536,7 +536,29 @@ compress:	mov ax, 1
 %endif
 		inc si  ; Skip over literal byte in the uncompressed input data.
 		mov bp, sp
-		jmp strict near .next_byte
+.next_byte:	mov [bp+1*2], di  ; cdata_end == cdata_cur.
+		mov cx, [bp+3*2]  ; udata_end.
+		sub cx, si
+		jz short .done
+		cmp cx, MAX_LENGTH
+		jb .cx_ok
+		mov cx, MAX_LENGTH
+.cx_ok:		; CX will keep holding the maximum match length starting at DS:SI, until the next .next_byte (i.e. when SI is increased).
+		mov di, si
+		xor dx, dx  ; Best length so far. No need to initialize BP (best distance) here.
+		mov ax, -1  ; Current distance.
+		jmp short .next_start
+.done:		stc
+		call emit_bit  ; Emit end-of-stream (EOS) sequence.
+		clc
+		call emit_bit
+		mov al, 0
+		do_emit_m1  ; In AL.
+		clc
+		call emit_bit
+		; Now: DI == the correct, final value for cdata_end == cdata_cur.
+		add sp, byte 5*2  ; Clean up local variables from the stack.
+		ret
 		; Registers through the .next_start loop below:
 		; * AX, BX: scratch.
 		; * CX: maximum match length starting at DS:SI. Remains until the next .next_byte (i.e. right after SI is increased).
@@ -641,33 +663,11 @@ compress:	mov ax, 1
 		call print_literal
 %endif
 		movsb  ; Copies a literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
-		jmp short .next_byte
+		jmp short .j_next_byte
 .match:
 		add si, dx  ; Skip over matched bytes in the uncompresed input data.
 		call emit_match  ; Ruins AX, BX, CX, DX, DI, BP, FLAGS. Keeps SI and BP intact.
-.next_byte:	mov [bp+1*2], di  ; cdata_end == cdata_cur.
-		mov cx, [bp+3*2]  ; udata_end.
-		sub cx, si
-		jz short .done
-		cmp cx, MAX_LENGTH
-		jb .cx_ok
-		mov cx, MAX_LENGTH
-.cx_ok:		; CX will keep holding the maximum match length starting at DS:SI, until the next .next_byte (i.e. when SI is increased).
-		mov di, si
-		xor dx, dx  ; Best length so far. No need to initialize BP (best distance) here.
-		mov ax, -1  ; Current distance.
-		jmp near .next_start
-.done:		stc
-		call emit_bit  ; Emit end-of-stream (EOS) sequence.
-		clc
-		call emit_bit
-		mov al, 0
-		do_emit_m1  ; In AL.
-		clc
-		call emit_bit
-		; Now: DI == the correct, final value for cdata_end == cdata_cur.
-		add sp, byte 5*2  ; Clean up local variables from the stack.
-		ret
+.j_next_byte:	jmp strict near .next_byte
 
 ; Emits CL (1 <= CL <= 7) bits from AH, highest (of the CL) bits first.
 ; Ruins: CX (sets it to 0), FLAGS.
