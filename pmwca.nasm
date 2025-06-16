@@ -8,7 +8,11 @@
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.out && pmodewc.exe pmwca.out && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
 ;
-; !! read uncmpressed .exe from file whose name is specified on the command line
+; !! add reading of uncmpressed .exe from file whose name is specified on the command line
+; !! add writing of the compressed .exe to file whose name is specified on the command line
+; !! add automatic adjustment of offsets etc.
+; !! add loading and sorting the relocations from the uncompressed .exe.
+; !! convert from NASM to TASM syntax
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
 ;
 
@@ -414,10 +418,221 @@ emit_match:
 udata:		incbin UEXEFN, 0x200
 .end:
 
-creloc:		incbin 'pmodewc.exe', 0x2ca8, 2*26  ; !!! Sort and compress relocations.
+creloc:
+; * There are 0x1a == 26 relocations.
+; * For each relocation location, the file contains `dw location_value+0x100'.
+; * The locations are sorted by (segment, offset) original.
+		dw 0x02643+0x100, 0x026df+0x100, 0x026fa+0x100, 0x02724+0x100
+		dw 0x02744+0x100, 0x0301a+0x100, 0x030ce+0x100, 0x03144+0x100
+		dw 0x031f2+0x100, 0x0325f+0x100, 0x0343e+0x100, 0x03ce4+0x100
+		dw 0x03d5b+0x100, 0x00006+0x100, 0x00562+0x100, 0x00986+0x100
+		dw 0x00c26+0x100, 0x00cae+0x100, 0x00dce+0x100, 0x00e91+0x100
+		dw 0x00f3f+0x100, 0x00fdc+0x100, 0x01881+0x100, 0x01a00+0x100
+		dw 0x01a1f+0x100, 0x01b32+0x100
 .end:
 
-preparator_buf: incbin 'pmodewc.exe', 0, 0x142  ; !!! Prepare .exe header and preparator code.
+; --- Code below here is not executed by compressor, but it is copied near
+; the beginning of the compressed .exe.
+;
+; Code below here is not written by pts, but it was copied from the
+; disassembly of pmodew.exe of PMODE/W 1.33. pts has added automatic
+; adjustment of offsets etc. To make it easier to understand, pts has also
+; added comments, function names, labels and variable names.
+
+preparator_buf:
+
+exe_header:  ; DOS .exe header: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
+; load module length = 0x2cdc
+.signature: db 'MZ'
+.lastsize:  dw 0x00dc  ; length of load module mod 200H
+.nblocks:   dw 0x0017  ; number of 200H pages in load module
+.nreloc:    dw 0x0000  ; number of relocation items; no relocations.
+.hdrsize:   dw 0x0002  ; size of header in paragraphs
+.minalloc:  dw 0x06b4  ; minimum number of paragraphs required above load mod. mem_para == (0x17<<5)-2+0x6b4 == 0x992. !! How was this calculated? This looks like huuuuge.
+.maxalloc:  dw 0xffff  ; maximum number of paragraphs required above load mod
+.ss:        dw 0x03d7  ; offset of stack segment in load module. Same as U_SS.
+.sp:        dw 0x0100  ; initial value of SP. Constant.
+.checksum:  dw 0x0000  ; checksum
+.ip:        dw 0x005e  ; initial value of IP
+.cs:        dw 0x0000  ; offset of code segment within load module (segment)
+.relocpos:  dw 0x003e  ; file offset of first relocation item
+.noverlay:  dw 0x0000  ; overlay number
+
+padding: dd 0  ; At file offset 0x1c.
+
+exe_image:
+
+pmodew_config:
+; * This is 0x15 == 21 bytes at compressed exe_image+0.
+; * This is 0x15 == 21 bytes at uncompressed exe_image+0x8e, it's
+;   zero-initialized there.
+; * Here is how pmodew_config is loaded. When DOS loads the .exe with
+;   the PMODE/W stub, it loads the pmodew_config here as well, but the
+;   decompressor below ignores and overwrites it.
+;   The PMODE/W function _openexe2 (with VARTYPE == 1) loads the first
+;   0x15-2 == 21-2 bytes of this from the beginning of DOS .exe image (at
+;   hdrsize<<4) to uncompressed exe_image+0x8e == _pm_pagetables. And then
+;   it loads 2 more bytes to another uncompressed exe_image+0x196 ==
+;   _lowmin. The loaded 0x13 bytes must fit to the first 0x40+0x15 bytes of
+;   the .exe file. Typically it is between 0x20..0x35, so they fit.
+.pagetables: db 4  ; Number of page tables under VCPI.                                         _pm_pagetables:
+.selectors: dw 0x100  ; Max selectors under VCPI/XMS/raw.                                      _pm_selectors:
+.rmstacklen: dw 0x40  ; Real mode stack length, in para.                                       _pm_rmstacklen:
+.pmstacklen: dw 0x80  ; Protected mode stack length, in para.                                  _pm_pmstacklen:
+.rmstacks: db 8  ; Real mode stack nesting.                                                    _pm_rmstacks:
+.pmstacks: db 8  ; Protected mode stack nesting.                                               _pm_pmstacks:
+.callbacks: db 0x20  ; Number of real mode callbacks.                                          _pm_callbacks:
+.mode: db 1  ; Mode bits.                                                                      _pm_mode:
+.pamapping: db 1  ; Physical address mappings pages max.                                       _pm_pampagemax:
+.crap: dw 0
+.options: db 1  ; Option flags. 0 = hide copyright message; 1 == display copyright message     _pm_options:
+.extmax: dd 0x7fffffff  ; Maximum extended memory to allocate.                                 _pm_maxextmem:
+.lowmin: dw 0  ; Amount of low memory to try and save. Loaded by _openexe2 to somewhere else.  _lowmin:
+
+copyright: db 'PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.'
+
+uncompressed_start_far_ptr: dw 0x47d, 0x21c  ; U_IP, U_CS.
+
+; Identical version of 8086 opcode encoding.
+_mov_bl_al equ 0xd88a
+_mov_bp_ax equ 0xe88b
+_mov_bx_ax equ 0xd88b
+_mov_cl_al equ 0xc88a
+_mov_cl_dh equ 0xce8a
+_mov_si_di equ 0xf78b
+_xor_bx_bx equ 0xdb33
+_xor_dh_dh equ 0xf632
+
+exe_start:  ; Compressed .exe entry point.
+copy_code:
+		cld
+		push ss  ; orig_CS+0x3d7 == orig_CS+U_SS.
+		pop es  ; ES := orig_CS+0x3d7. DS remains PSP_segment == orig_cs-0x10.
+		mov di, 0x100  ; The compressed SP value.
+		dw _mov_si_di
+		push di  ; 0x100.
+		mov cx, 0x165e ; !! (cdata.end-exe_image+1)>>1  ; Number of words to copy.
+		rep movsw  ; DS == orig_CS-0x10 == PSP_segment.
+		push es  ; orig_CS+0x3d7.
+		push ds  ; orig_CS-0x10.
+		pop es   ; ES := orig_CS-0x10.
+		pop ds   ; DS := orig_CS+0x3d7.
+		pop di   ; DI := 0x100.
+		mov si, cdata-exe_image+0x100  ; DS:SI now points to the start of the copy of cdata. Constant.
+		push es  ; orig_CS-0x10. Will be popped by `pop ds' in jump_to_program.
+		push cs  ; orig_CS == PSP_segment. Will be popped by `pop dx' in jump_to_program.
+		movsb  ; Copy initial literal token.
+		lodsw  ; AX := initial 16-bit block (tag) word value.
+		dw _mov_bp_ax  ; BP will keep holding the block word throught decompression. `xchg bp, ax' would have been shorter.
+		mov dl, 0x10  ; DL will keep holding the Number of bits remaining in the block word (BP). Starting at 0x10 == 16.
+		push ds  ; Segment for the `retf' below: orig_CS+0x3d7.
+		mov ax, decompress.start-exe_image+0x100
+		push ax  ; Offset for the `retf' below: 0x100+0xd9 == 0x100 + decompress.literal.
+		retf  ; Jump to (orig_CS+0x3d7):0x1d9, which is a copy of decompress.start == decompress.next_token.
+
+decompress:  ; Entry point is decompress.start. It needs initialization, see above.
+.get_bit:
+		shr bp, 1  ; CF := the first bit in a block to be used is its lowest bit.
+		dec dl  ; Doesn't modify CF.
+		jnz .get_bit.ret
+		lodsw
+		dw _mov_bp_ax  ; `xchg bp, ax' would have been shorter here.
+		mov dl, 0x10  ; Again, 0x10 == 16 are available in BP.
+.get_bit.ret:
+		ret
+.match_1_1:
+		call .get_bit
+		jnc short .match_1_1_0
+.match_1_1_1:
+		call .get_bit
+		adc cl, 0x1
+		shl cl, 1
+.match_1_1_1.next:
+		call .get_bit
+		rcl bh, 1
+		loop .match_1_1_1.next  ; Then falls through to .match_1_1_0.
+.match_1_1_0:
+		mov dh, 0x2
+		mov cl, 0x4
+.match_1_1_0.next:
+		inc dh
+		call .get_bit
+		jc short .copy_match_count_dh
+		loop .match_1_1_0.next
+		call .get_bit
+		jnc short .match_1_1_0_0
+.match_1_1_0_1:
+		lodsb
+		dw _mov_cl_al
+		add cx, byte 0xf
+		jmp short .copy_match
+.match_1_1_0_0:
+		dw _xor_dh_dh
+		mov cl, 0x3
+.match_1_1_0_0.next:
+		call .get_bit
+		rcl dh, 1
+		loop .match_1_1_0_0.next
+		add dh, 0x7
+.copy_match_count_dh:
+		dw _mov_cl_dh
+		jmp short .copy_match
+.copy_match_2_bytes:
+		mov cl, 0x2  ; CX := 2. Assumes CH == 0. Falls through to .copy_match.
+.copy_match:  ; Copies a match with (distance, length) == (BX, CX). The distance 0 means: copy the previously emitted byte (at [ES:DI-1]).
+		neg bx  ; BX := -orig_distance.
+		dec bx  ; BX := -orig_distance - 1.
+.copy_match.next:
+		mov al, [es:bx+di]  ; [es:..] prefix is not needed.
+		stosb
+		loop .copy_match.next
+.next_token:
+.start:
+		call .get_bit
+		jc short .match_1
+.literal_0:  ; Indicated by CF==0.
+		movsb  ; Copy literal byte from byte stream.
+		jmp short .next_token
+.match_1:  ; Indicated by CF==1.
+		dw _xor_bx_bx
+		call .get_bit
+		lodsb  ; Get distance byte. Keeps CF intact.
+		dw _mov_bl_al  ; BX (distance) := AL.  Keeps CF intact.
+		jc short .match_1_1
+.match_1_0:
+		call .get_bit
+		jc short .match_1_0_1
+.match_1_0_0:
+		sub bl, 1
+		jc short .after_decompress
+		jmp short .copy_match_2_bytes
+.match_1_0_1:
+		mov cl, 0x3
+.match_1_0_1.next:
+		call .get_bit
+		rcl bh, 1
+		loop .match_1_0_1.next
+		jmp short .copy_match_2_bytes
+.after_decompress:  ; Falls through to apply_relocations.
+
+apply_relocations:
+		pop dx  ; Restore DX := orig_CS, pushed by `push cs' in setup_code.
+		add [0x5a+0x100+2], dx  ; uncompressed_start_far_ptr-exe_image+0x100+2: Relocate segment in uncompressed_start_far_ptr. Constant.
+		mov cl, 0x1a  ; CX := (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0.
+.next:		lodsw  ; Load next offset from relocation table. Format: an array of offsets usign segment orig_CS-0x10 == PSP_segment.
+		dw _mov_bx_ax  ; `xchg bx, ax' would have been shorter.
+		add [es:bx], dx  ; Apply single relocation.
+		loop .next
+
+jump_to_program:
+		pop ds  ; Restore DS := PSP_segment. ES is already PSP_segment.
+		cli
+		add dx, 0x3d7 ; U_SS. Calculated.
+		mov ss, dx  ; SS := orig_CS+U_SS.
+		mov sp, 0x400  ; U_SP. Calculated.
+		sti
+		jmp far [cs:0x5a+0x100]  ; ncompressed_start_far_ptr-exe_image+0x100. Jump to uncompressed_start_far_ptr. Constant.
+
 absolute $
 cdata:		resb 0x5000
 
