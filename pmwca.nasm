@@ -5,10 +5,9 @@
 ; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: nasm-0.98.39 -O999999999 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.out && cmp pmodew133.exe pmwca.out && echo OK
-; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
+; End-to-end check: nasm-0.98.39 -O999999999 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.out && cmp pmodew133.exe pmwca.out && echo OK
+; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
 ;
-; !! add reading of uncmpressed .exe from file whose name is specified on the command line
 ; !! add writing of the compressed .exe to file whose name is specified on the command line
 ; !! add automatic adjustment of offsets etc.
 ; !! add loading and sorting the relocations from the uncompressed .exe.
@@ -79,9 +78,52 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 .done:		; Now: DX == offset of input filename (uncompressed DOS .exe); DI == offset of output filename (compressed DOS .exe).
 		; Falls through.
 
+EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK.
+
+read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
+		;mov dx, ...  ; DX == offset of input filename.
+		int 0x21  ; DOS syscall. Sets AX to the filehandle.
+		mov bp, 'OI'  ; Error opening input file.
+		call fatal_if_c
+		xchg bx, ax  ; BX := filehandle; AX := junk.
+		mov ah, 0x3f  ; Read from file using handle.
+		;mov bx, ...  ; BX == filehandle of input file.
+		mov dx, exehdr  ; DS:DX == pointer to start of buffer to read exehdr to.
+		mov cx, EXEHDRSIZE  ; Maximum number of bytes to read.
+		int 0x21  ; DOS syscall. Sets AX to the number of bytes read.
+		mov bp, 'RH'  ; File read error reading the uncompressed DOS .exe header.
+		call fatal_if_c
+		cmp ax, strict word EXEHDRSIZE
+		je short .hdrsize_ok
+		mov bp, 'HT'  ; Input file headers too short.
+.j_fatal:	jmp strict near fatal
+.hdrsize_ok:	mov si, dx  ; DS:DX == pointer to start of exehdr.
+		mov bp, 'MZ'
+		cmp [si+0*2], bp
+		jne short .j_fatal  ; Bad DOS .exe signature.
+		cmp word [si+4*2], EXEHDRSIZE>>4
+		mov bp, 'HS'  ; Unsupported DOS .exe header size (hdrsize).
+		jne short .j_fatal
+		mov ah, 0x3f  ; Read from file using handle.
+		;mov bx, ...  ; BX == filehandle of input file.
+		mov dx, udata  ; DS:DX == pointer to start of buffer to read to.
+		mov cx, udata.bufend-udata  ; Maximum number of bytes to read.
+		int 0x21  ; DOS syscall. Sets AX to the number of bytes read.
+		mov bp, 'RD'  ; File read error reading the uncompressed DOS .exe image.
+		call fatal_if_c
+		add ax, strict word udata
+		cmp ax, strict word udata.bufend
+		jb short .usize_ok
+		mov bp, 'TL'  ; Input file too long.
+		jmp short .j_fatal
+.usize_ok:	xchg cx, ax  ; CX == offset of end of udata.
+		mov ah, 0x3e  ; Close file using handle.
+		int 0x21  ; DOS syscall.
+		; Falls through.
+
 build_preparator_buf:
 		mov si, udata
-		mov cx, udata.end
+		;mov cx, ...  ; CX == offset of end of udata.
 		mov di, cdata
 		call compress  ; Append compressed data to DS:DI == ES:DI.
 		mov si, creloc
@@ -90,7 +132,7 @@ build_preparator_buf:
 %ifndef DEBUG
 		mov ah, 0x40  ; Write to file using handle.
 		mov bx, 1  ; STDOUT_FILENO.
-		mov dx, preparator_buf  ; DS:DI == pointer to start of buffer to be written.
+		mov dx, preparator_buf  ; DS:DX == pointer to start of buffer to be written.
 		mov cx, di
 		sub cx, dx  ; CX := DI - cdata. CX == number of bytes to write.
 		mov bp, 'WR'  ; File write error.
@@ -492,9 +534,6 @@ emit_match:
 %endif
 		ret
 
-udata:		incbin UEXEFN, 0x200
-.end:
-
 fatal_msg:	db 'pmwca: fatal: '
 .code:		db '??', 13, 10
 .end:
@@ -718,8 +757,19 @@ jump_to_program:
 		sti
 		jmp far [cs:0x5a+0x100]  ; ncompressed_start_far_ptr-exe_image+0x100. Jump to uncompressed_start_far_ptr. Constant.
 
-absolute $
-cdata:		resb 0x5000
+preparator_buf.end:
+
+MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
+MAX_CSIZE equ MAX_USIZE+((MAX_USIZE+7)>>3)  ; Worst case compressed data size: all tokens are literals. Matches are never longer than their corresponding literals.
+MAX_CRELSIZE equ EXEHDRSIZE>>2  ; Absolue maximum which fits to EXEHDRSIZE bytes of DOS .exe header created by TLINK.
+absolute $  ; Don't emit bytes anymore, just reserve.
+cdata:		resb MAX_CSIZE+MAX_CRELSIZE  ; Must come directly after preparator_buf.end, without alignment.
+
+udata:		resb MAX_USIZE
+.bufend:
+
+		resb ($$-$)&1  ; Align to word boundary.
+exehdr:		resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
 
 %if $-$$>0xff00
   %error ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE
