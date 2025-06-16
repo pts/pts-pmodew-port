@@ -473,15 +473,11 @@ sort4:
 		je short .6
 		mov dx, [si]
 		push si ; Save.
-		;cmp si, bx
-		;jne short .4
-		;hlt  ; !! It never happens, optimize the loop below.
-  .4:		cmp si, bx
-		je short .5
-		mov cx, [si-4]
+  .4:		mov cx, [si-4]  ; !! Do 2 moves in this loop body, make the outer loop unnecessary.
 		mov [si], cx
 		lea si, [si-4]
-		jmp short .4
+		cmp si, bx
+		jne short .4
   .5:		pop si  ; Restore.
 		mov [bx], dx
 		lodsw  ; times 2 inc si
