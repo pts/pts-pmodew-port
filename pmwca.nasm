@@ -402,16 +402,16 @@ sort4:
   ;
   ; void sort4(void *base, size_t n) {
   ;   char *oldcur, *end, *newcur, *mid, tmp, *cur;
-  ;   if (n > 1) {
+  ;   if (n >= 1) {  /* Equivalent to: if (n > 1) */
   ;     for (cur = (char*)base + SIZE, end = (char*)base + (SIZE * n);
   ;          cur != end;
   ;          cur = newcur) {
   ;       newcur = cur + SIZE;
-  ;       if (cmp(cur, cur - SIZE) < 0) {
+  ;       if (is_less(cur, cur - SIZE)) {
   ;         oldcur = cur;
   ;         do {
   ;           cur -= SIZE;
-  ;         } while (cur != (char*)base && cmp(oldcur, cur - SIZE) < 0);
+  ;         } while (cur != (char*)base && is_less(oldcur, cur - SIZE));
   ;         /* memrotate(cur, oldcur, SIZE); */
   ;         while (oldcur != newcur) {
   ;           mid = oldcur;
@@ -429,64 +429,41 @@ sort4:
   ;   }
   ; }
   insertion_sort4:
-  .var4 equ -2
-  .var8 equ -4
-  .arg_base_copy equ -6
 		push cx  ; Save.
 		push di  ; Save.
-		mov bp, sp
-		sub sp, byte 4
-		push ax  ; arg_base_copy := AX (argument base).
-		xchg ax, dx  ; AX := DX (argument n); DX := old_AX (argument base).
-		cmp ax, byte 1
+		cmp dx, byte 1  ; Argument n.
 		jbe short .done
-		mov bx, dx  ; Argument base.
-		add bx, byte 4
+		xchg ax, dx  ; AX := DX (argument n); DX := old_AX (argument base).
+		mov bp, dx  ; BX will keep holding argument base throughout the rest of the function.
+		lea bx, [bp+4]  ; BX (cur) := base + SIZE.
 		times 2 add ax, ax  ; AX *= 4.
-		add dx, ax
-		mov [bp+.var8], dx
-  .1:		cmp bx, [bp+.var8]
-		je short .done
-		lea ax, [bx+4]
-		mov [bp+.var4], ax
-		mov ax, bx
-		sub ax, byte 4
-		xchg si, bx  ; SI := BX; BX := old_SI (saved).
-		xchg di, ax  ; DI := AX; AX := junk.
-		call is_reloc_less
-		xchg si, bx  ; Restore old_SI.
-		;test ax, ax
-		;jge short .6
+		add dx, ax  ; DX (var_end) := base + SIZE * n.
+  .next:	lea di, [bx-4]
+		mov si, bx  ; SI := BX *cur).
+		call is_reloc_less  ; is_less(cur, cur - SIZE).
 		jnc short .6  ; Jump if not less.
-		mov si, bx
-  .2:		sub bx, byte 4
-		cmp bx, [bp+.arg_base_copy]
+		mov si, bx  ; SI (oldcur) := BX (cur).
+  .2:		mov bx, di  ; BX (cur) -= SIZE.
+		cmp bx, bp  ; while (cur != base ...)
 		je short .3
-		mov ax, bx
-		sub ax, byte 4
-		xchg di, ax  ; DI := AX; AX := junk.
-		call is_reloc_less
-		;test ax, ax
-		;jl short .2
+		lea di, [bx-4]
+		call is_reloc_less  ; is_less(oldcur, cur - SIZE).
 		jc short .2  ; Jump if less.
-  .3:		cmp si, [bp+.var4]
-		je short .6
-		mov dx, [si]
-		push si ; Save.
-  .4:		mov cx, [si-4]  ; !! Do 2 moves in this loop body, make the outer loop unnecessary.
-		mov [si], cx
-		lea si, [si-4]
-		cmp si, bx
-		jne short .4
-  .5:		pop si  ; Restore.
-		mov [bx], dx
-		lodsw  ; times 2 inc si
-		times 2 inc bx
-		jmp short .3
-  .6:		mov bx, [bp+.var4]
-		jmp short .1
-  .done:	mov sp, bp
-		pop di  ; Restore.
+  .3:		mov cx, [si]  ; Remember first word.
+		mov di, [si+2]  ; Remember second word.
+		sub si, bx
+  .copy4:	mov ax, [si+bx-4]
+		mov [si+bx], ax
+		mov ax, [si+bx-4+2]
+		mov [si+bx+2], ax
+		sub si, byte 4
+		jnz short .copy4
+  .5:		mov [bx], cx  ; Store remembered first word.
+		mov [bx+2], di  ; Store remembered second word.
+  .6:		lea bx, [bx+4]  ; BX (cur) := BX + 4 (newcur).
+		cmp bx, dx  ; cur != end.
+		jne short .next
+  .done:	pop di  ; Restore.
 		pop cx  ; Restore.
 		ret
 %endif
