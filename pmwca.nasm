@@ -468,22 +468,22 @@ preparator_buf:
 
 exe_header:  ; DOS .exe header: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
 ; load module length = 0x2cdc
-.signature: db 'MZ'
-.lastsize:  dw 0x00dc  ; length of load module mod 200H
-.nblocks:   dw 0x0017  ; number of 200H pages in load module
-.nreloc:    dw 0x0000  ; number of relocation items; no relocations.
-.hdrsize:   dw 0x0002  ; size of header in paragraphs
-.minalloc:  dw 0x06b4  ; minimum number of paragraphs required above load mod. mem_para == (0x17<<5)-2+0x6b4 == 0x992. !! How was this calculated? This looks like huuuuge.
-.maxalloc:  dw 0xffff  ; maximum number of paragraphs required above load mod
-.ss:        dw 0x03d7  ; offset of stack segment in load module. Same as U_SS.
-.sp:        dw 0x0100  ; initial value of SP. Constant.
-.checksum:  dw 0x0000  ; checksum
-.ip:        dw 0x005e  ; initial value of IP
-.cs:        dw 0x0000  ; offset of code segment within load module (segment)
-.relocpos:  dw 0x003e  ; file offset of first relocation item
-.noverlay:  dw 0x0000  ; overlay number
+.signature:	db 'MZ'
+.lastsize:	dw 0x00dc  ; length of load module mod 200H
+.nblocks:	dw 0x0017  ; number of 200H pages in load module
+.nreloc:	dw 0x0000  ; number of relocation items; no relocations.
+.hdrsize:	dw 0x0002  ; size of header in paragraphs
+.minalloc:	dw 0x06b4  ; minimum number of paragraphs required above load mod. mem_para == (0x17<<5)-2+0x6b4 == 0x992. !! How was this calculated? This looks like huuuuge.
+.maxalloc:	dw 0xffff  ; maximum number of paragraphs required above load mod
+.ss:		dw 0x03d7  ; offset of stack segment in load module. Same as U_SS.
+.sp:		dw 0x0100  ; initial value of SP. Constant.
+.checksum:	dw 0x0000  ; checksum
+.ip:		dw 0x005e  ; initial value of IP
+.cs:		dw 0x0000  ; offset of code segment within load module (segment)
+.relocpos:	dw 0x003e  ; file offset of first relocation item
+.noverlay:	dw 0x0000  ; overlay number
 
-padding: dd 0  ; At file offset 0x1c.
+padding:	dd 0  ; At file offset 0x1c.
 
 exe_image:
 
@@ -500,19 +500,19 @@ pmodew_config:
 ;   it loads 2 more bytes to another uncompressed exe_image+0x196 ==
 ;   _lowmin. The loaded 0x13 bytes must fit to the first 0x40+0x15 bytes of
 ;   the .exe file. Typically it is between 0x20..0x35, so they fit.
-.pagetables: db 4  ; Number of page tables under VCPI.                                         _pm_pagetables:
-.selectors: dw 0x100  ; Max selectors under VCPI/XMS/raw.                                      _pm_selectors:
-.rmstacklen: dw 0x40  ; Real mode stack length, in para.                                       _pm_rmstacklen:
-.pmstacklen: dw 0x80  ; Protected mode stack length, in para.                                  _pm_pmstacklen:
-.rmstacks: db 8  ; Real mode stack nesting.                                                    _pm_rmstacks:
-.pmstacks: db 8  ; Protected mode stack nesting.                                               _pm_pmstacks:
-.callbacks: db 0x20  ; Number of real mode callbacks.                                          _pm_callbacks:
-.mode: db 1  ; Mode bits.                                                                      _pm_mode:
-.pamapping: db 1  ; Physical address mappings pages max.                                       _pm_pampagemax:
-.crap: dw 0
-.options: db 1  ; Option flags. 0 = hide copyright message; 1 == display copyright message     _pm_options:
-.extmax: dd 0x7fffffff  ; Maximum extended memory to allocate.                                 _pm_maxextmem:
-.lowmin: dw 0  ; Amount of low memory to try and save. Loaded by _openexe2 to somewhere else.  _lowmin:
+.pagetables:	db 4  ; Number of page tables under VCPI.                                             _pm_pagetables:
+.selectors:	dw 0x100  ; Max selectors under VCPI/XMS/raw.                                         _pm_selectors:
+.rmstacklen:	dw 0x40  ; Real mode stack length, in para.                                           _pm_rmstacklen:
+.pmstacklen:	dw 0x80  ; Protected mode stack length, in para.                                      _pm_pmstacklen:
+.rmstacks:	db 8  ; Real mode stack nesting.                                                      _pm_rmstacks:
+.pmstacks:	db 8  ; Protected mode stack nesting.                                                 _pm_pmstacks:
+.callbacks:	db 0x20  ; Number of real mode callbacks.                                             _pm_callbacks:
+.mode:		db 1  ; Mode bits.                                                                    _pm_mode:
+.pamapping:	db 1  ; Physical address mappings pages max.                                          _pm_pampagemax:
+.crap:		dw 0  ; Unused.
+.options:	db 1  ; Option flags. 0 = hide copyright message; 1 == display copyright message.     _pm_options:
+.extmax:	dd 0x7fffffff  ; Maximum extended memory to allocate.                                 _pm_maxextmem:
+.lowmin:	dw 0  ; Amount of low memory to try and save. Loaded by _openexe2 to somewhere else.  _lowmin:
 
 copyright: db 'PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.'
 
