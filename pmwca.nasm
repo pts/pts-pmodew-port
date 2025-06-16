@@ -37,9 +37,26 @@ start:		mov si, udata
 		mov dx, preparator_buf  ; DS:DI == pointer to start of buffer to be written.
 		mov cx, di
 		sub cx, dx  ; CX := DI - cdata. CX == number of bytes to write.
+		mov bp, 'WR'  ; File write error.
 		int 0x21  ; DOS syscall.
+		call fatal_if_c
 %endif
 		ret  ; Exit successfully (EXIT_SUCCESS) from DOS .com program.
+
+; If CF == 1, exits the process with a fatal error (2 bytes of error message
+; in BP), otherwise returns. Keeps all registers including FLAGS intact.
+fatal_if_c:	jc short fatal
+		ret
+
+; Exits the process with a fatal error (2 bytes of error message in BP).
+fatal:		mov [fatal_msg.code], bp
+		mov ah, 0x40  ; Write to file using handle.
+		mov bx, 2  ; STDERR_FILENO.
+		mov dx, fatal_msg  ; DS:DI == pointer to start of buffer to be written.
+		mov cx, fatal_msg.end-fatal_msg  ; CX == number of bytes to write.
+		int 0x21  ; DOS syscall.
+		mov ax, 0x4c01  ; Exit with exit code EXIT_FAILURE (1).
+		int 0x21  ; DOS syscall. Doesn't return.
 
 %ifdef DEBUG
   LF equ 10
@@ -416,6 +433,10 @@ emit_match:
 		ret
 
 udata:		incbin UEXEFN, 0x200
+.end:
+
+fatal_msg:	db 'pmwca: fatal: '
+.code:		db '??', 13, 10
 .end:
 
 ; --- Code below here is not executed by compressor, but it is copied near
