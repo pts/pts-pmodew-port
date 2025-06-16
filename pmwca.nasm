@@ -887,15 +887,15 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 		jnc short .match_1_1_0
 .match_1_1_1:
 		call .get_bit
-		adc cl, 0x1
+		adc cl, 1
 		shl cl, 1
 .match_1_1_1.next:
 		call .get_bit
 		rcl bh, 1
 		loop .match_1_1_1.next  ; Then falls through to .match_1_1_0.
 .match_1_1_0:
-		mov dh, 0x2
-		mov cl, 0x4
+		mov dh, 2
+		mov cl, 4
 .match_1_1_0.next:
 		inc dh
 		call .get_bit
@@ -920,7 +920,7 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 		dw _mov_cl_dh
 		jmp short .copy_match
 .copy_match_2_bytes:
-		mov cl, 0x2  ; CX := 2. Assumes CH == 0. Falls through to .copy_match.
+		mov cl, 2  ; CX := 2. Assumes CH == 0. Falls through to .copy_match.
 .copy_match:  ; Copies a match with (distance, length) == (BX, CX). The distance 0 means: copy the previously emitted byte (at [ES:DI-1]).
 		neg bx  ; BX := -orig_distance.
 		dec bx  ; BX := -orig_distance - 1.
@@ -949,7 +949,7 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 		jc short .after_decompress
 		jmp short .copy_match_2_bytes
 .match_1_0_1:
-		mov cl, 0x3
+		mov cl, 3
 .match_1_0_1.next:
 		call .get_bit
 		rcl bh, 1
@@ -959,7 +959,7 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 
 apply_relocations:
 		pop dx  ; Restore DX := orig_CS, pushed by `push cs' in setup_code.
-		add [0x5a+0x100+2], dx  ; uncompressed_start_far_ptr-exe_image+0x100+2: Relocate segment in uncompressed_start_far_ptr. Constant.
+		add [uncompressed_start_far_ptr-exe_image+0x100+2], dx  ; Relocate segment in uncompressed_start_far_ptr.
 		mov cl, 0  ; CX := U_NRELOC == (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0. build_preparator_buf will populate it.
 .u_nreloc: equ $-1
 .next:		lodsw  ; Load next offset from relocation table. Format: an array of offsets usign segment orig_CS-0x10 == PSP_segment.
@@ -976,7 +976,7 @@ jump_to_program:
 		mov sp, 0  ; U_SP. build_preparator_buf will populate it.
 .u_sp: equ $-2
 		sti
-		jmp far [cs:0x5a+0x100]  ; ncompressed_start_far_ptr-exe_image+0x100. Jump to uncompressed_start_far_ptr. Constant.
+		jmp far [cs:uncompressed_start_far_ptr-exe_image+0x100]  ; Jump to uncompressed_start_far_ptr.
 
 preparator_buf.end:
 
