@@ -5,7 +5,7 @@
 ; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.out && cmp pmodewc.lit.out pmwca.out && echo OK
+; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.out && cmp pmodewc.lxy.out pmwca.out && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
 ;
 ; !! This implementation is incomplete. It only implements the LZSS-based data compression. It doesn't have any DOS .exe header processing.
@@ -37,16 +37,16 @@ start:		mov si, udata
 		ret  ; Exit successfully (EXIT_SUCCESS) from DOS .com program.
 
 %ifdef DEBUG
-print_nibble:	push ax
+  print_nibble:	push ax
 		add al, '0'
 		cmp al, '9'
 		jna short .ok
 		add al, 'a'-'0'-10
-.ok:		int 0x29
+  .ok:		int 0x29
 		pop ax
 		ret
 
-print_al:	push ax
+  print_al:	push ax
 		aam 0x10
 		xchg al, ah
 		call print_nibble
@@ -55,8 +55,7 @@ print_al:	push ax
 		pop ax
 		ret
 
-print_ax:
-		push ax
+  print_ax:	push ax
 		xchg al, ah
 		call print_al
 		mov al, ah
@@ -64,7 +63,8 @@ print_ax:
 		pop ax
 		ret
 
-print_literal:	push ax
+  print_literal:
+		push ax
 		mov al, 'L'
 		int 0x29
 		mov al, [si]
@@ -74,24 +74,25 @@ print_literal:	push ax
 		pop ax
 		ret
 
-print_distance:	push ax
+  print_distance:
+		push ax
 		mov al, 'D'
 		int 0x29
-.ax:		pop ax
+  .ax:		pop ax
 		push ax
 		call print_ax
-.lf:		mov al, LF
+  .lf:		mov al, LF
 		int 0x29
 		pop ax
 		ret
 
-print_length:	push ax
+  print_length:	push ax
 		mov al, 'E'
 		int 0x29
 		jmp short print_distance.ax
 
-; Prints the bit in CF. Also ruins CF.
-print_bit:	push ax
+  ; Prints the bit in CF. Also ruins CF.
+  print_bit:	push ax
 		pushf
 		mov al, 'B'
 		int 0x29
@@ -101,18 +102,37 @@ print_bit:	push ax
 		int 0x29
 		jmp short print_distance.lf
 
-print_m1:	push ax
+  print_m1:	push ax
 		mov al, 'X'
 		int 0x29
-.al:		pop ax
+  .al:		pop ax
 		push ax
 		call print_al
 		jmp short print_distance.lf
 
-print_m1101:	push ax
+  print_m1101:	push ax
 		mov al, 'Y'
 		int 0x29
 		jmp short print_m1.al
+
+  ; Emits a bit in CF, ruins CF.
+  emit_bit: equ print_bit
+  %macro do_emit_m1 0  ; Emits a byte in AL.
+    call print_m1
+  %endm
+  %macro do_emit_m1101 0  ; Emits a byte in AL.
+    call print_m1101
+  %endm
+%else
+  ; Emits a bit in CF, ruins CF.
+  emit_bit:
+		ret  ; !! Implement this.
+  %macro do_emit_m1 0  ; Emits a byte in AL. Uses ES:DI.
+    stosb
+  %endm
+  %macro do_emit_m1101 0  ; Emits a byte in AL. Uses ES:DI.
+    stosb
+  %endm
 %endif
 
 ; Compresses bytes starting at DS:SI == ES:SI until DS:CX == ES:CX (CX is
@@ -133,6 +153,7 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		call print_literal  ; Value: `byte [si]'.
 %endif
 		inc si  ; Skip over literal byte in the uncompressed input data.
+		mov bp, sp
 		jmp strict near .next_byte
 		; Registers through the .next_start loop below:
 		; * AX, BX: scratch.
@@ -226,6 +247,9 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		cmp di, bx
 		jne short .next_start
 .got_literal_or_match:
+		mov bx, bp  ; BX := best distance.
+		mov bp, sp
+		mov di, [bp+1*2]  ; cdata_end == cdata_cur.
 		cmp dx, byte 2
 		jae short .match
 .literal:
@@ -234,18 +258,12 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		call print_bit
 		call print_literal
 %endif
-		;mov bp, sp  ; !! Do this in .got_literal_or_match, with some `xchg bp, ...'.
-		;mov di, [bp+1*2]  ; cdata_end == cdata_cur.
-		pop bx  ; Restore BX := udata_start. Will be used only for `push bx' below.
-		pop di  ; Restore DI := cdata_end == cdata_cur.
-		movsb  ; Copies literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
-		push di  ; Save cdata_end == cdata_cur.
-		push bx  ; Save udata_start.
+		movsb  ; Copies a literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
 		jmp short .next_byte
 .match:
 		add si, dx  ; Skip over matched bytes in the uncompresed input data.
-		call emit_match  ; Ruins AX, BX, CX, DX, DI, BP, FLAGS. Keeps SI intact
-.next_byte:	mov bp, sp
+		call emit_match  ; Ruins AX, BX, CX, DX, DI, BP, FLAGS. Keeps SI and BP intact.
+.next_byte:	mov [bp+1*2], di  ; cdata_end == cdata_cur.
 		mov cx, [bp+2*2]  ; udata_end.
 		sub cx, si
 		jz short .done
@@ -262,30 +280,13 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		clc
 		call emit_bit
 		mov al, 0
-		call emit_m1
+		do_emit_m1  ; In AL.
 		clc
 		call emit_bit
 		pop si  ; Restore SI := udata_start.
-		pop di  ; Restore DI := cdata_end == cdata_cur.
+		pop ax  ; Clean up old cdata_end == cdata_cur. DI already contains the correct (larger) value.
 		pop cx  ; Restore CX := udata_end.
 		ret
-
-%ifdef DEBUG
-  ; Emits a bit in CF, ruins CF.
-  emit_bit: equ print_bit
-  ; Emits a byte in AL.
-  emit_m1: equ print_m1
-  ; Emits a byte in AL.
-  emit_m1101: equ print_m1101
-%else
-  ; Emits a bit in CF, ruins CF.
-  emit_bit:
-  ; Emits a byte in AL.
-  emit_m1:
-  ; Emits a byte in AL.
-  emit_m1101:
-		ret
-%endif
 
 ; Emits CL (1 <= CL <= 7) bits from AH, highest (of the CL) bits first.
 ; Ruins: CX (sets it to 0), FLAGS.
@@ -298,14 +299,17 @@ emit_bits:
 		loop .next
 		ret
 
-; Emits an encoded match == (distance, length) == (BP, DX) pair. 0 <= BP <= 0xfff; 2 <= DX <= 270. If DX == 2, then also BP <= 0x7ff.
-; Keeps SI intact.
-; Ruins: AX, BX, CX, DX, DI, BP, FLAGS.
+; Emits an encoded match == (distance, length) == (BX, DX) pair. 0 <= BX <= 0xfff; 2 <= DX <= 270. If DX == 2, then also BX <= 0x7ff.
+; Input: SS:BP points to the local variables of the compress function.
+; Input: DS:DI == ES:DI points to the end of the compressed output data (cdata_end == cdata_cur).
+; Output: DI incremented as emit_match and its subfunctions write compressed output bytes to DS:DI == ES:DI.
+; Keeps SI and BP intact.
+; Ruins: AX, BX, CX, DX, DI, BX, FLAGS.
 emit_match:
 %ifdef DEBUG
-		mov ax, bp
+		mov ax, bx
 %else
-		xchg ax, bp  ; AX := distance; BP := junk.
+		xchg ax, bx  ; AX := distance; BX := junk.
 %endif
 		stc
 		call emit_bit
@@ -317,17 +321,17 @@ emit_match:
 .dist_2:	cmp ax, strict word 0xff
 		jae short .dist_2_big
 .dist_2_small:	inc ax
-		call emit_m1
+		do_emit_m1  ; In AL.
 		clc
 		call emit_bit
 		jmp short .after_bits
-.dist_2_big:	call emit_m1
+.dist_2_big:	do_emit_m1  ; In AL.
 		stc
 		call emit_bit
 		mov cl, 3
 		call emit_bits
 		jmp short .after_bits
-.dist_3plus:	call emit_m1
+.dist_3plus:	do_emit_m1  ; In AL.
 		test ah, ah
 		jnz short .dist_3plus_mid_or_big
 .dist_3plus_small:
@@ -372,12 +376,12 @@ emit_match:
 .len_big:	mov ah, 1
 		mov cl, 5   ; Prints 4 0 bits and a 1 bit.
 		call emit_bits
-		call emit_m1101  ; Prints AL.
+		do_emit_m1101  ; In AL.
 .after_bits:
 %ifdef DEBUG
 		xchg ax, dx  ; AX := DX (length); DX := junk.
 		call print_length
-		xchg ax, bp  ; AX := BP (distance); BP := junk.
+		xchg ax, bx  ; AX := BX (distance); BX := junk.
 		call print_distance
 %endif
 		ret
