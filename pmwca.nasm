@@ -8,9 +8,7 @@
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe && cmp pmodew133.exe pmodewc.exe && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodewc.exe && echo OK
 ;
-; !! add writing of the compressed .exe to file whose name is specified on the command line
 ; !! add automatic adjustment of offsets etc.
-; !! add loading and sorting the relocations from the uncompressed .exe.
 ; !! convert from NASM to TASM syntax
 ; !! check diff with `nasm -O999999999'
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
@@ -97,12 +95,12 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		cmp ax, strict word EXEHDRSIZE
 		je short .hdrsize_ok
 		mov bp, 'HT'  ; Input file headers too short.
-.j_fatal:	jmp strict near fatal
-.hdrsize_ok:	mov si, dx  ; DS:DX == pointer to start of exehdr.
+		jmp short .j_fatal
+.hdrsize_ok:	mov si, dx  ; DS:SI := DS:DX == pointer to start of exehdr.
 		mov bp, 'MZ'
-		cmp [si+0*2], bp
+		cmp [si+0*2], bp  ; signature.
 		jne short .j_fatal  ; Bad DOS .exe signature.
-		cmp word [si+4*2], byte EXEHDRSIZE>>4
+		cmp word [si+4*2], byte EXEHDRSIZE>>4  ; hdrsize.
 		mov bp, 'HS'  ; Unsupported DOS .exe header size (hdrsize).
 		jne short .j_fatal
 		mov ah, 0x3f  ; Read from file using handle.
@@ -116,19 +114,54 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		cmp ax, strict word udata.bufend
 		jb short .usize_ok
 		mov bp, 'TL'  ; Input file too long.
-		jmp short .j_fatal
-.usize_ok:	xchg cx, ax  ; CX == offset of end of udata.
+.j_fatal:	jmp strict near fatal
+.usize_ok:	push ax  ; Save offset of end of udata.
 		mov ah, 0x3e  ; Close file using handle.
 		int 0x21  ; DOS syscall.
+		; Now: DS:SI := DS:DX == pointer to start of exehdr.
+		; Falls through.
+
+compress_relocs:
+		mov cx, [si+3*2]  ; nreloc.
+		test cx, cx
+		mov bp, 'NR'  ; No relocations. (apply_relocations) depends on a nonzero nreloc value.
+		jz short read_udata.j_fatal
+		cmp cx, byte (EXEHDRSIZE-0x1c)>>2
+.fatal_tr:	mov bp, 'TR'  ; Too many relocations.
+		ja short read_udata.j_fatal
+		mov di, [si+12*2]  ; relocpos.
+		cmp di, strict word EXEHDRSIZE
+		mov bp, 'RP'  ; Relocations start too late.
+		jnb short read_udata.j_fatal
+		mov ax, cx
+		times 2 add ax, ax  ; AX := nreloc<<2.
+		add ax, di  ; AX += relocpos.
+		cmp ax, strict word EXEHDRSIZE
+		ja short .fatal_tr
+		lea ax, [word di+exehdr]  ; AX := exehdr+relocpos.
+		mov dx, cx  ; nreloc.
+		call heapsort4  ; Sorts relocations by (segment descending, then offset ascending). Ruins AX, BX, DX, SI, BP and FLAGS. Keeps CX and DI.
+.squeeze_relocs:  ; Convert each relocation from dword-sized (offset, segment) pair to word-sized offset+0x100.
+		lea si, [word di+exehdr]  ; SI := exehdr+relocpos.  Source of (offset, segment) pairs.
+		mov di, creloc  ; DS:DI := pointer to the squeezed relocations.
+		;mov cx, [si+3*2]  ; CX == nreloc. Nonzero.
+.next:		lodsw
+		xchg bx, ax  ; BX := offset of the relocation; AX := junk.
+		inc bh  ; BX += 0x100.
+		lodsw
+		times 4 add ax, ax  ; AX <<= 4. Convert from real-mode segment value to byte offset.
+		add ax, bx
+		stosw
+		loop .next
 		; Falls through.
 
 build_preparator_buf:
 		mov si, udata
-		;mov cx, ...  ; CX == offset of end of udata.
+		pop cx  ; CX := offset of end of udata.
 		mov di, cdata
-		call compress  ; Append compressed data to DS:DI == ES:DI.
+		call compress  ; Append compressed data to DS:DI == ES:DI. Ruins AX, BX, CX, DX, SI, BP, FLAGS.
 		mov si, creloc
-		mov cx, (creloc.end-creloc)>>1
+		mov cx, [exehdr+3*2]  ; nreloc. !! Make it shorter by push+pop and passing end-of-udata to compress in DX instead of CX.
 		rep movsw  ; Append compressed relocationss to DS:DI == ES:DI.
 		; Now: DS:DI == pointer to the end of cdata.
 		; Falls through.
@@ -168,6 +201,150 @@ fatal:		mov [fatal_msg.code], bp
 		int 0x21  ; DOS syscall.
 		mov ax, 0x4c01  ; Exit with exit code EXIT_FAILURE (1).
 		int 0x21  ; DOS syscall. Doesn't return.
+
+; Compares relocation dword [ds:si] to dword [ds:di]. It compares by
+; (segment descending, then offset ascending). Thus first it compares the
+; segment values (reversed), and if they are equal, it compares the offset
+; values. Returns CF indicating that the first is smaller than the second.
+;
+; Ruins: AX and FLAGS.
+is_reloc_less:
+		mov ax, [si+2]  ; First segment.
+		cmp [di+2], ax  ; Compare to second segment, in reverse (descending) order.
+		jne short .done  ; CF is already correct: CF == 1 if second is less, CF == 0 otherwise.
+		mov ax, [si]  ; First offset.
+		cmp ax, [di]  ; Compare to second offset.
+		; CF is already correct: CF == 1 if first is less, CF == 0 otherwise.
+.done:		ret
+
+; Swaps dword [ds:si] with dword [ds:di].
+; Ruins: AX and FLAGS.
+memswap4:
+		mov ax, [si+2]
+		xchg ax, [di+2]
+		mov [si+2], ax
+		mov ax, [si]
+		xchg ax, [di]
+		mov [si], ax
+		ret
+
+; Sorts an array of 4 bytes each using the comparison function is_reloc_less.
+; Based on heapsort algorithm H from Knuth TAOCP 5.2.3H. Not stable.
+; Worst case execution time: O(n*log(n)), 3*n*log_2(n) comparisons, and
+; fewer swaps.
+;
+; Inputs: DS:AX: pointer to the start of the array; DX: number of array elements.
+; Ruins: AX, DX, FLAGS.
+;
+; Compared to Knuth's algorith, this implementation contains swaps instead
+; of assignments to temporary variable with swaps.
+;
+; typedef unsigned size_t;
+; #define SIZE 4
+; extern char is_reloc_less(const void *a, const void *b);
+; #pragma aux is_reloc_less __parm [__si] [__di] __modify [__ax] __value [__cf]  /* OpenWatcom C compiler doesn't actually support __value [__cf]. */
+; extern void memswap4(void *a, void *b);
+; #pragma aux memswap4 __parm [__si] [__di] __modify [__ax]
+; void heapsort4(void *base, size_t n);
+; #pragma aux heapsort4 __parm [__ax] [__dx] __modify [__ax __bx __dx __si __bp]
+; void heapsort4(void *base, size_t n) {
+;   char *ap = (char*)base, *lp = ap + SIZE * (n >> 1), *rp = ap + SIZE * (n - 1), *tp, *ip, *jp;
+;   if (n < 2) return;
+;   for (;;) {
+;     if (lp != ap) {
+;       tp = lp -= SIZE;
+;     } else {
+;       memswap4(ap, rp);
+;       if ((rp -= SIZE) == ap) break;
+;       tp = ap;
+;     }
+;     jp = lp;
+;     for (;;) {
+;       ip = jp;
+;       jp += (jp - ap) + SIZE;
+;       if (jp > rp) break;
+;       if (jp < rp && is_reloc_less(jp, jp + SIZE)) jp += SIZE;
+;       if (!is_reloc_less(tp, jp)) break;
+;       memswap4(ip, jp);
+;       tp = jp;
+;     }
+;     memswap4(ip, tp);
+;   }
+; }
+;
+; !! Replace this heapsort implementation with a shorter but slower (O(n*n)) insertion sort.
+heapsort4:
+		push cx  ; Save.
+		push di  ; Save.
+		mov bp, sp
+		sub sp, byte 8
+		mov cx, ax
+		mov bx, dx
+		shr bx, 1
+		shl bx, 1
+		shl bx, 1
+		mov si, ax
+		add si, bx
+		mov word [bp-2], si
+		mov bx, dx
+		shl bx, 1
+		shl bx, 1
+		sub bx, byte 4
+		add bx, ax
+		cmp dx, byte 2
+		jb short .done
+.1:		mov ax, word [bp-2]
+		cmp cx, ax
+		je short .2
+		sub word [bp-2], byte 4
+		mov ax, word [bp-2]
+		mov word [bp-4], ax
+		jmp short .3
+.2:		mov di, bx
+		mov si, ax
+		call memswap4
+		sub bx, byte 4
+		cmp bx, cx
+		je short .done
+		mov word [bp-4], cx
+.3:		mov dx, word [bp-2]
+.4:		mov word [bp-8], dx
+		mov ax, dx
+		sub ax, cx
+		add ax, strict word 4
+		add dx, ax
+		cmp dx, bx
+		ja short .7
+		jae short .5
+		mov ax, dx
+		add ax, strict word 4
+		mov word [bp-6], ax
+		mov di, ax
+		mov si, dx
+		call is_reloc_less
+		;test al, al
+		;je short .5  ; Jump if not less.
+		jnc short .5  ; Jump if not less.
+		mov dx, word [bp-6]
+.5:		mov di, dx  ; jp += SIZE.
+		mov si, word [bp-4]
+		call is_reloc_less
+		;test al, al
+		;je short .7  ; Jump if not less.
+		jnc short .7  ; Jump if not less.
+		mov di, dx
+		mov si, word [bp-8]
+		call memswap4
+		mov word [bp-4], dx
+		jmp short .4
+.7:		mov di, word [bp-4]
+		mov si, word [bp-8]
+		call memswap4
+		jmp short .1
+.done:		mov sp, bp
+		pop di  ; Restore.
+		pop cx  ; Restore.
+		ret
 
 %ifdef DEBUG
   LF equ 10
@@ -299,8 +476,7 @@ MAX_DISTANCE equ 0x1000-1
 ; == ES:DI, using a variant of LZSS. The input must not be empty.
 ;
 ; Output: DS:DI == ES:DI: offset of the end of the compressed output data.
-; Ruins: AX, BX, DX, DI, BP, FLAGS.
-; !! Check for overflow when populating cdata.
+; Ruins: AX, BX, CX, DX, SI, BP, FLAGS.
 compress:	mov ax, 1
 		push ax  ; word [bp+4*2]: Save initial block (tag) next-write power-of-two bitmask.
 		push cx  ; word [bp+3*2]: Save offset of the end of the uncompressed input data (udata_end). Sometimes DI is used instead of this. Remains constant throughout the function.
@@ -445,7 +621,7 @@ compress:	mov ax, 1
 		do_emit_m1  ; In AL.
 		clc
 		call emit_bit
-		; Now DI == the correct, final value for cdata_end == cdata_cur.
+		; Now: DI == the correct, final value for cdata_end == cdata_cur.
 		add sp, byte 5*2  ; Clean up local variables from the stack.
 		ret
 
@@ -549,22 +725,6 @@ emit_match:
 
 fatal_msg:	db 'pmwca: fatal: '
 .code:		db '??', 13, 10
-.end:
-
-; --- These relocation locations have been copied from the last 2*0x1a bytes
-; of pmodew.exe in PMODE/W 1.33.
-
-creloc:
-; * There are 0x1a == 26 relocations.
-; * For each relocation location, the file contains `dw location_value+0x100'.
-; * The locations are sorted by (segment, offset) original.
-		dw 0x02643+0x100, 0x026df+0x100, 0x026fa+0x100, 0x02724+0x100
-		dw 0x02744+0x100, 0x0301a+0x100, 0x030ce+0x100, 0x03144+0x100
-		dw 0x031f2+0x100, 0x0325f+0x100, 0x0343e+0x100, 0x03ce4+0x100
-		dw 0x03d5b+0x100, 0x00006+0x100, 0x00562+0x100, 0x00986+0x100
-		dw 0x00c26+0x100, 0x00cae+0x100, 0x00dce+0x100, 0x00e91+0x100
-		dw 0x00f3f+0x100, 0x00fdc+0x100, 0x01881+0x100, 0x01a00+0x100
-		dw 0x01a1f+0x100, 0x01b32+0x100
 .end:
 
 ; --- Code below here is not executed by compressor, but it is copied near
@@ -783,6 +943,7 @@ udata:		resb MAX_USIZE
 
 		resb ($$-$)&1  ; Align to word boundary.
 exehdr:		resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
+creloc: equ exehdr+0x1c  ; Temporary buffer for compressed relocations.
 
 %if $-$$>0xff00
   %error ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE
