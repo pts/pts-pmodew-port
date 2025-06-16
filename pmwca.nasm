@@ -5,8 +5,8 @@
 ; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.out && pmodewc.exe pmwca.out && echo OK
-; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
+; End-to-end check: nasm-0.98.39 -O999999999 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.out && cmp pmodew133.exe pmwca.out && echo OK
+; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
 ;
 ; !! add reading of uncmpressed .exe from file whose name is specified on the command line
 ; !! add writing of the compressed .exe to file whose name is specified on the command line
@@ -20,11 +20,67 @@ bits 16
 cpu 8086
 org 0x100  ; DOS .com program base `org' value, the first program byte is loaded to this offset.
 
-MAX_LENGTH equ 270
-MAX_DISTANCE_FOR_LENGTH_2 equ 0x800-1
-MAX_DISTANCE equ 0x1000-1
+TAB equ 9
+CR equ 13
 
-start:		mov si, udata
+start:  ; DOS .com program entry point.
+		; Falls through.
+
+parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-output.exe>
+		mov si, 0x81  ; Offset of DOS command-line string within the PSP segment (== CS == DS == ES ==SS), terminated by CR.
+.ws1:		lodsb
+		cmp al, ' '
+		je short .ws1
+		cmp al, TAB
+		je short .ws1
+		cmp al, CR
+		jne short .fn1i
+		mov bp, 'MI'  ; Missing input filename.
+		jmp short .j_fatal
+.fn1i:		mov dx, si
+		dec dx  ; DX := offset of input filename.
+.fn1:		lodsb
+		cmp al, ' '
+		je short .fn1e
+		cmp al, TAB
+		je short .fn1e
+		cmp al, CR
+		jne short .fn1
+.fatal_mo:	mov bp, 'MO'  ; Missing output filename.
+.j_fatal:	jmp near fatal  ; !! Reorganize to save 1 byte for `jmp short'.
+.fn1e:		mov byte [si-1], 0  ; Modify command-line string in place: add terminating NUL for input filename.
+.ws2:		lodsb
+		cmp al, CR
+		je short .fatal_mo
+		cmp al, ' '
+		je short .ws2
+		cmp al, TAB
+		je short .ws2
+.fn2i:		mov di, si
+		dec di  ; DI := offset of output filename.
+.fn2:		lodsb
+		cmp al, ' '
+		je short .fn2e
+		cmp al, TAB
+		je short .fn2e
+		cmp al, CR
+		jne short .fn2
+.fn2e:		mov byte [si-1], 0  ; Modify command-line string in place: add terminating NUL for output filename.
+		db 0xa8  ; Opcode of `test al, ...', to skip over the next `lodsb'.
+.ws3:		lodsb
+		cmp al, ' '
+		je short .ws3
+		cmp al, TAB
+		je short .ws3
+		cmp al, CR
+		je short .done
+.fatal_ta:	mov bp, 'TA'  ; Too many command-line arguments.
+		jmp short .j_fatal
+.done:		; Now: DX == offset of input filename (uncompressed DOS .exe); DI == offset of output filename (compressed DOS .exe).
+		; Falls through.
+
+build_preparator_buf:
+		mov si, udata
 		mov cx, udata.end
 		mov di, cdata
 		call compress  ; Append compressed data to DS:DI == ES:DI.
@@ -178,6 +234,10 @@ fatal:		mov [fatal_msg.code], bp
     stosb
   %endm
 %endif
+
+MAX_LENGTH equ 270
+MAX_DISTANCE_FOR_LENGTH_2 equ 0x800-1
+MAX_DISTANCE equ 0x1000-1
 
 ; Compresses bytes starting at DS:SI == ES:SI until DS:CX == ES:CX (CX is
 ; not a byte count, but an offset!), writing the compressed stream to DS:DI
