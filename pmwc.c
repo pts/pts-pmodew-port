@@ -1027,7 +1027,7 @@ int main(int argc, char **argv) {
   unsigned char *relocsrc;
   unsigned relocofs, relocseg;
 
-  (void)argc;
+  (void)argc; (void)cnblocks;
   if (!argv[0] || !argv[1] || !argv[2]) {
     fprintf(stderr, "Usage: %s <input.exe> <compressed-output.exe>\n", argv[0]);
     return 1;
