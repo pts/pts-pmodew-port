@@ -8,15 +8,15 @@
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe && cmp pmodew133.exe pmodewc.exe && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodewc.exe && echo OK
 ;
-; !! add automatic adjustment of offsets etc.
-; !! convert from NASM to TASM syntax
-; !! check diff with `nasm -O999999999'
+; !! Convert from NASM to TASM syntax.
+; !! Check diff with `nasm -O999999999'. It seems to be OK now.
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
 ;
 
 bits 16
 cpu 8086
-org 0x100  ; DOS .com program base `org' value, the first program byte is loaded to this offset.
+BASE equ 0x100  ; DOS .com program base `org' value, the first program byte is loaded to this offset.
+org BASE
 
 TAB equ 9
 CR equ 13
@@ -45,7 +45,7 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		cmp al, CR
 		jne short .fn1
 .fatal_mo:	mov bp, 'MO'  ; Missing output filename.
-.j_fatal:	jmp near fatal  ; !! Reorganize to save 1 byte for `jmp short'.
+.j_fatal:	jmp near fatal  ; !! size optimization: Reorganize to save 1 byte for `jmp short'.
 .fn1e:		mov byte [si-1], 0  ; Modify command-line string in place: add terminating NUL for input filename.
 .ws2:		lodsb
 		cmp al, CR
@@ -87,7 +87,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		xchg bx, ax  ; BX := filehandle of input file; AX := junk.
 		mov ah, 0x3f  ; Read from file using handle.
 		;mov bx, ...  ; BX == filehandle of input file.
-		mov dx, exehdr  ; DS:DX == pointer to start of buffer to read exehdr to.
+		mov dx, uexehdr  ; DS:DX == pointer to start of buffer to read uexehdr to.
 		mov cx, EXEHDRSIZE  ; Maximum number of bytes to read.
 		int 0x21  ; DOS syscall. Sets AX to the number of bytes read.
 		mov bp, 'RH'  ; File read error reading the uncompressed DOS .exe header.
@@ -96,7 +96,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		je short .hdrsize_ok
 		mov bp, 'HT'  ; Input file headers too short.
 		jmp short .j_fatal
-.hdrsize_ok:	mov si, dx  ; DS:SI := DS:DX == pointer to start of exehdr.
+.hdrsize_ok:	mov si, dx  ; DS:SI := DS:DX == pointer to start of uexehdr.
 		mov bp, 'MZ'
 		cmp [si+0*2], bp  ; signature.
 		jne short .j_fatal  ; Bad DOS .exe signature.
@@ -118,7 +118,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 .usize_ok:	push ax  ; Save offset of end of udata.
 		mov ah, 0x3e  ; Close file using handle.
 		int 0x21  ; DOS syscall.
-		; Now: DS:SI := DS:DX == pointer to start of exehdr.
+		; Now: DS:SI := DS:DX == pointer to start of uexehdr.
 		; Falls through.
 
 compress_relocs:
@@ -138,11 +138,11 @@ compress_relocs:
 		add ax, di  ; AX += relocpos.
 		cmp ax, strict word EXEHDRSIZE
 		ja short .fatal_tr
-		lea ax, [word di+exehdr]  ; AX := exehdr+relocpos.
+		lea ax, [word di+uexehdr]  ; AX := uexehdr+relocpos.
 		mov dx, cx  ; nreloc.
 		call heapsort4  ; Sorts relocations by (segment descending, then offset ascending). Ruins AX, BX, DX, SI, BP and FLAGS. Keeps CX and DI.
 .squeeze_relocs:  ; Convert each relocation from dword-sized (offset, segment) pair to word-sized offset+0x100.
-		lea si, [word di+exehdr]  ; SI := exehdr+relocpos.  Source of (offset, segment) pairs.
+		lea si, [word di+uexehdr]  ; SI := uexehdr+relocpos.  Source of (offset, segment) pairs.
 		mov di, creloc  ; DS:DI := pointer to the squeezed relocations.
 		;mov cx, [si+3*2]  ; CX == nreloc. Nonzero.
 .next:		lodsw
@@ -159,10 +159,41 @@ build_preparator_buf:
 		mov si, udata
 		pop cx  ; CX := offset of end of udata.
 		mov di, cdata
-		call compress  ; Append compressed data to DS:DI == ES:DI. Ruins AX, BX, CX, DX, SI, BP, FLAGS.
+		call compress  ; Append compressed data to DS:DI == ES:DI. Ruins AX, BX, CX, DX, SI, BP, FLAGS. Sets DS:DI to pointer to end of cdata.
 		mov si, creloc
-		mov cx, [exehdr+3*2]  ; nreloc. !! Make it shorter by push+pop and passing end-of-udata to compress in DX instead of CX.
+		mov cx, [uexehdr+3*2]  ; U_RELOC == nreloc. !! size optimization: Make it shorter by push+pop and passing end-of-udata to compress in DX instead of CX.
+		lea bx, [word di-(preparator_buf-$$+BASE)]  ; BX := csize + (cdata - preparator_buf).
+		times 2 add bx, cx  ; BX := csize + (nreloc << 1) + (cdata - preparator_buf).
+		mov [apply_relocations.u_nreloc], cl  ; It fits to 1 byte, we've checked it above at 'TR'.
 		rep movsw  ; Append compressed relocationss to DS:DI == ES:DI.
+		; Now: DS:DI == pointer to the end of cdata.
+		mov ax, bx
+		and ax, strict word 0x1ff
+		mov [cexehdr.lastsize], ax
+		lea ax, [bx+0x1ff]  ; Round up.
+		shr ax, 1
+		mov [cexehdr.nblocks], ah  ; Set low byte. The high byte will remain 0.
+		sub bx, byte 0x20  ; BX := csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4).
+		lea ax, [bx+1]  ; Round up.
+		shr ax, 1
+		mov [copy_code.word_count], ax  ; Number of words to copy.
+		lea si, [uexehdr+7*2]  ; U_SS.
+		lodsw  ; AX := U_SS; SI += 2 (to U_SP).
+		mov [cexehdr.ss], ax
+		mov [jump_to_program.u_ss], ax
+		lea bx, [bx+0xf]  ; Round up.
+		mov cl, 4
+		shr bx, cl  ; BX := (csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4) + 0xf) >> 4.
+		add ax, strict word ((0x100+0xf)>>4)+1  ; Why the +1? Maybe it's related to the bug in the original PMODE/W compressor.
+		add ax, bx  ; AX := (U_SS + ((0x100 + 0xf) >> 4)) + ((csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4) + 0xf) >> 4) + 1.
+		mov [cexehdr.minalloc], ax  ; The value computed above is larger than needed, so this is wasting memory at runtime. This is probably a bug in the original PMODE/W compressor.
+		lodsw  ; AX := U_SP. SI += 2 (to U_CHECKSUM).
+		mov [jump_to_program.u_sp], ax
+		lodsw  ; AX := U_CHECKSUM (will be ignored). SI += 2 (to U_IP).
+		lodsw  ; AX := U_IP. SI += 2 (to U_CS).
+		mov [uncompressed_start_far_ptr.u_ip], ax
+		lodsw  ; AX := U_CS. SI += 2 (to U_RELOCPOS, will be ignored).
+		mov [uncompressed_start_far_ptr.u_cs], ax
 		; Now: DS:DI == pointer to the end of cdata.
 		; Falls through.
 
@@ -272,7 +303,7 @@ memswap4:
 ;   }
 ; }
 ;
-; !! Replace this heapsort implementation with a shorter but slower (O(n*n)) insertion sort.
+; !! size optimization: Replace this heapsort implementation with a shorter but slower (O(n*n)) insertion sort.
 heapsort4:
 		push cx  ; Save.
 		push di  ; Save.
@@ -744,24 +775,24 @@ fatal_msg:	db 'pmwca: fatal: '
 
 preparator_buf:
 
-exe_header:  ; DOS .exe header: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
+cexehdr:  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
 ; load module length = 0x2cdc
 .signature:	db 'MZ'
-.lastsize:	dw 0x00dc  ; length of load module mod 200H
-.nblocks:	dw 0x0017  ; number of 200H pages in load module
-.nreloc:	dw 0x0000  ; number of relocation items; no relocations.
-.hdrsize:	dw 0x0002  ; size of header in paragraphs
-.minalloc:	dw 0x06b4  ; minimum number of paragraphs required above load mod. mem_para == (0x17<<5)-2+0x6b4 == 0x992. !! How was this calculated? This looks like huuuuge.
-.maxalloc:	dw 0xffff  ; maximum number of paragraphs required above load mod
-.ss:		dw 0x03d7  ; offset of stack segment in load module. Same as U_SS.
-.sp:		dw 0x0100  ; initial value of SP. Constant.
-.checksum:	dw 0x0000  ; checksum
-.ip:		dw 0x005e  ; initial value of IP
-.cs:		dw 0x0000  ; offset of code segment within load module (segment)
-.relocpos:	dw 0x003e  ; file offset of first relocation item
-.noverlay:	dw 0x0000  ; overlay number
+.lastsize:	dw 0       ; Length of load module mod 200H. build_preparator_buf will populate it.
+.nblocks:	dw 0       ; Number of 200H pages in load module. build_preparator_buf will populate its low byte.
+.nreloc:	dw 0       ; Number of relocation items; no relocations.
+.hdrsize:	dw 2       ; Size of header in paragraphs.
+.minalloc:	dw 0       ; Minimum number of paragraphs required above load mod. build_preparator_buf will populate it with a value is larger than needed. This is probably a bug in the original PMODE/W compressor.
+.maxalloc:	dw -1      ; Maximum number of paragraphs required above load mod.
+.ss:		dw 0       ; Offset of stack segment in load module. Same as U_SS. build_preparator_buf will populate it.
+.sp:		dw 0x100   ; Initial value of SP. Constant.
+.checksum:	dw 0       ; Checksum.
+.ip:		dw exe_start-exe_image  ; Initial value of IP.
+.cs:		dw 0       ; Offset of code segment within load module (segment).
+.relocpos:	dw 0x003e  ; File offset of first relocation item. Unused because of nreloc == 0.
+.noverlay:	dw 0      ; Overlay number. Unused.
 
-padding:	dd 0  ; At file offset 0x1c.
+padding:	dd 0  ; At file offset 0x1c. Unused.
 
 exe_image:
 
@@ -794,7 +825,9 @@ pmodew_config:
 
 copyright: db 'PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.'
 
-uncompressed_start_far_ptr: dw 0x47d, 0x21c  ; U_IP, U_CS.
+uncompressed_start_far_ptr:
+.u_ip: dw 0  ; build_preparator_buf will populate it.
+.u_cs: dw 0  ; build_preparator_buf will populate it.
 
 ; Identical version of 8086 opcode encoding.
 _mov_bl_al equ 0xd88a
@@ -814,7 +847,8 @@ copy_code:
 		mov di, 0x100  ; The compressed SP value.
 		dw _mov_si_di
 		push di  ; 0x100.
-		mov cx, 0x165e ; !! (cdata.end-exe_image+1)>>1  ; Number of words to copy.
+		mov cx, 0  ; Number of words to copy: (cdata.end-exe_image+1)>>1. build_preparator_buf will populate it.
+.word_count: equ $-2
 		rep movsw  ; DS == orig_CS-0x10 == PSP_segment.
 		push es  ; orig_CS+0x3d7.
 		push ds  ; orig_CS-0x10.
@@ -921,7 +955,8 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 apply_relocations:
 		pop dx  ; Restore DX := orig_CS, pushed by `push cs' in setup_code.
 		add [0x5a+0x100+2], dx  ; uncompressed_start_far_ptr-exe_image+0x100+2: Relocate segment in uncompressed_start_far_ptr. Constant.
-		mov cl, 0x1a  ; CX := (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0.
+		mov cl, 0  ; CX := U_NRELOC == (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0. build_preparator_buf will populate it.
+.u_nreloc: equ $-1
 .next:		lodsw  ; Load next offset from relocation table. Format: an array of offsets usign segment orig_CS-0x10 == PSP_segment.
 		dw _mov_bx_ax  ; `xchg bx, ax' would have been shorter.
 		add [es:bx], dx  ; Apply single relocation.
@@ -930,9 +965,11 @@ apply_relocations:
 jump_to_program:
 		pop ds  ; Restore DS := PSP_segment. ES is already PSP_segment.
 		cli
-		add dx, 0x3d7 ; U_SS. Calculated.
+		add dx, strict word 0 ; U_SS. build_preparator_buf will populate it.
+.u_ss: equ $-2
 		mov ss, dx  ; SS := orig_CS+U_SS.
-		mov sp, 0x400  ; U_SP. Calculated.
+		mov sp, 0  ; U_SP. build_preparator_buf will populate it.
+.u_sp: equ $-2
 		sti
 		jmp far [cs:0x5a+0x100]  ; ncompressed_start_far_ptr-exe_image+0x100. Jump to uncompressed_start_far_ptr. Constant.
 
@@ -948,8 +985,8 @@ udata:		resb MAX_USIZE
 .bufend:
 
 		resb ($$-$)&1  ; Align to word boundary.
-exehdr:		resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
-creloc: equ exehdr+0x1c  ; Temporary buffer for compressed relocations.
+uexehdr:		resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
+creloc: equ uexehdr+0x1c  ; Temporary buffer for compressed relocations.
 
 %if $-$$>0xff00
   %error ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE
