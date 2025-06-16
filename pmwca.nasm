@@ -5,19 +5,17 @@
 ; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.out && pmodew133.bin pmwca.out && echo OK
+; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.out && pmodewc.exe pmwca.out && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
 ;
-; !! This implementation is incomplete. It only implements the LZSS-based data compression. It doesn't have any DOS .exe header processing.
+; !! read uncmpressed .exe from file whose name is specified on the command line
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
 ;
 
 bits 16
 cpu 8086
-BASE equ 0x100  ; DOS .com program base `org' value, the first program byte is loaded to this offset.
-org BASE
+org 0x100  ; DOS .com program base `org' value, the first program byte is loaded to this offset.
 
-LF equ 10
 MAX_LENGTH equ 270
 MAX_DISTANCE_FOR_LENGTH_2 equ 0x800-1
 MAX_DISTANCE equ 0x1000-1
@@ -25,11 +23,14 @@ MAX_DISTANCE equ 0x1000-1
 start:		mov si, udata
 		mov cx, udata.end
 		mov di, cdata
-		call compress
+		call compress  ; Append compressed data to DS:DI == ES:DI.
+		mov si, creloc
+		mov cx, (creloc.end-creloc)>>1
+		rep movsw  ; Append compressed relocationss to DS:DI == ES:DI.
 %ifndef DEBUG
 		mov ah, 0x40  ; Write to file using handle.
 		mov bx, 1  ; STDOUT_FILENO.
-		mov dx, cdata  ; DS:DI == pointer to start of buffer to be written.
+		mov dx, preparator_buf  ; DS:DI == pointer to start of buffer to be written.
 		mov cx, di
 		sub cx, dx  ; CX := DI - cdata. CX == number of bytes to write.
 		int 0x21  ; DOS syscall.
@@ -37,6 +38,8 @@ start:		mov si, udata
 		ret  ; Exit successfully (EXIT_SUCCESS) from DOS .com program.
 
 %ifdef DEBUG
+  LF equ 10
+
   print_nibble:	push ax
 		add al, '0'
 		cmp al, '9'
@@ -411,9 +414,16 @@ emit_match:
 udata:		incbin UEXEFN, 0x200
 .end:
 
+creloc:		incbin 'pmodewc.exe', 0x2ca8, 2*26  ; !!! Sort and compress relocations.
+.end:
+
+preparator_buf: incbin 'pmodewc.exe', 0, 0x142  ; !!! Prepare .exe header and preparator code.
 absolute $
-		resb ($-$$)&1
-_bss:
 cdata:		resb 0x5000
+
+%if $-$$>0xff00
+  %error ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE
+  db 1/0
+%endif
 
 ; __END__
