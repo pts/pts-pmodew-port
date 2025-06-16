@@ -427,38 +427,15 @@ heapsort4:
 		int 0x29
 		jmp short print_m1.al
 
-  ; Emits a bit in CF, ruins CF.
-  emit_bit: equ print_bit
-  %macro do_emit_m1 0  ; Emits a byte in AL.
+  %macro do_emit_m1 0  ; Emits a byte in AL. Uses ES:DI.
     call print_m1
+    stosb
   %endm
-  %macro do_emit_m1101 0  ; Emits a byte in AL.
+  %macro do_emit_m1101 0  ; Emits a byte in AL. Uses ES:DI.
     call print_m1101
+    stosb
   %endm
 %else
-  ; Emits a bit in CF, ruins CF.
-  ; Input: SS:BP points to the local variables of the compress function.
-  ; Input: DS:DI == ES:DI points to the end of the compressed output data (cdata_end == cdata_cur).
-  ; Output: DI incremented when a new 16-bit block (tag) word is emitted to DS:DI == ES:DI.
-  ; Input and output: The offset of the current 16-bit block (tag) word value is in word [bp+2*2]. The segment is DS == ES. Will be modified.
-  ; Input and output: The block (tag) next-write power-of-two bitmask is in word [bp+4*2]. Will be modified.
-  ; Ruins: FLAGS (incuding CF).
-  emit_bit:
-		push ax  ; Save.
-		push bx  ; Save.
-		mov bx, [bp+2*2]
-		mov ax, [bp+4*2]
-		jnc short .done_or  ; Uses the CF value at the beginning of emit_bit.
-		or [bx], ax
-  .done_or:	add ax, ax
-		jnz short .done
-		mov [bp+2*2], di
-		stosw  ; Append new 16-bit block (tag) word value, with initial value of 0. Uses ES:DI.
-		inc ax  ; AX := 1.
-  .done:	mov [bp+4*2], ax
-		pop bx  ; Restore.
-		pop ax  ; Restore.
-		ret
   %macro do_emit_m1 0  ; Emits a byte in AL. Uses ES:DI.
     stosb
   %endm
@@ -466,6 +443,35 @@ heapsort4:
     stosb
   %endm
 %endif
+
+; Emits a bit in CF, ruins CF.
+; Input: SS:BP points to the local variables of the compress function.
+; Input: DS:DI == ES:DI points to the end of the compressed output data (cdata_end == cdata_cur).
+; Output: DI incremented when a new 16-bit block (tag) word is emitted to DS:DI == ES:DI.
+; Input and output: The offset of the current 16-bit block (tag) word value is in word [bp+2*2]. The segment is DS == ES. Will be modified.
+; Input and output: The block (tag) next-write power-of-two bitmask is in word [bp+4*2]. Will be modified.
+; Ruins: FLAGS (incuding CF).
+emit_bit:
+%ifdef DEBUG
+		pushf
+		call print_bit
+		popf
+%endif
+		push ax  ; Save.
+		push bx  ; Save.
+		mov bx, [bp+2*2]
+		mov ax, [bp+4*2]
+		jnc short .done_or  ; Uses the CF value at the beginning of emit_bit.
+		or [bx], ax
+.done_or:	add ax, ax
+		jnz short .done
+		mov [bp+2*2], di
+		stosw  ; Append new 16-bit block (tag) word value, with initial value of 0. Uses ES:DI.
+		inc ax  ; AX := 1.
+.done:		mov [bp+4*2], ax
+		pop bx  ; Restore.
+		pop ax  ; Restore.
+		ret
 
 MAX_LENGTH equ 270
 MAX_DISTANCE_FOR_LENGTH_2 equ 0x800-1
