@@ -166,7 +166,10 @@ compress_relocs:
 .squeeze_relocs:  ; Convert each relocation from dword-sized (offset, segment) pair to word-sized offset+0x100.
 		lea si, [word di+uexehdr]  ; SI := uexehdr+relocpos.  Source of (offset, segment) pairs.
 		mov di, creloc  ; DS:DI := pointer to the squeezed relocations.
+		pop dx  ; DX := offset of end of udata.
 		;mov cx, [si+3*2]  ; CX == nreloc. Nonzero.
+		push cx  ; Save nreloc.
+		push di  ; Save creloc.
 .next:		lodsw
 		xchg bx, ax  ; BX := offset of the relocation; AX := junk.
 		inc bh  ; BX += 0x100.
@@ -179,11 +182,11 @@ compress_relocs:
 
 build_preparator_buf:
 		mov si, udata
-		pop cx  ; CX := offset of end of udata.
 		mov di, cdata
+		;mov dx, ...  ; DX is already correct: DX := offset of end of udata.
 		call compress  ; Append compressed data to DS:DI == ES:DI. Ruins AX, BX, CX, DX, SI, BP, FLAGS. Sets DS:DI to pointer to end of cdata.
-		mov si, creloc
-		mov cx, [uexehdr+3*2]  ; U_RELOC == nreloc. !! size optimization: Make it shorter by push+pop and passing end-of-udata to compress in DX instead of CX.
+		pop si  ; Restore SI := creloc.
+		pop cx  ; Restore CX := nreloc.
 		lea bx, [word di-(preparator_buf-$$+BASE)]  ; BX := csize + (cdata - preparator_buf).
 		times 2 add bx, cx  ; BX := csize + (nreloc << 1) + (cdata - preparator_buf).
 		mov [apply_relocations.u_nreloc], cl  ; It fits to 1 byte, we've checked it above at 'TR'.
@@ -515,7 +518,7 @@ MAX_LENGTH equ 270
 MAX_DISTANCE_FOR_LENGTH_2 equ 0x800-1
 MAX_DISTANCE equ 0x1000-1
 
-; Compresses bytes starting at DS:SI == ES:SI until DS:CX == ES:CX (CX is
+; Compresses bytes starting at DS:SI == ES:SI until DS:DX == ES:DX (DX is
 ; not a byte count, but an offset!), writing the compressed stream to DS:DI
 ; == ES:DI, using a variant of LZSS. The input must not be empty.
 ;
@@ -523,7 +526,7 @@ MAX_DISTANCE equ 0x1000-1
 ; Ruins: AX, BX, CX, DX, SI, BP, FLAGS.
 compress:	mov ax, 1
 		push ax  ; word [bp+4*2]: Save initial block (tag) next-write power-of-two bitmask.
-		push cx  ; word [bp+3*2]: Save offset of the end of the uncompressed input data (udata_end). Sometimes DI is used instead of this. Remains constant throughout the function.
+		push dx  ; word [bp+3*2]: Save offset of the end of the uncompressed input data (udata_end). Sometimes DI is used instead of this. Remains constant throughout the function.
 		movsb  ; Uses DS:SI and ES:DI. Copy literal byte to compressed output data.
 		push di  ; word [bp+2*2]: Save offset of the current 16-bit block (tag) word value. The segment is DS == ES.
 		dec ax ; AX := 0.
