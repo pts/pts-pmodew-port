@@ -5,7 +5,7 @@
 ; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.out && cmp pmodewc.lxy.out pmwca.out && echo OK
+; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.out && pmodew133.bin pmwca.out && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
 ;
 ; !! This implementation is incomplete. It only implements the LZSS-based data compression. It doesn't have any DOS .exe header processing.
@@ -125,8 +125,28 @@ start:		mov si, udata
   %endm
 %else
   ; Emits a bit in CF, ruins CF.
+  ; Input: SS:BP points to the local variables of the compress function.
+  ; Input: DS:DI == ES:DI points to the end of the compressed output data (cdata_end == cdata_cur).
+  ; Output: DI incremented when a new 16-bit block (tag) word is emitted to DS:DI == ES:DI.
+  ; Input and output: The offset of the current 16-bit block (tag) word value is in word [bp+2*2]. The segment is DS == ES. Will be modified.
+  ; Input and output: The block (tag) next-write power-of-two bitmask is in word [bp+4*2]. Will be modified.
+  ; Ruins: FLAGS (incuding CF).
   emit_bit:
-		ret  ; !! Implement this.
+		push ax  ; Save.
+		push bx  ; Save.
+		mov bx, [bp+2*2]
+		mov ax, [bp+4*2]
+		jnc short .done_or  ; Uses the CF value at the beginning of emit_bit.
+		or [bx], ax
+  .done_or:	add ax, ax
+		jnz short .done
+		mov [bp+2*2], di
+		stosw  ; Append new 16-bit block (tag) word value, with initial value of 0. Uses ES:DI.
+		inc ax  ; AX := 1.
+  .done:	mov [bp+4*2], ax
+		pop bx  ; Restore.
+		pop ax  ; Restore.
+		ret
   %macro do_emit_m1 0  ; Emits a byte in AL. Uses ES:DI.
     stosb
   %endm
@@ -140,15 +160,18 @@ start:		mov si, udata
 ; == ES:DI, using a variant of LZSS. The input must not be empty.
 ;
 ; Output: DS:DI == ES:DI: offset of the end of the compressed output data.
-;         DS:SI == ES:SI: offset of the start of the uncompressed input data (same as input).
-;         DS:CX == ES:CX: offset of the end of the uncompressed input data (same as input).
 ; Ruins: AX, BX, DX, DI, BP, FLAGS.
 ; !! Check for overflow when populating cdata.
-compress:	push cx  ; Save offset of the end of the uncompressed input data (udata_end). Remains constant throughout the function.
+compress:	mov ax, 1
+		push ax  ; word [bp+4*2]: Save initial block (tag) next-write power-of-two bitmask.
+		push cx  ; word [bp+3*2]: Save offset of the end of the uncompressed input data (udata_end). Sometimes DI is used instead of this. Remains constant throughout the function.
 		movsb  ; Uses DS:SI and ES:DI. Copy literal byte to compressed output data.
-		push di  ; Save offset of the end of the compressed output data (cdata_end == cdata_cur). Will be incremented throughout the function.
+		push di  ; word [bp+2*2]: Save offset of the current 16-bit block (tag) word value. The segment is DS == ES.
+		dec ax ; AX := 0.
+		stosw  ; Initial 16-bit block (tag) word value (0).
+		push di  ; word [bp+1*2]: Save offset of the end of the compressed output data (cdata_end == cdata_cur). Will be incremented throughout the function.
 		dec si
-		push si  ; Save offset of the start of the uncompressed input data (udata_start). Remains constant throughout the function.
+		push si  ; word [bp+0*2]: Save offset of the start of the uncompressed input data (udata_start). Remains constant throughout the function.
 %ifdef DEBUG
 		call print_literal  ; Value: `byte [si]'.
 %endif
@@ -253,9 +276,9 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		cmp dx, byte 2
 		jae short .match
 .literal:
-%ifdef DEBUG
 		clc
-		call print_bit
+		call emit_bit
+%ifdef DEBUG
 		call print_literal
 %endif
 		movsb  ; Copies a literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
@@ -264,7 +287,7 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		add si, dx  ; Skip over matched bytes in the uncompresed input data.
 		call emit_match  ; Ruins AX, BX, CX, DX, DI, BP, FLAGS. Keeps SI and BP intact.
 .next_byte:	mov [bp+1*2], di  ; cdata_end == cdata_cur.
-		mov cx, [bp+2*2]  ; udata_end.
+		mov cx, [bp+3*2]  ; udata_end.
 		sub cx, si
 		jz short .done
 		cmp cx, MAX_LENGTH
@@ -283,9 +306,8 @@ compress:	push cx  ; Save offset of the end of the uncompressed input data (udat
 		do_emit_m1  ; In AL.
 		clc
 		call emit_bit
-		pop si  ; Restore SI := udata_start.
-		pop ax  ; Clean up old cdata_end == cdata_cur. DI already contains the correct (larger) value.
-		pop cx  ; Restore CX := udata_end.
+		; Now DI == the correct, final value for cdata_end == cdata_cur.
+		add sp, byte 5*2  ; Clean up local variables from the stack.
 		ret
 
 ; Emits CL (1 <= CL <= 7) bits from AH, highest (of the CL) bits first.
@@ -304,7 +326,7 @@ emit_bits:
 ; Input: DS:DI == ES:DI points to the end of the compressed output data (cdata_end == cdata_cur).
 ; Output: DI incremented as emit_match and its subfunctions write compressed output bytes to DS:DI == ES:DI.
 ; Keeps SI and BP intact.
-; Ruins: AX, BX, CX, DX, DI, BX, FLAGS.
+; Ruins: AX, BX, CX, DX, FLAGS.
 emit_match:
 %ifdef DEBUG
 		mov ax, bx
