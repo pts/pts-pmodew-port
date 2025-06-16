@@ -5,8 +5,8 @@
 ; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: nasm-0.98.39 -O999999999 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.out && cmp pmodew133.exe pmwca.out && echo OK
-; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && echo OK
+; End-to-end check: nasm-0.98.39 -O999999999 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe && cmp pmodew133.exe pmodewc.exe && echo OK
+; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodewc.exe && echo OK
 ;
 ; !! add writing of the compressed .exe to file whose name is specified on the command line
 ; !! add automatic adjustment of offsets etc.
@@ -55,8 +55,8 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		je short .ws2
 		cmp al, TAB
 		je short .ws2
-.fn2i:		mov di, si
-		dec di  ; DI := offset of output filename.
+.fn2i:		dec si  ; SI := offset of output filename.
+		push si  ; Save offset of output filename. Will be popped by `pop dx' in write_udata.
 .fn2:		lodsb
 		cmp al, ' '
 		je short .fn2e
@@ -85,7 +85,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		int 0x21  ; DOS syscall. Sets AX to the filehandle.
 		mov bp, 'OI'  ; Error opening input file.
 		call fatal_if_c
-		xchg bx, ax  ; BX := filehandle; AX := junk.
+		xchg bx, ax  ; BX := filehandle of input file; AX := junk.
 		mov ah, 0x3f  ; Read from file using handle.
 		;mov bx, ...  ; BX == filehandle of input file.
 		mov dx, exehdr  ; DS:DX == pointer to start of buffer to read exehdr to.
@@ -129,15 +129,27 @@ build_preparator_buf:
 		mov si, creloc
 		mov cx, (creloc.end-creloc)>>1
 		rep movsw  ; Append compressed relocationss to DS:DI == ES:DI.
-%ifndef DEBUG
+		; Now: DS:DI == pointer to the end of cdata.
+		; Falls through.
+
+write_cdata:	mov ah, 0x3c  ; Open file for writing, optionally create it, truncate it, using handle.
+		xor cx, cx  ; File attributes: none.
+		pop dx  ; Restore DX := output filename.
+		int 0x21  ; DOS syscall. Sets AX to the filehandle.
+		mov bp, 'OO'  ; Error opening input file.
+		call fatal_if_c
+		xchg bx, ax  ; BX := filehandle of input file; AX := junk.
 		mov ah, 0x40  ; Write to file using handle.
-		mov bx, 1  ; STDOUT_FILENO.
+		;mov bx, ...  ; BX == filehandle of output file.
 		mov dx, preparator_buf  ; DS:DX == pointer to start of buffer to be written.
-		mov cx, di
-		sub cx, dx  ; CX := DI - cdata. CX == number of bytes to write.
+		mov cx, di  ; Pointer to the end of cdata.
+		sub cx, dx  ; CX := DI - preparator_buf. CX == number of bytes to write.
 		mov bp, 'WR'  ; File write error.
 		int 0x21  ; DOS syscall.
 		call fatal_if_c
+%if 0  ; No need to close the output file, DOS will close it right below, when to process exits.
+		mov ah, 0x3e  ; Close file using handle.
+		int 0x21  ; DOS syscall.
 %endif
 		ret  ; Exit successfully (EXIT_SUCCESS) from DOS .com program.
 
