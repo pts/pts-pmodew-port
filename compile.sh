@@ -129,8 +129,8 @@ if false; then
   minicc -DPMWV=33 -o pmwc pmwc.c
   ./pmwc pmodewu.exe pmodew.exe
 elif false; then
-  gcc -g -O2 -g -W -Wall -DPMWV=33 -o pmwc pmwc.c
-  valgrind ./pmwc pmodewu.exe pmodew.exe
+  gcc -g -O2 -ansi -pedantic -W -Wall -DPMWV=33 -o pmwc pmwc.c
+  valgrind ./pmwc pmodewu.exe pmodew.exe  # Works and it is faster without valgrind.
 elif true; then
   test "$WATCOM"
   test -f "$WATCOM/lh/stdio.h"
@@ -148,7 +148,7 @@ elif true; then
   test -f "$WATCOM/h/stdio.h"
   export INCLUDE="$WATCOM/h"  # For OpenWatcom.
   rm -f pmwc.exe pmwc.obj pmwc.o
-  owcc -bdos -mcmodel=s -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc.exe pmwc.c
+  owcc -bdos -mcmodel=s -std=c89 -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc.exe pmwc.c
   unset INCLUDE
   "$kvikdos" pmwc.exe pmodewu.exe pmodew.exe
 fi
