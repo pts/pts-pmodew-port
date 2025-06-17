@@ -20,12 +20,11 @@
  * FD4. The PMODE/W 1.33 stub uses -DCOMPRESS_EARLYNEXTBLOCK=1 (the next block is read at the end of the previous block, not later, when its first bit is first needed); PMWLITE uses -DCOMPRESS_EARLYNEXTBLOCK=0.
  * FD5. The PMODE/W 1.33 stub compressor uses -DCOMPRESS_LONGDIST=1 (for each match, the longest distance whose bit encoding is not longer than of the shortest distance is used, rather than the shortest distance), the decompressor doesn't care; PMWLITE uses -DCOMPRESS_LONGDIST=0.
  *
- * !! make it bitwise identical by addressing FD5
- * !! get rid of inline assembly #pragma
+ * For DOS, this program can compiled with the small memory model (<64 KiB of data usage in total): `tcc -ms' or `owcc -mcmodel=s'.
+ *
  * !! use unsigned char everywhere
  * !! get rid of forcing little-endian
  * !! get rid of requirement of unaligned access
- * !! make sure it works with sizeof(unsigned) < 4
  * !! make sure it works with signed char and unsigned char
  *
  * Pseudo-logic to decompress data:
@@ -96,9 +95,9 @@
  *           GOTO movestring;
  */
 
-#include <malloc.h>
 #if 0
 #  include <mem.h>
+#  include <malloc.h>
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -229,7 +228,6 @@ static void BufInitBitOPos(void);
 #  error ERROR_BAD_COMPRESS_BITS COMPRESS_BITS
 #endif
 typedef char static_assert_sizeof_bufbit_t[sizeof(bufbit_t) == COMPRESS_BITS >> 3 ? 1 : -1];  /* A larger bufbit_t would overwrite too many bytes in `*BufBitOPos = BufBitBuf;'. */
-typedef char static_assert_sizeof_unsignedt[sizeof(unsigned) == 4];  /* !! Make it work without this. */
 
 /* __WATCOMC__ has min(3), but glibc doesn't have min(3). */
 static int mymin(int a, int b) { return a < b ? a : b; }
@@ -371,7 +369,7 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
   if (!HashInit ())
     return ENCODE_NOTENOUGHMEM;
 
-  if ((r = BufInit (dst, src, size)))
+  if ((r = BufInit (dst, src, size)) != 0)
   {
     HashUninit ();
     return r;
@@ -413,7 +411,7 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
       HashAdd (HashVal (i), LPos++);
     }
 
-    if ((r = BufUpdate ()))
+    if ((r = BufUpdate ()) != 0)
       break;
   }
   }
@@ -595,7 +593,7 @@ static int BufInit (FILE *dst, FILE *src, unsigned size)
   BufBitBuf = 0;
   BufBitCount = 0;
 
-  if ((r = BufUpdate ()))
+  if ((r = BufUpdate ()) != 0)
   {
     BufUninit ();
     return r;
