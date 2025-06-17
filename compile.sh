@@ -2,7 +2,9 @@
 # by pts@fazekas.hu at Thu Jun 12 11:50:15 CEST 2025
 set -ex
 unset LANG LANGUAGE INC LIB LIBDIR WLINK_LNK INCLUDE
-export LC_ALL=C TZ=GMT
+export LC_ALL=C  # For reproducible builds.
+export TZ=GMT  # For reproducible builds.
+test "$ZSH_VERSION" && set -y 2>/dev/null  # SH_WORD_SPLIT for zsh(1). It's an invalid option in bash(1), and it's harmful (prevents echo) in ash(1).
 
 test "$0" = "${0%/*}" || cd "${0%/*}"
 
