@@ -151,7 +151,7 @@ fi
 #test "$(sha256sum pmodew.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodew.exe"  # Same as of pmodew133rrr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 .
 test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01). For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 .
 
-if true; then  # No need for debugging.
+if ! test "$4"; then  # No need for debugging.
   nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew.exe'" -DHUEXEFN="'pmodewu.exe'" -o dec.com dec.nasm
   "$kvikdos" dec.com >pmodew.uprog.exe
   cmp pmodew.uprog.exe pmodewu.exe
