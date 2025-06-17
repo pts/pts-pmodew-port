@@ -1,11 +1,20 @@
 /*
- * pmwc.c: PMODE/W stub compressor
+ * pmwc.c: PMODE/W stub compressor in C89 (ANSI C)
  * by pts@fazekas.hu at Wed Jun 11 01:25:35 CEST 2025
  *
  * Compile with: owcc -blinux -I"$WATCOM/lh" -Os -s -fno-stack-check -march=i386 -W -Wall -Wno-n308 -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 -DDEBUG -o pmwc pmwc.c
  *
+ * This C89 program is endian-independent, it doesn't do any unaligned
+ * memory access, its data usage (without for its code) is less than 64 KiB,
+ * it doesn't depend on sizeof(int), and it uses only the C89 standard
+ * library. Thus it is fairly portable.
+ *
+ * This C program should compile and work correctly with may C compilers.
+ * These have been tested: GCC, Clang, OpenWatcom C compiler, Turbo C++
+ * 1.01.
+ *
  * This compressor is not a general DOS .exe executable compressor (packer),
- * it has many hidden assumption of its input, not only its size (<~60 KiB,
+ * it has many hidden assumptions of its input, not only its size (<~60 KiB,
  * typically 16 KiB).
  *
  * This compressor implements a variant of LZSS, with a stream encoding
@@ -20,7 +29,8 @@
  * FD4. The PMODE/W 1.33 stub uses -DCOMPRESS_EARLYNEXTBLOCK=1 (the next block is read at the end of the previous block, not later, when its first bit is first needed); PMWLITE uses -DCOMPRESS_EARLYNEXTBLOCK=0.
  * FD5. The PMODE/W 1.33 stub compressor uses -DCOMPRESS_LONGDIST=1 (for each match, the longest distance whose bit encoding is not longer than of the shortest distance is used, rather than the shortest distance), the decompressor doesn't care; PMWLITE uses -DCOMPRESS_LONGDIST=0.
  *
- * For DOS, this program can compiled with the small memory model (<64 KiB of data usage in total): `tcc -ms' or `owcc -mcmodel=s'.
+ * For DOS, this program can compiled with the small memory model (<64 KiB
+ * of data usage in total): `tcc -ms' or `owcc -mcmodel=s'.
  *
  * Pseudo-logic to decompress data:
  *
@@ -90,18 +100,9 @@
  *           GOTO movestring;
  */
 
-#if 0
-#  include <mem.h>
-#  include <malloc.h>
-#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#if defined(_WIN32) || defined(MSDOS) || defined(__MSDOS__) || defined(__NT__) || defined(__DOS__)
-#  include <io.h>
-#else
-#  include <unistd.h>
-#endif
 
 #ifdef PMWV  /* Apply defaults to make the compiler command line shorter for DOS. */
 #  ifndef COMPRESS_BITS
@@ -218,6 +219,11 @@ static void BufInitBitOPos(void);
 static int mymin(int a, int b) { return a < b ? a : b; }
 
 static unsigned char *mymincp(unsigned char *a, unsigned char *b) { return a < b ? a : b; }
+
+/* !! TODO(pts): Make it smaller for x86. */
+static unsigned get_le16(const unsigned char *p) {
+  return p[0] | p[1] << 8;
+}
 
 #if COMPRESS_BITS==32
   /* !! TODO(pts): Make it smaller for x86 (with little-endian unaligned memory access). */
@@ -389,7 +395,7 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes)
     return r;
   }
 
-  HashAdd (HashVal (*(unsigned short *)IBuf), 0);
+  HashAdd (HashVal(get_le16(IBuf)), 0);
 
   BufPutLiteral(*IBuf);
   ++IBuf;
@@ -411,18 +417,18 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes)
     if (LPos >= DictSize)
     {
       for (i=DictSize; i>DictSize-CodeLen; i--)
-        HashDelete (HashVal (*(unsigned short *)(IBuf-i)));
+        HashDelete(HashVal(get_le16(IBuf-i)));
     }
     else if (LPos+CodeLen >= DictSize)
     {
       for (i=LPos; i>LPos-(CodeLen-(DictSize-LPos)); i--)
-        HashDelete (HashVal (*(unsigned short *)(IBuf-i)));
+        HashDelete(HashVal(get_le16(IBuf-i)));
     }
 
     while (CodeLen--)
     {
-      i = *(const unsigned short *)(IBuf++);  /* This is NEXT_TO_ADD, see above. */
-      HashAdd (HashVal (i), LPos++);
+      i = get_le16(IBuf++);  /* This is NEXT_TO_ADD, see above. */
+      HashAdd(HashVal(i), LPos++);
     }
 
     if ((r = BufUpdate ()) != 0)
@@ -468,7 +474,7 @@ static int PutCode (void)
     return 1;
   }
 
-  hash = HashVal (*(unsigned short *)IBuf);
+  hash = HashVal(get_le16(IBuf));
   len = 1;
   off = 0;  /* Pacify GCC (__GNCUC__) warning about off being used uninitialized. */
 
@@ -887,11 +893,6 @@ static const int probes_ary[10] = {
 static void fatal_s(const char *msg, const char *arg1) {
   fprintf(stderr, "fatal: %s: %s\n", msg, arg1);
   exit(2);
-}
-
-/* !! TODO(pts): Make it smaller for x86. */
-static unsigned get_le16(const unsigned char *p) {
-  return p[0] | p[1] << 8;
 }
 
 /* Comprares two DOS .exe relocation entries for qsort(3). */
