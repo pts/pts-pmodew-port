@@ -22,10 +22,8 @@
  *
  * For DOS, this program can compiled with the small memory model (<64 KiB of data usage in total): `tcc -ms' or `owcc -mcmodel=s'.
  *
- * !! use unsigned char everywhere
  * !! get rid of forcing little-endian
  * !! get rid of requirement of unaligned access
- * !! make sure it works with signed char and unsigned char
  *
  * Pseudo-logic to decompress data:
  *
@@ -207,7 +205,7 @@ static void HashUninit(void);
 static void HashAdd(unsigned short h, int v);
 static void HashDelete(unsigned short h);
 static int HashFind(unsigned short h);
-static int FindCommonPrefixLength(const char *s1, const char *s2, int size);
+static int FindCommonPrefixLength(const unsigned char *s1, const unsigned char *s2, int size);
 #if COMPRESS_EARLYNEXTBLOCK
 static void BufInitBitOPos(void);
 #else
@@ -232,7 +230,7 @@ typedef char static_assert_sizeof_bufbit_t[sizeof(bufbit_t) == COMPRESS_BITS >> 
 /* __WATCOMC__ has min(3), but glibc doesn't have min(3). */
 static int mymin(int a, int b) { return a < b ? a : b; }
 
-static char *mymincp(char *a, char *b) { return a < b ? a : b; }
+static unsigned char *mymincp(unsigned char *a, unsigned char *b) { return a < b ? a : b; }
 
 #if defined(__WATCOMC__) && defined(_M_I386) && !defined(__COMPACT__) && !defined(__LARGE__)  /* _M_I86 is not defined. */
 #  pragma aux FindCommonPrefixLength = \
@@ -264,7 +262,7 @@ static char *mymincp(char *a, char *b) { return a < b ? a : b; }
 #else
 /* TODO(pts): Add optimized inline assembly implementation for GCC i386 and amd64. */
 /* Fallback implementation. Architecture-independent. */
-static int FindCommonPrefixLength(const char *s1, const char *s2, int size) {
+static int FindCommonPrefixLength(const unsigned char *s1, const unsigned char *s2, int size) {
   int i;
   for (i = 0; i < size && s1[i] == s2[i]; ++i) {}
   return i;
@@ -285,17 +283,17 @@ static int FindCommonPrefixLength(const char *s1, const char *s2, int size) {
 
 #define BufPutByte(b)   (*OBuf++ = (b))
 
-static char *OBuf;
+static unsigned char *OBuf;
 #ifdef DEBUG
-  static void BufPutLiteral(char b) {
+  static void BufPutLiteral(unsigned char b) {
     fprintf(stdout, "L%02x\n", (unsigned char)b);
     BufPutByte(b);
   }
-  static void BufPutM1(char b) {
+  static void BufPutM1(unsigned char b) {
     fprintf(stdout, "X%02x\n", (unsigned char)b);
     BufPutByte(b);
   }
-  static void BufPutM1101(char b) {
+  static void BufPutM1101(unsigned char b) {
     fprintf(stdout, "Y%02x\n", (unsigned char)b);
     BufPutByte(b);
   }
@@ -325,9 +323,9 @@ static int  BufLBase;
 static int  BufLSize, BufTSize, BufEncodedSize;
 static bufbit_t *BufBitOPos, BufBitBuf;
 static int BufBitCount;
-static char *BufIBase, *BufITop, *BufIThreshold;
-static char *BufOBase, *BufOTop, *BufOThreshold;
-static char *IBuf;
+static unsigned char *BufIBase, *BufITop, *BufIThreshold;
+static unsigned char *BufOBase, *BufOTop, *BufOThreshold;
+static unsigned char *IBuf;
 
 static int   *HashVal, HashLink, HashLastFound;
 static short *HashNext, *HashPrev, *HashBase, *HashTop;
@@ -440,7 +438,7 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
 static int PutCode (void)
 {
   int  off, len, hash, i0, i1, i2;
-  char *c;
+  unsigned char *c;
   unsigned char offb;
 #if DEBUG  /* These variables are not thread-safe. */
   static unsigned short distances[0x1000];
@@ -680,7 +678,7 @@ static void BufPutBits (int b, int c)
 static int BufUpdate (void)
 {
   int  i0, i1, i2;
-  char *c;
+  unsigned char *c;
 
   if (IBuf >= BufIThreshold)
   {
@@ -704,7 +702,7 @@ static int BufUpdate (void)
 
   if (OBuf >= BufOThreshold)
   {
-    c = mymincp(OBuf, (char*)BufBitOPos);
+    c = mymincp(OBuf, (unsigned char*)BufBitOPos);
     i0 = BufOTop - c;
     i1 = c - BufOBase;
 
@@ -717,7 +715,7 @@ static int BufUpdate (void)
     memmove (BufOBase, c, i0);
 
     OBuf -= i1;
-    BufBitOPos = (bufbit_t *)((char *)BufBitOPos - i1);
+    BufBitOPos = (bufbit_t *)((unsigned char *)BufBitOPos - i1);
     BufEncodedSize += i1;
 
     if (Show)
