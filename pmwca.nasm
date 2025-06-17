@@ -26,6 +26,12 @@ org BASE
 TAB equ 9
 CR equ 13
 
+%ifndef PMWV  ; Can be defined on the command line.
+  %define PMWV 33
+%else
+  %assign PMWV PMWV
+%endif
+
 start:  ; DOS .com program entry point.
 		; Falls through.
 
@@ -918,7 +924,14 @@ pmodew_config:
 .extmax:	dd 0x7fffffff  ; Maximum extended memory to allocate.                                 _pm_maxextmem:
 .lowmin:	dw 0  ; Amount of low memory to try and save. Loaded by _openexe2 to somewhere else.  _lowmin:
 
-copyright: db 'PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.'
+%if PMWV==33
+  copyright:	db 'PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.'
+%elif PMWV==34
+  copyright:	db 'PMODE/W v1.34 DOS extender - Copyright 1994-2000, Daredevil and Tran.'
+%else
+  %error ERROR_UNSUPPORTED_PMWV PMWV
+  db 1/0
+%endif
 
 uncompressed_start_far_ptr:
 .u_ip: dw 0  ; build_preparator_buf will populate it.
