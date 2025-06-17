@@ -8,7 +8,7 @@ test "$ZSH_VERSION" && set -y 2>/dev/null  # SH_WORD_SPLIT for zsh(1). It's an i
 
 test "$0" = "${0%/*}" || cd "${0%/*}"
 
-emu2="${2:-tools/emu2-lc-2021.01}"  # Works with emu2, kvikdos and dosbox-nox.
+emu2="${2:-tools/emu2-lc-2021.01}"  # Works with EMU2 (tools/emu2-lc-2021.01), kvikdos (tools/kvikdos-v1) and dosbox-nox.
 bat_file="${1-compile.bat}"
 
 cr="$(printf '\r')"
