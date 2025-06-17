@@ -945,7 +945,7 @@ static const char copyright[] = "PMODE/W v1.33 DOS extender - Copyright 1994-199
 #elif PMWV == 34
 static const char copyright[] = "PMODE/W v1.34 DOS extender - Copyright 1994-2000, Daredevil and Tran.";
 #else
-#  error ERROR_UNSUPPORTER_PMWV PMWV
+#  error ERROR_UNSUPPORTED_PMWV PMWV
 #endif
 typedef char assert_sizeof_copyright[sizeof(copyright) - 1 == 0x45 ? 1 : -1];
 
