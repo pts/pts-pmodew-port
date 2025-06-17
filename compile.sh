@@ -21,24 +21,28 @@ case "$tasm_exe" in
   dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
   dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
   dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
+  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmwca
   ;;
  tasm[12]*.exe)  # The /zn flag has been introduced in TASM 3.0.
   "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 pmodewe
   "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 pmodewk
   "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 /dUNC pmodewe,pmodewev
   "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 /dUNC pmodewk,pmodewkv
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 pmwca  # Default input extension: .asm. Default output extension: .obj.
   ;;
  tasm3[01]*.exe)  # They produce `int 3' in kvikdos. Without --mem-mb=2, they just hang in dosbox.nox.static.
   dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
   dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
   dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
   dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmwca
   ;;
  *.exe)
   "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
   "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
   "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
   "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmwca
   ;;
  *)
   if test "$tasm_exe" = "${tasm_exe#*/}"; then tasm_exe="./$tasm_exe"; fi
@@ -46,10 +50,16 @@ case "$tasm_exe" in
   "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
   "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
   "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
+  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmwca
   ;;
 esac
 "$kvikdos" "$tlink_exe" /3 /x pmodewe  pmodewk ,pmodewu.exe
 "$kvikdos" "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
+"$kvikdos" "$tlink_exe" /t /x pmwca
+
+rm -f pmodewc.exe
+"$kvikdos" pmwca.com pmodewu.exe pmodewc.exe  # Compress and add pmodew_config.
+test "$(sha256sum pmodewc.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodewc.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
 
 # Now pmodewv.exe is already ready to be used as a stub by OpenWatcom:
 #

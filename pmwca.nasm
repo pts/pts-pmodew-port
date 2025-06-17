@@ -1,19 +1,20 @@
 ;
-; pmwca.c: PMODE/W stub compressor, 8086 assembly implementation, as a DOS .com program
+; pmwca.nasm: PMODE/W stub compressor, 8086 assembly implementation for NASM 0.98.39--, as a DOS .com program
 ; by pts@fazekas.hu at Sat Jun 14 11:40:42 CEST 2025
 ;
-; Compile with: nasm -O0 -w+orphan-labels -DUEXEFN="'pmodewu.exe'" -DDEBUG -o pmwca.com pmwca.nasm
+; Compile with: nasm -O0 -w+orphan-labels -DDEBUG -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe && cmp pmodew133.exe pmodewc.exe && echo OK
 ; End-to-end check: nasm-0.98.39 -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodewc.exe && echo OK
+;
+; There is an eqivalent NASM 0.98.39-- source of this program in pwmca.nasm.
 ;
 ; This compressor is quite slow because scans the same data may times
 ; looking for longer and longer repetition. On a real 386 CPU from 1985) it
 ; may take several minutes. (How long would it take on an 586 CPU in 1997?)
 ; Adding a hashtable or lookup table would make it significantly faster.
 ;
-; !! Convert from NASM to TASM syntax.
 ; !! Check diff with `nasm -O999999999'. It seems to be OK now.
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
 ;
@@ -152,7 +153,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 compress_relocs:
 		mov cx, [si+3*2]  ; nreloc.
 		test cx, cx
-		mov bp, 'NR'  ; No relocations. (apply_relocations) depends on a nonzero nreloc value.
+		mov bp, 'NR'  ; No relocations. (apply_relocs) depends on a nonzero nreloc value.
 		jz short read_udata.j_fatal
 		cmp cx, byte (EXEHDRSIZE-0x1c)>>2
 .fatal_tr:	mov bp, 'TR'  ; Too many relocations.
@@ -195,7 +196,7 @@ build_preparator_buf:
 		pop cx  ; Restore CX := nreloc.
 		lea bx, [word di-(preparator_buf-$$+BASE)]  ; BX := csize + (cdata - preparator_buf).
 		times 2 add bx, cx  ; BX := csize + (nreloc << 1) + (cdata - preparator_buf).
-		mov [apply_relocations.u_nreloc], cl  ; It fits to 1 byte, we've checked it above at 'TR'.
+		mov [apply_relocs.u_nreloc], cl  ; It fits to 1 byte, we've checked it above at 'TR'.
 		rep movsw  ; Append compressed relocationss to DS:DI == ES:DI.
 		; Now: DS:DI == pointer to the end of cdata.
 		mov ax, bx
@@ -449,12 +450,12 @@ sort4:
 		call is_reloc_less  ; is_less(cur, cur - SIZE).
 		jnc short .continue  ; Jump if not less.
 		mov si, bx  ; SI (oldcur) := BX (cur).
-  .2:		mov bx, di  ; BX (cur) -= SIZE.
+  .scan_next:	mov bx, di  ; BX (cur) -= SIZE.
 		cmp bx, bp  ; while (cur != base ...)
 		je short .rotate
 		lea di, [bx-4]
 		call is_reloc_less  ; is_less(oldcur, cur - SIZE).
-		jc short .2  ; Jump if less.
+		jc short .scan_next  ; Jump if less.
   .rotate:	; Now, until .continue, we will rotate the region BX...(SI+4) left (forward) by a dword (SIZE == 4).
 		; That is, save `dword [si]' to tmp, then copy from BX...SI to (BX+4)..(SI+4), then restore `dword [bx]' from tmp.
 		; We are allowed to ruin AX, CX, SI, DI and FLAGS until continue.
@@ -635,7 +636,7 @@ compress:	mov ax, 1
 		sub cx, si
 		jz short .done
 		cmp cx, MAX_LENGTH
-		jb .cx_ok
+		jb short .cx_ok
 		mov cx, MAX_LENGTH
 .cx_ok:		; CX will keep holding the maximum match length starting at DS:SI, until the next .next_byte (i.e. when SI is increased).
 		mov di, si
@@ -730,7 +731,7 @@ compress:	mov ax, 1
 		cmp bp, 0x3ff
 		ja short .new_best
 		cmp bp, 0xff
-		ja .check_eq_length_3plus_large_distance
+		ja short .check_eq_length_3plus_large_distance
 .check_eq_length_3plus_small_distance:
 		cmp ax, 0xff
 		jmp short .check_eq_cjmp
@@ -750,16 +751,14 @@ compress:	mov ax, 1
 		mov di, [bp+1*2]  ; cdata_end == cdata_cur.
 		cmp dx, byte 2
 		jae short .match
-.literal:
-		clc
+.literal:	clc
 		call emit_bit
 %ifdef DEBUG
 		call print_literal
 %endif
 		movsb  ; Copies a literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
 		jmp short .j_next_byte
-.match:
-		add si, dx  ; Skip over matched bytes in the uncompresed input data.
+.match:		add si, dx  ; Skip over matched bytes in the uncompresed input data.
 		call emit_match  ; Ruins AX, BX, CX, DX, DI, BP, FLAGS. Keeps SI and BP intact.
 .j_next_byte:	jmp strict near .next_byte
 
@@ -976,28 +975,23 @@ copy_code:
 		retf  ; Jump to (orig_CS+0x3d7):0x1d9, which is a copy of decompress.start == decompress.next_token.
 
 decompress:  ; Entry point is decompress.start. It needs initialization, see above.
-.get_bit:
-		shr bp, 1  ; CF := the first bit in a block to be used is its lowest bit.
+.get_bit:	shr bp, 1  ; CF := the first bit in a block to be used is its lowest bit.
 		dec dl  ; Doesn't modify CF.
-		jnz .get_bit.ret
+		jnz short .get_bit.ret
 		lodsw
 		dw _mov_bp_ax  ; `xchg bp, ax' would have been shorter here.
 		mov dl, 0x10  ; Again, 0x10 == 16 are available in BP.
-.get_bit.ret:
-		ret
-.match_1_1:
-		call .get_bit
+.get_bit.ret:	ret
+.match_1_1:	call .get_bit
 		jnc short .match_1_1_0
-.match_1_1_1:
-		call .get_bit
+.match_1_1_1:	call .get_bit
 		adc cl, 1
 		shl cl, 1
 .match_1_1_1.next:
 		call .get_bit
 		rcl bh, 1
 		loop .match_1_1_1.next  ; Then falls through to .match_1_1_0.
-.match_1_1_0:
-		mov dh, 2
+.match_1_1_0:	mov dh, 2
 		mov cl, 4
 .match_1_1_0.next:
 		inc dh
@@ -1006,13 +1000,11 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 		loop .match_1_1_0.next
 		call .get_bit
 		jnc short .match_1_1_0_0
-.match_1_1_0_1:
-		lodsb
+.match_1_1_0_1:	lodsb
 		dw _mov_cl_al
 		add cx, byte 0xf
 		jmp short .copy_match
-.match_1_1_0_0:
-		dw _xor_dh_dh
+.match_1_1_0_0:	dw _xor_dh_dh
 		mov cl, 0x3
 .match_1_1_0_0.next:
 		call .get_bit
@@ -1032,8 +1024,7 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 		stosb
 		loop .copy_match.next
 .next_token:
-.start:
-		call .get_bit
+.start:		call .get_bit
 		jc short .match_1
 .literal_0:  ; Indicated by CF==0.
 		movsb  ; Copy literal byte from byte stream.
@@ -1058,9 +1049,9 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 		rcl bh, 1
 		loop .match_1_0_1.next
 		jmp short .copy_match_2_bytes
-.after_decompress:  ; Falls through to apply_relocations.
+.after_decompress:  ; Falls through to apply_relocs.
 
-apply_relocations:
+apply_relocs:
 		pop dx  ; Restore DX := orig_CS, pushed by `push cs' in setup_code.
 		add [uncompressed_start_far_ptr-exe_image+0x100+2], dx  ; Relocate segment in uncompressed_start_far_ptr.
 		mov cl, 0  ; CX := U_NRELOC == (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0. build_preparator_buf will populate it.
@@ -1093,7 +1084,7 @@ udata:		resb MAX_USIZE
 .bufend:
 
 		resb ($$-$)&1  ; Align to word boundary.
-uexehdr:		resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
+uexehdr:	resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
 creloc: equ uexehdr+0x1c  ; Temporary buffer for compressed relocations.
 
 %if $-$$>0xff00
