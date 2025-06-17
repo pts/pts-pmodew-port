@@ -59,9 +59,9 @@ esac
 "$kvikdos" "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
 "$kvikdos" "$tlink_exe" /t /x pmwca
 
-rm -f pmodewc.exe
-"$kvikdos" pmwca.com pmodewu.exe pmodewc.exe  # Compress and add pmodew_config.
-test "$(sha256sum pmodewc.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodewc.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
+rm -f pmodew.exe
+"$kvikdos" pmwca.com pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
+test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
 
 # Now pmodewv.exe is already ready to be used as a stub by OpenWatcom:
 #
@@ -124,35 +124,35 @@ if false; then
   #test "$(sha256sum pmodewu.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodewu.exe" # /dPMWV=1.34.
 fi
 
-rm -f pmodewc.exe
+rm -f pmodew.exe
 if false; then
   minicc -DPMWV=33 -o pmwc pmwc.c
-  ./pmwc pmodewu.exe pmodewc.exe
+  ./pmwc pmodewu.exe pmodew.exe
 elif false; then
   gcc -g -O2 -g -W -Wall -DPMWV=33 -o pmwc pmwc.c
-  valgrind ./pmwc pmodewu.exe pmodewc.exe
+  valgrind ./pmwc pmodewu.exe pmodew.exe
 elif true; then
   test "$WATCOM"
   test -f "$WATCOM/lh/stdio.h"
   export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
   owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -o pmwc pmwc.c
   unset INCLUDE
-  ./pmwc pmodewu.exe pmodewc.exe
+  ./pmwc pmodewu.exe pmodew.exe
 elif true; then
   test "$WATCOM"
   test -f "$WATCOM/h/stdio.h"
   export INCLUDE="$WATCOM/h"  # For OpenWatcom.
   owcc -bdos -mcmodel=c -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc.exe pmwc.c
   unset INCLUDE
-  "$kvikdos" pmwc.exe pmodewu.exe pmodewc.exe
+  "$kvikdos" pmwc.exe pmodewu.exe pmodew.exe
 fi
-#test "$(sha256sum pmodewc.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodewc.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
-#test "$(sha256sum pmodewc.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodewc.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
-#test "$(sha256sum pmodewc.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodewc.exe"  # Same as of pmodew133rrr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 .
-test "$(sha256sum pmodewc.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodewc.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01). For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 .
+#test "$(sha256sum pmodew.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodew.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
+#test "$(sha256sum pmodew.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodew.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
+#test "$(sha256sum pmodew.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodew.exe"  # Same as of pmodew133rrr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 .
+test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01). For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 .
 
 if true; then  # No need for debugging.
-  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodewc.exe'" -DHUEXEFN="'pmodewu.exe'" -o dec.com dec.nasm
+  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew.exe'" -DHUEXEFN="'pmodewu.exe'" -o dec.com dec.nasm
   "$kvikdos" dec.com >pmodew.uprog.exe
   cmp pmodew.uprog.exe pmodewu.exe
 else  # Debugging.
@@ -161,9 +161,9 @@ else  # Debugging.
   export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
   owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -DDEBUG -o pmwc pmwc.c
   unset INCLUDE
-  ./pmwc pmodewu.exe pmodewc.exe >pmodewc.log
+  ./pmwc pmodewu.exe pmodew.exe >pmodewc.log
 
-  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodewc.exe'" -DDEBUG -o dec.com dec.nasm
+  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew.exe'" -DDEBUG -o dec.com dec.nasm
   "$kvikdos" dec.com >dec.log  # This is slow, it takes a few seconds.
   <pmodewc.log grep '^[LDE]' >pmodewc.lde.log
   <dec.log grep '^[LDE]' >dec.lde.log

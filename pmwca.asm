@@ -5,8 +5,8 @@
 ; Compile with TASM 2.0--5.3 on DOS: tasm /t /ml /m2 /zn /q /dPMWV=33 /DEBUG pmwca
 ; Link with TLINK 2.0-- on DOS, creating pmwca.com: tlink /t /x pmwca
 ;
-; End-to-end check: ~/prg/kvikdos/kvikdos tasm20.exe /t /ml /m2 /q /dPMWV=33 pmwca && ~/prg/kvikdos/kvikdos tlink20.exe /t /x pmwca && rm -f pmodewc.exe && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe && cmp pmodew133.exe pmodewc.exe && echo OK
-; End-to-end check: ~/prg/kvikdos/kvikdos tasm20.exe /t /ml /m2 /q /dPMWV=33 /dDEBUG pmwca && ~/prg/kvikdos/kvikdos tlink20.exe /t /x pmwca && rm -f pmodewc.exe && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodewc.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodewc.exe && echo OK
+; End-to-end check: ~/prg/kvikdos/kvikdos tasm20.exe /t /ml /m2 /q /dPMWV=33 pmwca && ~/prg/kvikdos/kvikdos tlink20.exe /t /x pmwca && rm -f pmodew.exe && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe && cmp pmodew133.exe pmodew.exe && echo OK
+; End-to-end check: ~/prg/kvikdos/kvikdos tasm20.exe /t /ml /m2 /q /dPMWV=33 /dDEBUG pmwca && ~/prg/kvikdos/kvikdos tlink20.exe /t /x pmwca && rm -f pmodew.exe && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodew.exe && echo OK
 ;
 ; There is an eqivalent NASM 0.98.39-- source of this program in pwmca.nasm.
 ;
