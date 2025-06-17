@@ -101,7 +101,7 @@ if false; then
     # Also works with Turbo C++ 1.00.
     rm -f execons.exe
     # Needs: tcc.exe, tlink.exe, tcch/*.h, c0s.obj, fp87.lib, maths.lib, cs.lib.
-    "$kvikdos" tcc.exe -ms -Itcch -f87 execons.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)? Also for pmwc.c.
+    "$kvikdos" tcc.exe -ms -Itcch -f87 execons.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
     "$kvikdos" execons.exe pmodewu.exe
   elif false; then
     rm -f execons.exe
@@ -135,13 +135,19 @@ elif true; then
   test "$WATCOM"
   test -f "$WATCOM/lh/stdio.h"
   export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
+  rm -f pmwc
   owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -o pmwc pmwc.c
   unset INCLUDE
   ./pmwc pmodewu.exe pmodew.exe
+elif false; then
+  rm -f pmwc.exe pmwc.obj pmwc.o
+  "$kvikdos" tcc.exe -ms -Itcch -f87 -DPMWV=33 pmwc.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
+  "$kvikdos" pmwc.exe pmodewu.exe pmodew.exe
 elif true; then
   test "$WATCOM"
   test -f "$WATCOM/h/stdio.h"
   export INCLUDE="$WATCOM/h"  # For OpenWatcom.
+  rm -f pmwc.exe pmwc.obj pmwc.o
   owcc -bdos -mcmodel=s -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc.exe pmwc.c
   unset INCLUDE
   "$kvikdos" pmwc.exe pmodewu.exe pmodew.exe
