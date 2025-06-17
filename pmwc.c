@@ -1027,7 +1027,7 @@ int main(int argc, char **argv) {
   unsigned char *relocsrc;
   unsigned relocofs, relocseg;
 
-  (void)argc; (void)cnblocks;
+  (void)argc;
   if (!argv[0] || !argv[1] || !argv[2]) {
     fprintf(stderr, "Usage: %s <input.exe> <compressed-output.exe>\n", argv[0]);
     return 1;
@@ -1107,6 +1107,7 @@ int main(int argc, char **argv) {
   cimg_size = csize + (nreloc << 1) + (0x142 - 0x20);
   set_le16(preparator_buf + 1 * 2, (cimg_size + 0x20) & 0x1ff);  /* lastsize. */
   set_le16(preparator_buf + 2 * 2, cnblocks = (cimg_size + 0x20 + 0x1ff) >> 9);  /* nblocks. */
+  (void)cnblocks;
   set_le16(preparator_buf + 0x88, (cimg_size + 1) >> 1);  /* Number of data and preparator code words to copy before decompression. */
 #if 0  /* This would be a safe but tight way to specify minalloc, but PMODE/W 1.33 seems to be using a more generous, more wasteful formula. */
   set_le16(preparator_buf + 5 * 2, (ss + ((0x100 + 0xf) >> 4) + ((cimg_size + 0xf) >> 4)) - ((cnblocks << 5) - (0x20 >> 4)));  /* minalloc. */
