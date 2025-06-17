@@ -6,9 +6,9 @@ export LC_ALL=C TZ=GMT
 
 test "$0" = "${0%/*}" || cd "${0%/*}"
 
-# Tested and found working: TASM 2.0, 2.01, 2.02, 2.5, 2.51, 3.2i, 3.2, 4.1, 5.0, 5.2, 5.3.
+# Tested and found working: TASM 2.0, 2.01, 2.02, 2.5, 2.51, 3.0, 3.1, 3.2i, 3.2, 4.1, 5.0, 5.2, 5.3.
 # It's not working with TASM 1.0 and 1.01: they don't have the /m2 command-line flag (for optimization).
-# It's not working with TASM 3.0 and 3.1: they hang (int 3 in kvikdos).
+# It's not working with TASM 3.0 and 3.1 in kvikdos, they fail with `int 0x03' in kvikdos.
 tasm_exe="${1:-tasm41.exe}"
 # Tested and found working: TLINK 2.0, 3.0, 3.01, 4.0, 4.01.
 # It's not working with WLINK in OpenWatcom 2.0 2023-03-04, it generates incorrect relocations.
@@ -27,6 +27,12 @@ case "$tasm_exe" in
   "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 pmodewk
   "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 /dUNC pmodewe,pmodewev
   "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 /dUNC pmodewk,pmodewkv
+  ;;
+ tasm3[01]*.exe)  # They produce `int 3' in kvikdos. Without --mem-mb=2, they just hang in dosbox.nox.static.
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
   ;;
  *.exe)
   "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
