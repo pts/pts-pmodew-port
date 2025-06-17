@@ -332,7 +332,7 @@ static unsigned char *OBuf;
 /*
   DATA
 */
-static int LPos, LSize, Show;
+static int LPos, LSize;
 static int MaxProbes;
 
 static FILE *BufIHandle, *BufOHandle;
@@ -360,7 +360,6 @@ static short *HashNext, *HashPrev, *HashBase, *HashTop;
     src - source file handle (data will be read from the current pos)
     size - size in bytes of block to compress
     probes - maximum number of probes to do per byte for string matches
-    show - show progress percentage during compression flag
   Out:
     int - size of compressed block or error code if compression failed
           (-1 = not enough mem, -2 = error reading file, -3 = error writing)
@@ -375,11 +374,9 @@ static short *HashNext, *HashPrev, *HashBase, *HashTop;
   ) If compression is successful, file pointers are left at the end of the
     file blocks read and written.
 */
-int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes, int show)
+int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes)
 {
   int r, i, CodeLen;
-
-  Show = show;  /* !! Get rid of both Show and show. */
 
   if (!size) return ENCODE_EMPTY;
 
@@ -616,13 +613,6 @@ static int BufInit (FILE *dst, FILE *src, unsigned size)
     return r;
   }
 
-  if (Show)
-  {
-//    fprintf (stdout, "%%00");
-//    fflush (stdout);
-//    cprintf ("%%00");
-  }
-
   return 0;
 }
 
@@ -737,12 +727,6 @@ static int BufUpdate (void)
     BufBitOPos = BufBitOPos - i1;
     BufEncodedSize += i1;
 
-    if (Show)
-    {
-//      fprintf (stdout, "\x08\x08%02d", BufLPos (IBuf) * 100 / BufTSize);
-//      fflush (stdout);
-//      cprintf ("\x08\x08%02d", BufLPos (IBuf) * 100 / BufTSize);
-    }
   }
 
   return 0;
@@ -783,14 +767,6 @@ static int BufFlush (void)
    return ENCODE_ERRORWRITING;
 
   BufEncodedSize += i;
-
-  if (Show)
-  {
-//    fprintf (stdout, "\x08\x08\x08   \x08\x08\x08");
-//    fflush (stdout);
-//    cprintf ("\x08\x08\x08   \x08\x08\x08");
-
-  }
 
   return BufEncodedSize;
 }
@@ -1027,7 +1003,6 @@ int main(int argc, char **argv) {
   char *srcfn, *dstfn;
   FILE *src, *dst;
   unsigned probes = probes_ary[level];
-  const int show = 0;
   unsigned csize, cimg_size, cnblocks;
   unsigned lastsize, nblocks, nreloc, hdrsize, minalloc, maxalloc, ss, sp, ip, cs, relocpos;
   unsigned img_start, img_size, u, mem_para;
@@ -1107,7 +1082,7 @@ int main(int argc, char **argv) {
   set_le16(preparator_buf + 0x13a, sp);  /* U_SP. */
   if (fseek(src, img_start, SEEK_SET)) fatal_s("error seeking in source DOS .exe", srcfn);
   if (fwrite(preparator_buf, 1, sizeof(preparator_buf), dst) != sizeof(preparator_buf)) fatal_s("error writing compressed DOS .exe preparator", dstfn);
-  csize = Compress(dst, src, img_size, probes, show);
+  csize = Compress(dst, src, img_size, probes);
   if ((int)csize <= 0) { fflush(dst); fprintf(stderr, "fatal: pmwliteraw compression error: %d\n", (int)csize); return 2; }
   if (fwrite(exehd, 1, nreloc << 1, dst) != (nreloc << 1)) fatal_s("error writing compressed relocation locations", dstfn);
   if (fseek(dst, 0, SEEK_SET)) fatal_s("error seeking in compressed DOS .exe", dstfn);
