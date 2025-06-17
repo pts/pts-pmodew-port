@@ -178,7 +178,7 @@
 #  define COMPRESS_EARLYNEXTBLOCK 0
 #endif
 
-#define ENCODE_NOTENOUGHMEM     -1
+#define ENCODE_NOTENOUGHMEM     -1  /* !! */
 #define ENCODE_ERRORREADING     -2
 #define ENCODE_ERRORWRITING     -3
 #define ENCODE_EMPTY            -4
@@ -193,13 +193,11 @@
 
 static int PutCode(void);
 static int BufInit(FILE *dst, FILE *src, unsigned size);
-static void BufUninit(void);
 static void BufPutBit(int b);
 static void BufPutBits(int b, int c);
 static int BufUpdate(void);
 static int BufFlush(void);
 static int HashInit(void);
-static void HashUninit(void);
 static void HashAdd(unsigned short h, int v);
 static void HashDelete(unsigned short h);
 static int HashFind(unsigned short h);
@@ -348,12 +346,13 @@ static int  BufLSize, BufTSize, BufEncodedSize;
 static unsigned char *BufBitOPos;
 static bufbit_t BufBitBuf;
 static int BufBitCount;
-static unsigned char *BufIBase, *BufITop, *BufIThreshold;
-static unsigned char *BufOBase, *BufOTop, *BufOThreshold;
+static unsigned char BufOBase[BufOutSize];
+static unsigned char BufIBase[BufInSize];
+static unsigned char *BufITop, *BufIThreshold;
+static unsigned char *BufOTop, *BufOThreshold;
 static unsigned char *IBuf;
-
-static int   *HashVal, HashLink, HashLastFound;
-static short *HashNext, *HashPrev, *HashBase, *HashTop;
+static int   HashVal[DictSize], HashLink, HashLastFound;
+static short HashNext[DictSize], HashPrev[DictSize], HashBase[HashCount], HashTop[HashCount];
 
 /*
   CODE
@@ -391,7 +390,6 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes)
 
   if ((r = BufInit (dst, src, size)) != 0)
   {
-    HashUninit ();
     return r;
   }
 
@@ -450,9 +448,6 @@ int Compress (FILE *dst, FILE *src, unsigned size, unsigned probes)
 
     r = BufFlush ();
   }
-
-  BufUninit ();
-  HashUninit ();
 
   return r;
 }
@@ -584,15 +579,6 @@ static int BufInit (FILE *dst, FILE *src, unsigned size)
 {
   int r;
 
-  if (!(BufOBase = malloc(BufOutSize)))
-    return ENCODE_NOTENOUGHMEM;
-
-  if (!(BufIBase = malloc(BufInSize)))
-  {
-    free (BufOBase);
-    return ENCODE_NOTENOUGHMEM;
-  }
-
   BufOTop = BufOBase + BufOutSize;
   BufOThreshold = BufOTop - BufOutThreshold;
   BufITop = BufIBase + BufInSize;
@@ -615,17 +601,10 @@ static int BufInit (FILE *dst, FILE *src, unsigned size)
 
   if ((r = BufUpdate ()) != 0)
   {
-    BufUninit ();
     return r;
   }
 
   return 0;
-}
-
-static void BufUninit (void)
-{
-  free (BufIBase);
-  free (BufOBase);
 }
 
 static void BufPutBit (int b)
@@ -768,19 +747,6 @@ static int BufFlush (void)
 
 static int HashInit (void)
 {
-  HashNext = HashPrev = HashBase = HashTop = 0;
-  if (!(HashVal = malloc(DictSize * sizeof (int)))) goto err_cleanup;
-  if (!(HashNext = malloc(DictSize * sizeof (short)))) goto err_cleanup;
-  if (!(HashPrev = malloc(DictSize * sizeof (short)))) goto err_cleanup;
-  if (!(HashBase = malloc(HashCount * sizeof (short)))) goto err_cleanup;
-  if (!(HashTop = malloc(HashCount * sizeof (short)))) { err_cleanup:
-    free (HashBase);
-    free (HashPrev);
-    free (HashNext);
-    free (HashVal);
-    return 0;
-  }
-
   memset (HashBase, 0xff, HashCount * sizeof (short));
   memset (HashTop, 0xff, HashCount * sizeof (short));
 
@@ -789,15 +755,6 @@ static int HashInit (void)
   HashLink = 0;
 
   return 1;
-}
-
-static void HashUninit (void)
-{
-  free (HashTop);
-  free (HashBase);
-  free (HashPrev);
-  free (HashNext);
-  free (HashVal);
 }
 
 static void HashAdd (unsigned short h, int v)
