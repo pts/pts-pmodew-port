@@ -1,4 +1,8 @@
 *~
+/pcdos320.sh
+/tasm*.exe
+/tlink*.exe
+/nasm*.exe*
 /pmodewe.obj
 /pmodewk.obj
 /pmodewev.obj
