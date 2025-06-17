@@ -202,7 +202,7 @@ build_preparator_buf:
 		lea ax, [bx+1]  ; Round up.
 		shr ax, 1
 		mov [copy_code.word_count], ax  ; Number of words to copy.
-		lea si, [uexehdr+7*2]  ; U_SS.
+		mov si, uexehdr+7*2  ; U_SS.
 		lodsw  ; AX := U_SS; SI += 2 (to U_SP).
 		mov [cexehdr.ss], ax
 		mov [jump_to_program.u_ss], ax
