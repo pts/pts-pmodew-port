@@ -679,11 +679,6 @@ static void BufPutBits (int b, int c)
 #endif
 }
 
-//static void BufPutByte (int b)
-//{
-//  *OBuf++ = b;
-//}
-
 static int BufUpdate (void)
 {
   int  i0, i1, i2;
@@ -698,8 +693,6 @@ static int BufUpdate (void)
 
     memmove (BufIBase, c, i0);
 
-//    if (read (BufIHandle, BufITop - i1, i2) != i2)
-//      return ENCODE_ERRORREADING;
     if(i2!=0){
         if((fread(BufITop-i1,i2,1,BufIHandle))<1)
         return ENCODE_ERRORREADING;
@@ -715,8 +708,6 @@ static int BufUpdate (void)
     i0 = BufOTop - c;
     i1 = c - BufOBase;
 
-//    if (write (BufOHandle, BufOBase, i1) != i1)
-//      return ENCODE_ERRORWRITING;
     if(i1!=0){
         if((fwrite(BufOBase,i1,1,BufOHandle))<1)
         return ENCODE_ERRORWRITING;
@@ -761,8 +752,6 @@ static int BufFlush (void)
 
   i = OBuf - BufOBase;
 
-//  if (write (BufOHandle, BufOBase, i) != i)
-//    return ENCODE_ERRORWRITING;
   if((fwrite(BufOBase,i,1,BufOHandle))<1)
    return ENCODE_ERRORWRITING;
 
