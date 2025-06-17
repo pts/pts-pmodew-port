@@ -150,9 +150,8 @@ fi
 test "$(sha256sum pmodewc.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodewc.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01). For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 .
 
 if true; then  # No need for debugging.
-  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodewc.exe'" -o dec.com dec.nasm
-  "$kvikdos" dec.com >dec.out
-  nasm-0.98.39 -O0 -w+orphan-labels -o pmodew.uprog.exe uprog.nasm  # Reeds the DOS .exe header from pmodewu.exe and the the uncompressed .exe image from dec.out.
+  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodewc.exe'" -DHUEXEFN="'pmodewu.exe'" -o dec.com dec.nasm
+  "$kvikdos" dec.com >pmodew.uprog.exe
   cmp pmodew.uprog.exe pmodewu.exe
 else  # Debugging.
   test "$WATCOM"

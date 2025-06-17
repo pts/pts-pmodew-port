@@ -308,14 +308,36 @@ decompress:
 
 after_decompress:
 %ifndef DEBUG
+  %ifdef HUEXEFN
+		mov ah, 0x40  ; Write to file using handle.
+		mov bx, 1  ; STDOUT_FILENO.
+		mov dx, uhdrdata  ; Start address to write from.
+		mov cx, uhdrdata.end-uhdrdata  ; CX := Number of bytes to write.
+		int 0x21  ; DOS syscall.
+		jnc .uhdrdata_ok  ; Jump on success.
+		mov ax, 0x4c02  ; exit(2).
+		int 0x21  ; DOS syscall.
+    .uhdrdata_ok:
+  %endif
 		mov ah, 0x40  ; Write to file using handle.
 		mov bx, 1  ; STDOUT_FILENO.
 		mov dx, udata  ; Start address to write from.
 		mov cx, di  ; DI == address of end of just-decompressed udata.
 		sub cx, dx  ; CX := Number of bytes to write.
 		int 0x21  ; DOS syscall.
+		jnc .udata_ok  ; Jump on success.
+		mov ax, 0x4c03  ; exit(2).
+		int 0x21  ; DOS syscall.
+  .udata_ok:
 %endif
-		ret
+		ret  ; exit(0) == exit(EXIT_SUCCESS).
+
+%ifndef DEBUG
+  %ifdef HUEXEFN
+    uhdrdata:	incbin HUEXEFN, 0, 0x200
+    .end:
+  %endif
+%endif
 
 cdata:		incbin CEXEFN, 0x142, 11110
 
