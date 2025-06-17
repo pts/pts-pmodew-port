@@ -22,9 +22,6 @@
  *
  * For DOS, this program can compiled with the small memory model (<64 KiB of data usage in total): `tcc -ms' or `owcc -mcmodel=s'.
  *
- * !! get rid of forcing little-endian
- * !! get rid of requirement of unaligned access
- *
  * Pseudo-logic to decompress data:
  *
  * movestring2:
@@ -216,21 +213,42 @@ static void BufInitBitOPos(void);
 #  include <stdio.h>
 #endif
 
-#if COMPRESS_BITS==8
-  typedef unsigned char bufbit_t;
-#elif COMPRESS_BITS==16
-  typedef unsigned short bufbit_t;
-#elif COMPRESS_BITS==32
-  typedef unsigned bufbit_t;  /* !! Depends on sizeof(int) == 4. */  /* !! Also depends on little-endian. */  /* !! Also depends on unaligned writes. */
-#else
-#  error ERROR_BAD_COMPRESS_BITS COMPRESS_BITS
-#endif
-typedef char static_assert_sizeof_bufbit_t[sizeof(bufbit_t) == COMPRESS_BITS >> 3 ? 1 : -1];  /* A larger bufbit_t would overwrite too many bytes in `*BufBitOPos = BufBitBuf;'. */
 
 /* __WATCOMC__ has min(3), but glibc doesn't have min(3). */
 static int mymin(int a, int b) { return a < b ? a : b; }
 
 static unsigned char *mymincp(unsigned char *a, unsigned char *b) { return a < b ? a : b; }
+
+#if COMPRESS_BITS==32
+  /* !! TODO(pts): Make it smaller for x86 (with little-endian unaligned memory access). */
+  static void set_le32(unsigned char *p, unsigned long v) {
+    *p++ = v;
+    *p = v >> 8;
+    *p = v >> 16;
+    *p = v >> 24;
+  }
+#endif
+
+/* !! TODO(pts): Make it smaller for x86 (with little-endian unaligned memory access). */
+static void set_le16(unsigned char *p, unsigned v) {
+  *p++ = v;
+  *p = v >> 8;
+}
+#define set_byte(p, v) (*(p) = (v))
+
+#if COMPRESS_BITS==8
+  typedef unsigned char bufbit_t;
+#  define set_block_word(p, v) set_byte(p, v)
+#elif COMPRESS_BITS==16
+  typedef unsigned short bufbit_t;
+#  define set_block_word(p, v) set_le16(p, v)
+#elif COMPRESS_BITS==32
+  typedef unsigned long bufbit_t;  /* 64-bit systems may have sizeof(bufbit_t) == 8. That's larger than the necessary 4, but it's harmless. */
+#  define set_block_word(p, v) set_le32(p, v)
+#else
+#  error ERROR_BAD_COMPRESS_BITS COMPRESS_BITS
+#endif
+typedef char static_assert_sizeof_bufbit_t[sizeof(bufbit_t) >= COMPRESS_BITS >> 3 ? 1 : -1];
 
 #if defined(__WATCOMC__) && defined(_M_I386) && !defined(__COMPACT__) && !defined(__LARGE__)  /* _M_I86 is not defined. */
 #  pragma aux FindCommonPrefixLength = \
@@ -321,7 +339,8 @@ static FILE *BufIHandle, *BufOHandle;
 
 static int  BufLBase;
 static int  BufLSize, BufTSize, BufEncodedSize;
-static bufbit_t *BufBitOPos, BufBitBuf;
+static unsigned char *BufBitOPos;
+static bufbit_t BufBitBuf;
 static int BufBitCount;
 static unsigned char *BufIBase, *BufITop, *BufIThreshold;
 static unsigned char *BufOBase, *BufOTop, *BufOThreshold;
@@ -553,7 +572,7 @@ static void BufInitBitOPos(void) {
 #  ifdef DEBUG
   fprintf(stdout, "W?\n");
 #  endif
-  BufBitOPos = (bufbit_t *)OBuf;
+  BufBitOPos = OBuf;
   OBuf += COMPRESS_BITS >> 3;
 }
 #endif
@@ -587,7 +606,7 @@ static int BufInit (FILE *dst, FILE *src, unsigned size)
   BufTSize = size;
   BufEncodedSize = 0;
 
-  BufBitOPos = (bufbit_t*)0;
+  BufBitOPos = NULL;
   BufBitBuf = 0;
   BufBitCount = 0;
 
@@ -628,7 +647,7 @@ static void BufPutBit (int b)
 #ifdef DEBUG
     fprintf(stdout, "W?\n");
 #endif
-    BufBitOPos = (bufbit_t *)OBuf;
+    BufBitOPos = OBuf;
     OBuf += COMPRESS_BITS >> 3;
   } else
 #endif
@@ -636,14 +655,14 @@ static void BufPutBit (int b)
 #ifdef DEBUG
     fprintf(stdout, "W%04x\n", BufBitBuf);
 #endif
-    *BufBitOPos = BufBitBuf;
+    set_block_word(BufBitOPos, BufBitBuf);
     BufBitBuf = 0;
     BufBitCount = 0;
 #if COMPRESS_EARLYNEXTBLOCK
 #  ifdef DEBUG
     fprintf(stdout, "W?\n");
 #  endif
-    BufBitOPos = (bufbit_t *)OBuf;
+    BufBitOPos = OBuf;
     OBuf += COMPRESS_BITS >> 3;
 #endif
   }
@@ -702,7 +721,7 @@ static int BufUpdate (void)
 
   if (OBuf >= BufOThreshold)
   {
-    c = mymincp(OBuf, (unsigned char*)BufBitOPos);
+    c = mymincp(OBuf, BufBitOPos);
     i0 = BufOTop - c;
     i1 = c - BufOBase;
 
@@ -715,7 +734,7 @@ static int BufUpdate (void)
     memmove (BufOBase, c, i0);
 
     OBuf -= i1;
-    BufBitOPos = (bufbit_t *)((unsigned char *)BufBitOPos - i1);
+    BufBitOPos = BufBitOPos - i1;
     BufEncodedSize += i1;
 
     if (Show)
@@ -740,12 +759,12 @@ static int BufFlush (void)
 #endif
   {
 #if COMPRESS_BITREV
-    *BufBitOPos = BufBitBuf;
+    set_block_word(BufBitOPos, BufBitBuf);
 #else
-    *BufBitOPos = BufBitBuf << (COMPRESS_BITS - BufBitCount);  /* This shift is OK (to be done as modulo 32 on the i386) even if BufBitCount == 0, beause then BufBitBuf is also 0. */
+    set_block_word(BufBitOPos, BufBitBuf << (COMPRESS_BITS - BufBitCount));  /* This shift is OK (to be done as modulo 32 on the i386) even if BufBitCount == 0, beause then BufBitBuf is also 0. */
 #endif
 #ifdef DEBUG
-    fprintf(stdout, "W%04x\n", *BufBitOPos);
+    fprintf(stdout, "W%04x\n", get_le16(BufBitOPos));  /* TODO(pts): Make this depend on COMPRESS_BITS. */
 #endif
   }
 
@@ -909,14 +928,6 @@ static void fatal_s(const char *msg, const char *arg1) {
 static unsigned get_le16(const unsigned char *p) {
   return p[0] | p[1] << 8;
 }
-
-/* !! TODO(pts): Make it smaller for x86. */
-static void set_le16(unsigned char *p, unsigned v) {
-  *p++ = v;
-  *p = v >> 8;
-}
-
-#define set_byte(p, v) (*(p) = (v))
 
 /* Comprares two DOS .exe relocation entries for qsort(3). */
 static int cmp_reloc(const void *va, const void *vb) {
