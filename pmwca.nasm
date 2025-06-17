@@ -441,26 +441,30 @@ sort4:
   .next:	lea di, [bx-4]
 		mov si, bx  ; SI := BX *cur).
 		call is_reloc_less  ; is_less(cur, cur - SIZE).
-		jnc short .6  ; Jump if not less.
+		jnc short .continue  ; Jump if not less.
 		mov si, bx  ; SI (oldcur) := BX (cur).
   .2:		mov bx, di  ; BX (cur) -= SIZE.
 		cmp bx, bp  ; while (cur != base ...)
-		je short .3
+		je short .rotate
 		lea di, [bx-4]
 		call is_reloc_less  ; is_less(oldcur, cur - SIZE).
 		jc short .2  ; Jump if less.
-  .3:		mov cx, [si]  ; Remember first word.
-		mov di, [si+2]  ; Remember second word.
-		sub si, bx
-  .copy4:	mov ax, [si+bx-4]
-		mov [si+bx], ax
-		mov ax, [si+bx-4+2]
-		mov [si+bx+2], ax
-		sub si, byte 4
-		jnz short .copy4
-  .5:		mov [bx], cx  ; Store remembered first word.
-		mov [bx+2], di  ; Store remembered second word.
-  .6:		lea bx, [bx+4]  ; BX (cur) := BX + 4 (newcur).
+  .rotate:	; Now, until .continue, we will rotate the region BX...(SI+4) left (forward) by a dword (SIZE == 4).
+		; That is, save `dword [si]' to tmp, then copy from BX...SI to (BX+4)..(SI+4), then restore `dword [bx]' from tmp.
+		; We are allowed to ruin AX, CX, SI, DI and FLAGS until continue.
+		mov cx, si
+		sub cx, bx
+		shr cx, 1  ; Convert byte count to word count.
+		lea di, [si+2]
+		std
+		lodsw  ; Save second highest word to AX.
+		push word [di]  ; Save highest word.
+		rep movsw
+		cld  ; Restore DF := 0, we are not allowed to ruin that flag.
+		pop word [di]  ; Restore highest word.
+		mov [bx], ax  ; Restore second highest word.
+		; Rotation done. Now AX, CX (== 0), SI, DI and FLAGS are ruined.
+  .continue:	lea bx, [bx+4]  ; BX (cur) := BX + 4 (newcur).
 		cmp bx, dx  ; cur != end.
 		jne short .next
   .done:	pop di  ; Restore.
