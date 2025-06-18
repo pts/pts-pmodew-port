@@ -142,7 +142,7 @@ elif true; then
   test "$WATCOM"
   test -f "$WATCOM/h/stdio.h"
   export INCLUDE="$WATCOM/h"  # For OpenWatcom.
-  owcc -bdos -mcmodel=c -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc.exe pmwc.c
+  owcc -bdos -mcmodel=s -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc.exe pmwc.c
   unset INCLUDE
   "$kvikdos" pmwc.exe pmodewu.exe pmodew.exe
 fi
