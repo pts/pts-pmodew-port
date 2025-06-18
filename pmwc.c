@@ -32,6 +32,8 @@
  * For DOS, this program can compiled with the small memory model (<64 KiB
  * of data usage in total): `tcc -ms' or `owcc -mcmodel=s'.
  *
+ * !! Merge execons.c to pmwc.c, pmwca.asm and pmwca.nasm.
+ *
  * Pseudo-logic to decompress data:
  *
  * movestring2:
