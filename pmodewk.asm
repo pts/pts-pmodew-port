@@ -32,7 +32,9 @@ pmodew_config:  ; Default configuration for PMODE/W. Read manually from the begi
 @@extmax: dd 7fffffffh  ; Maximum extended memory to allocate. @0fh _pm_maxextmem
 @@lowmin: dw 0  ; Amount of low memory to try and save. Loaded by _openexe2 to somewhere else. @13h _lowmin
 @@end:  ; @15h
-align 2
+if (pmodew_config-$) AND 1
+  db 0
+endif
 ENDIF
 
 INT3108FUNC     = 1                     ; comment out to disable
