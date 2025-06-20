@@ -75,8 +75,7 @@ test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8a
 # No need to make the output consistent (i.e. bitwise identical) across TASM
 # (and TLINK) versions, because pmwc.c below would make its output
 # consistent anyway.
-if false; then
-  rm -f pmodewu.exe
+if test "$5"; then
   if true; then
     test "$WATCOM"
     test -f "$WATCOM/lh/stdio.h"
@@ -84,9 +83,15 @@ if false; then
     owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -o execons execons.c
     unset INCLUDE
     ./execons pmodewu.exe
+    ./execons pmodewv.exe
   elif false; then
     gcc -W -Wall -s -O2 -o execons execons.c
     ./execons pmodewu.exe
+    ./execons pmodewv.exe
+  elif false; then
+    minicc -o execons execons.c
+    ./execons pmodewu.exe
+    ./execons pmodewv.exe
   elif false; then
     # Turbo C++ 1.01 free (??) license and free download (not available anymore):
     # https://web.archive.org/web/20090307213905/https://edn.embarcadero.com/article/21751
@@ -103,6 +108,7 @@ if false; then
     # Needs: tcc.exe, tlink.exe, tcch/*.h, c0s.obj, fp87.lib, maths.lib, cs.lib.
     "$kvikdos" tcc.exe -ms -Itcch -f87 execons.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
     "$kvikdos" execons.exe pmodewu.exe
+    "$kvikdos" execons.exe pmodewv.exe
   elif false; then
     rm -f execons.exe
     test "$WATCOM"
@@ -111,17 +117,18 @@ if false; then
     owcc -bdos -Os -s -fno-stack-check -march=i086 -W -Wall -o execons.exe execons.c
     unset INCLUDE
     "$kvikdos" execons.exe pmodewu.exe
-  elif false; then
-    minicc -o execons execons.c
-    ./execons pmodewu.exe
+    "$kvikdos" execons.exe pmodewv.exe
   else
     : '! Missing compiler for execons.c' >&2
     false
   fi
 
   #cmp ../pmodewu.exe pmodewu.exe
-  test "$(sha256sum pmodewu.exe)" = "8f8dfc58a6b4936b872cf81498ef98326f5e38d666fa0c3574b6757b53fe7119  pmodewu.exe"  # /dPMWV=1.33.
-  #test "$(sha256sum pmodewu.exe)" = "d4271dc2162922c78fa5c6b94a360ca0fa4852c95a7f18c54e03177d96c18e1f  pmodewu.exe" # /dPMWV=1.34.
+  test "$(sha256sum pmodewu.exe)" = "debfc84a0278890a8676b49220b607decf4d7772da98cbe96b69ba4a294c6db0  pmodewu.exe"  # /dPMWV=33
+  #test "$(sha256sum pmodewu.exe)" = "7bb0de82fb0ed9c5ba6ad6f8772764a3fb47bc925a0e1a4bd7b64b698ffefb7f  pmodewu.exe" # /dPMWV=34
+  test "$(sha256sum pmodewv.exe)" = "f0acd20dca7f037ab04b262bb22a9ca7b34813ebeb57f2a9c9eafe2119eddb0d  pmodewv.exe"  # /dPMWV=33 /dUNC
+  #test "$(sha256sum pmodewv.exe)" = "fe01d303904677238ec5af7014de08495657407546a69a4d143446778e14c2e9  pmodewv.exe" # /dPMWV=34 /dUNC
+  #cp -ai pmodewu.exe pmodewu.exe.good
 fi
 
 rm -f pmodew.exe

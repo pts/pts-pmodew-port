@@ -119,18 +119,19 @@ int main(int argc, char **argv) {
     mark_dirty(relocpos + (nreloc << 2));
   }
   if (hdrsize >= 2 && (nreloc == 0 || relocpos >= 0x20)) {
-    /* Change the byte at 0x1c+3 from anything to 0x50. This is some kind of
-     * TLINK linker version number not used by DOS when loading the .exe.
-     *
-     * We change to the value found in PMODE/W 1.34: pmw133src/PMODEW.EXE in
-     * http://www.sid6581.net/pmodew/pmw133src.zip
-     */
     set_buf_le16_dirty(0x1c, 1);
-    set_buf_le16_dirty(0x1e, 0x50fb);
+    /* This value seems to depend on the TLINK version number.
+     *
+     * * TLINK 2.0: dw 0x20fb, 0x6a72
+     * * TLINK 3.0--4.01 (last tlink.exe running on a 8086, we imitate this): dw 0x30fb, 0x726a
+     * * TLINK 5.0--5.1--??: (used by pmw133src/PMODEW.EXE): dw 0x50fb, 0x726a
+     * * TLINK 7.0: dw 0x61fb, 0x726a
+     */
+    set_buf_le16_dirty(0x1e, 0x30fb);  /* We imitate TLINK 3.0--4.01. */
   }
   if (hdrsize >= 3 && (nreloc == 0 || relocpos >= 0x22)) {
     /* OK with TLINK >=3.0, but TLINK 2.0 generates 0x6a72 here. */
-    set_buf_le16_dirty(0x20, 0x726a);
+    set_buf_le16_dirty(0x20, 0x726a);  /* We imitate TLINK 3.0--4.01--7.0. */
   }
   if (dirty_size) {
     if (lseek(fd, 0, SEEK_SET) != 0) {
