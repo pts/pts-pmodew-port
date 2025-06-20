@@ -20,8 +20,17 @@ nasm=tools/nasm-0.98.39.upx
 
 PMWV="${6:-33}"
 
+is_nasm=
 is_consistent=; ! test "$5" || is_consistent=1  # If we use execons.c, then it's consistent.
 case "$tasm_exe" in
+ nasm* | */nasm*)
+  is_nasm=1; is_consistent=1; nasm="$tasm_exe"
+  # -O32767 instead of -O999999999 for compatibility with 16-bit NASM 0.98.39.
+  # This NASM invocation is one of the slowest compilation steps (!).
+  "$nasm" -O32700 -w+orphan-labels -DPMWV="$PMWV" -o pmodewu.exe pmodew.nasm
+  "$nasm" -O32700 -w+orphan-labels -DPMWV="$PMWV" -DUNC -o pmodewv.exe pmodew.nasm
+  "$nasm" -O0 -w+orphan-labels -f bin -DPMWV="$PMWV" -o pmwca.com pmwca.nasm
+  ;;
  t32*.exe | tasm32*.exe)
   dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewe
   dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewk
@@ -59,9 +68,11 @@ case "$tasm_exe" in
   "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmwca
   ;;
 esac
-"$kvikdos" "$tlink_exe" /3 /x pmodewe  pmodewk ,pmodewu.exe
-"$kvikdos" "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
-"$kvikdos" "$tlink_exe" /t /x pmwca
+if ! test "$is_nasm"; then
+  "$kvikdos" "$tlink_exe" /3 /x pmodewe  pmodewk ,pmodewu.exe
+  "$kvikdos" "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
+  "$kvikdos" "$tlink_exe" /t /x pmwca
+fi
 
 # Now pmodewv.exe is already ready to be used as a stub by OpenWatcom:
 #
@@ -71,7 +82,8 @@ esac
 # Do post-processing with execons.c to make pmodevu.exe and pmodewe.exe
 # consistent across TLINK versions. Apart from the SHA256 checksum
 # calculations, there is no need to do it for pmodewu.exe, because pmwc.c
-# and pmwca.com make the final pmodew.exe consistent anyway.
+# and pmwca.com make the final pmodew.exe consistent anyway. Also there is
+# no need to do it for NASM output, because that's consistent out of the box.
 if test "$5"; then
   if true; then
     test "$WATCOM"
