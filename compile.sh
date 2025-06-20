@@ -79,30 +79,30 @@ else
     test "$is_reproducible" && is_execons=1  # If TASM is 5.0--, then we have to run execons.c for reproducible output. Without that 2 relocations would be in the wrong order.
     dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
     dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
-    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
-    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
+    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
+    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
     dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
     ;;
    tasm[12]*.exe | tasm.exe)  # The /zn flag (no debug info) has been introduced in TASM 3.0.
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewe
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewk
-    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
-    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
+    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
+    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmwca  # Default input extension: .asm. Default output extension: .obj.
     ;;
    *.exe)
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
-    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
-    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
+    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
+    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
     ;;
    *)
     if test "$asm_prog" = "${asm_prog#*/}"; then asm_prog="./$asm_prog"; fi
     "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
     "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
-    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
-    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
+    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
+    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
     "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
     ;;
   esac
@@ -176,10 +176,10 @@ fi
 if test "$is_reproducible"; then
   if test "$pmwv" = 33; then
     test "$(sha256sum pmodewu.exe)" = "debfc84a0278890a8676b49220b607decf4d7772da98cbe96b69ba4a294c6db0  pmodewu.exe"  # /dPMWV=33
-    test "$(sha256sum pmodewv.exe)" = "f0acd20dca7f037ab04b262bb22a9ca7b34813ebeb57f2a9c9eafe2119eddb0d  pmodewv.exe"  # /dPMWV=33 /dUNC
+    test "$(sha256sum pmodewv.exe)" = "f0acd20dca7f037ab04b262bb22a9ca7b34813ebeb57f2a9c9eafe2119eddb0d  pmodewv.exe"  # /dPMWV=33 /dUNC=1
   else
     test "$(sha256sum pmodewu.exe)" = "7bb0de82fb0ed9c5ba6ad6f8772764a3fb47bc925a0e1a4bd7b64b698ffefb7f  pmodewu.exe"  # /dPMWV=34
-    test "$(sha256sum pmodewv.exe)" = "fe01d303904677238ec5af7014de08495657407546a69a4d143446778e14c2e9  pmodewv.exe"  # /dPMWV=34 /dUNC
+    test "$(sha256sum pmodewv.exe)" = "fe01d303904677238ec5af7014de08495657407546a69a4d143446778e14c2e9  pmodewv.exe"  # /dPMWV=34 /dUNC=1
   fi
 fi
 
