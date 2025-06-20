@@ -15,12 +15,15 @@ asm_prog=tasm20.exe
 # Tested and found working: TLINK 2.0, 3.0, 3.01, 4.0, 4.01.
 # It's not working with WLINK in OpenWatcom 2.0 2023-03-04, it generates incorrect relocations.
 tlink_exe=tlink20.exe
-kvikdos=tools/kvikdos-v1  # !!! tools/emu2-lc-2021.01
+emudos=tools/kvikdos-v1
 nasm=tools/nasm-0.98.39.upx
 pmwv=33
 is_dd=
 is_reproducible=1
 is_execons=
+is_emu2=
+is_explicit_kvikdos=
+is_nasm=
 
 for arg in "$@"; do
   case "$arg" in --*) ;; -*) arg="-$arg" ;; *) arg="--$arg" ;; esac  # Make leading dashes optionol.
@@ -31,9 +34,10 @@ for arg in "$@"; do
    --tlink=*) tlink_exe="${arg#*=}" ;;  # Unused and ignored if NASM is used.
    --tlink*.exe) tlink_exe="${arg#--}" ;;
    --nasm=*) nasm="${arg#*=}" ;;  # For --dd. Ignored if a NASM command is specified in --asm=... .
-   --kvikdos=*) kvikdos="${arg#*=}" ;;
-   --kvikdos) kvikdos=tools/kvikdos-v1 ;;
-   #--emu2) kvikdos=tools/emu2-lc-2021.01 ;;  # !!!
+   --kvikdos=*) emudos="${arg#*=}"; is_emu2=; is_explicit_kvikdos=1 ;;
+   --kvikdos) emudos=tools/kvikdos-v1; is_emu2=; is_explicit_kvikdos=1 ;;
+   --emu2=*) emudos="${arg#*=}"; is_emu2=1; is_explicit_kvikdos= ;;
+   --emu2) emudos=tools/emu2-lc-2021.01; is_emu2=1; is_explicit_kvikdos= ;;
    --33 | --v33) pmwv=33 ;;
    --34 | --v34) pmwv=34 ;;
    --version=1.*) pmwv="${arg#*.}" ;;
@@ -44,65 +48,63 @@ for arg in "$@"; do
    *) echo "fatal: unknown command-line flag: $arg" >&2; exit 1 ;;
   esac
 done
+case "$asm_prog" in nasm* | */nasm*) is_nasm=1 ;; *) is_nasm= ;; esac
 
-set -x  # Echo all commands run.
-
-is_nasm=
-case "$asm_prog" in
- nasm* | */nasm*)
-  is_nasm=1; is_reproducible=1; nasm="$asm_prog"
+if test "$is_nasm"; then
+  is_reproducible=1; nasm="$asm_prog"
+  set -x  # Echo all commands run.
   # -O32767 instead of -O999999999 for compatibility with 16-bit NASM 0.98.39.
   # This NASM invocation is one of the slowest compilation steps (!).
   "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -o pmodewu.exe pmodew.nasm
   "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -DUNC -o pmodewv.exe pmodew.nasm
   "$nasm" -O0 -w+orphan-labels -f bin -DPMWV="$pmwv" -o pmwca.com pmwca.nasm
-  ;;
- t32*.exe | tasm32*.exe)
-  test "$is_reproducible" && is_execons=1  # If TASM is 5.0--, then we have to run execons.c for reproducible output. Without that 2 relocations would be in the wrong order.
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
-  ;;
- tasm[12]*.exe | tasm.exe)  # The /zn flag has been introduced in TASM 3.0.
-  "$kvikdos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewe
-  "$kvikdos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewk
-  "$kvikdos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
-  "$kvikdos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
-  "$kvikdos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmwca  # Default input extension: .asm. Default output extension: .obj.
-  ;;
- tasm3[01]*.exe)  # They produce `int 3' in kvikdos. Without --mem-mb=2, they just hang in dosbox.nox.static. !! Does this work in emu2?
-  dosbox.nox.static --cmd --mem-mb=2 "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
-  dosbox.nox.static --cmd --mem-mb=2 "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
-  dosbox.nox.static --cmd --mem-mb=2 "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
-  dosbox.nox.static --cmd --mem-mb=2 "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
-  dosbox.nox.static --cmd --mem-mb=2 "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
-  ;;
- *.exe)
-  "$kvikdos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
-  "$kvikdos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
-  "$kvikdos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
-  "$kvikdos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
-  "$kvikdos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
-  ;;
- *)
-  if test "$asm_prog" = "${asm_prog#*/}"; then asm_prog="./$asm_prog"; fi
-  "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
-  "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
-  "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
-  "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
-  "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
-  ;;
-esac
-if ! test "$is_nasm"; then
+else
+  if test ! "${asm_prog#tasm3[01]*.exe}" && ! test "$is_emu2"; then
+    # TASM 3.0 and 3.1 produce `int 3' in kvikdos. Without --mem-mb=2, they would just hang in dosxbox.nox.static.
+    # Solution: we run them in emu2.
+    if test "$is_explicit_kvikdos"; then echo "fatal: can't run TASM 3.0 or 3.1 in kvikdos, please omit --kvikdos* to use emu2 instead for them" >&2; exit 1; fi
+    emudos=tools/emu2-lc-2021.01
+  fi
+  set -x  # Echo all commands run.
+  case "$asm_prog" in
+   t32*.exe | tasm32*.exe)
+    test "$is_reproducible" && is_execons=1  # If TASM is 5.0--, then we have to run execons.c for reproducible output. Without that 2 relocations would be in the wrong order.
+    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
+    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
+    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
+    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
+    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
+    ;;
+   tasm[12]*.exe | tasm.exe)  # The /zn flag has been introduced in TASM 3.0.
+    "$emudos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewe
+    "$emudos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewk
+    "$emudos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
+    "$emudos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
+    "$emudos" "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmwca  # Default input extension: .asm. Default output extension: .obj.
+    ;;
+   *.exe)
+    "$emudos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
+    "$emudos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
+    "$emudos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
+    "$emudos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
+    "$emudos" "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
+    ;;
+   *)
+    if test "$asm_prog" = "${asm_prog#*/}"; then asm_prog="./$asm_prog"; fi
+    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
+    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
+    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewe,pmodewev
+    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC pmodewk,pmodewkv
+    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
+    ;;
+  esac
   case "$tlink_exe" in
    tlink[34]*) ;;
    *) test "$is_reproducible" && is_execons=1 ;;  # If TLINK is not 3.0--4.01, then we have to run execons.c for reproducible output. Without that relocations would be in the wrong position and header values would be different.
   esac
-  "$kvikdos" "$tlink_exe" /3 /x pmodewe  pmodewk ,pmodewu.exe
-  "$kvikdos" "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
-  "$kvikdos" "$tlink_exe" /t /x pmwca
+  "$emudos" "$tlink_exe" /3 /x pmodewe  pmodewk ,pmodewu.exe
+  "$emudos" "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
+  "$emudos" "$tlink_exe" /t /x pmwca
 fi
 
 # Now pmodewv.exe is already ready to be used as a stub by OpenWatcom:
@@ -146,9 +148,9 @@ if test "$is_execons"; then
     # Also works with Turbo C++ 1.00.
     rm -f execons.exe
     # Needs: tcc.exe, tlink.exe, tcch/*.h, c0s.obj, fp87.lib, maths.lib, cs.lib.
-    "$kvikdos" tcc.exe -ms -Itcch -f87 execons.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
-    "$kvikdos" execons.exe pmodewu.exe
-    "$kvikdos" execons.exe pmodewv.exe
+    "$emudos" tcc.exe -ms -Itcch -f87 execons.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
+    "$emudos" execons.exe pmodewu.exe
+    "$emudos" execons.exe pmodewv.exe
   elif false; then
     rm -f execons.exe
     test "$WATCOM"
@@ -156,8 +158,8 @@ if test "$is_execons"; then
     export INCLUDE="$WATCOM/h"  # For OpenWatcom.
     owcc -bdos -Os -s -fno-stack-check -march=i086 -W -Wall -o execons.exe execons.c
     unset INCLUDE
-    "$kvikdos" execons.exe pmodewu.exe
-    "$kvikdos" execons.exe pmodewv.exe
+    "$emudos" execons.exe pmodewu.exe
+    "$emudos" execons.exe pmodewv.exe
   else
     : '! Missing compiler for execons.c' >&2
     false
@@ -174,7 +176,7 @@ if test "$is_reproducible"; then
 fi
 
 rm -f pmodew.exe
-"$kvikdos" pmwca.com pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
+"$emudos" pmwca.com pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
 if test "$pmwv" = 33; then
   test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
 else
@@ -198,8 +200,8 @@ elif true; then
   ./pmwc pmodewu.exe pmodew.exe
 elif false; then
   rm -f pmwc.exe pmwc.obj pmwc.o
-  "$kvikdos" tcc.exe -ms -Itcch -f87 -DPMWV="$pmwv" pmwc.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
-  "$kvikdos" pmwc.exe pmodewu.exe pmodew.exe
+  "$emudos" tcc.exe -ms -Itcch -f87 -DPMWV="$pmwv" pmwc.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
+  "$emudos" pmwc.exe pmodewu.exe pmodew.exe
 elif true; then
   test "$WATCOM"
   test -f "$WATCOM/h/stdio.h"
@@ -207,7 +209,7 @@ elif true; then
   rm -f pmwc.exe pmwc.obj pmwc.o
   owcc -bdos -mcmodel=s -std=c89 -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV="$pmwv" -o pmwc.exe pmwc.c
   unset INCLUDE
-  "$kvikdos" pmwc.exe pmodewu.exe pmodew.exe
+  "$emudos" pmwc.exe pmodewu.exe pmodew.exe
 fi
 if test "$pmwv" = 33; then
   #test "$(sha256sum pmodew.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodew.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
@@ -220,7 +222,7 @@ fi
 
 if ! test "$is_dd"; then  # No decompression debugging, so just do a simple (non-debug) decompression check.
   "$nasm" -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew.exe'" -DHUEXEFN="'pmodewu.exe'" -o dec.com dec.nasm
-  "$kvikdos" dec.com >pmodew.uprog.exe
+  "$emudos" dec.com >pmodew.uprog.exe
   cmp pmodew.uprog.exe pmodewu.exe
 else  # Decompression debugging.
   test "$WATCOM"
@@ -231,14 +233,14 @@ else  # Decompression debugging.
   ./pmwc pmodewu.exe pmodew.exe >pmodewc.log
 
   "$nasm" -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew.exe'" -DDEBUG -o dec.com dec.nasm
-  "$kvikdos" dec.com >dec.log  # This is slow, it takes a few seconds.
+  "$emudos" dec.com >dec.log  # This is slow, it takes a few seconds.
   <pmodewc.log grep '^[LDE]' >pmodewc.lde.log
   <dec.log grep '^[LDE]' >dec.lde.log
   diff pmodewc.lde.log dec.lde.log
 
   if test -f "pmodew1$pmwv.exe"; then
     "$nasm" -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew1$pmwv.exe'" -DDEBUG -o deco.com dec.nasm  # pmodew133.exe or pmodew134.com.
-    "$kvikdos" deco.com >deco.log  # This is slow, it takes a few seconds.
+    "$emudos" deco.com >deco.log  # This is slow, it takes a few seconds.
     <deco.log grep '^[LDE]' >deco.lde.log
     <deco.log grep '^[LE]' >deco.le.log
     <dec.log grep '^[LE]' >dec.le.log
