@@ -27,10 +27,10 @@ org BASE
 TAB equ 9
 CR equ 13
 
-%ifndef PMWV  ; Can be defined on the command line.
+%ifndef PMWV  ; Can be specified on the command-line.
   %define PMWV 33
 %else
-  %assign PMWV PMWV
+  %assign PMWV PMWV  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
 start:  ; DOS .com program entry point.
