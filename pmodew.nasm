@@ -15,9 +15,7 @@
 ; When dropping the requirement of bytewise identical output to TASM in the
 ; future, look at the comments with `Diff:' in them.
 ;
-; !! bytewise identical output: check all conditionals turned on, one each
-; !! compile with newer NASM, check bytewise identical output
-; !! -O0 instead of -O999999999 (with both NASM 0.98.39 and newer)
+; TODO(pts): Add manual sizes to do -O0 instead of -O999999999 (with both NASM 0.98.39 and newer).
 ;
 
 ; --- Configuration.
@@ -2341,7 +2339,7 @@ intr:                                   ; general interrupt redirector
 %if EXCEPTIONS
 	jmp exception_intlowentry+4*3   ; go to exception 3 handler
 %else
-	jmp far [cs:-pmodewk+int3vector]  ; INT 3, jump to INT 3 vector
+	fixpre_jmp_dword far [cs:-pmodewk+int3vector]  ; INT 3, jump to INT 3 vector
 %endif
 
 intrredirect:
@@ -3499,8 +3497,8 @@ int310204:                              ; get protected mode interrupt vector
 
 %if EXCEPTIONS==0
 .int310204f00:
-	mov edx,dword ptr cs:int3vector[0]      ; get offset of INT 3
-	mov cx,word ptr cs:int3vector[4]        ; get selector of INT 3
+	fixpre_mov edx,[cs:-pmodewk+int3vector+0]  ; get offset of INT 3
+	mov cx,[cs:-pmodewk+int3vector+4]        ; get selector of INT 3
 
 	jmp int31okedx                  ; return ok, with EDX, CX, AX
 %endif
@@ -3508,18 +3506,18 @@ int310204:                              ; get protected mode interrupt vector
 int310205:                              ; set protected mode interrupt vector
 	call int31remapIRQnum           ; remap logical IRQ number to physical
 
-	_xchg bx,cx                      ; swap int number with int selector
+	_xchg bx,cx                     ; swap int number with int selector
 	call int31testsel               ; test for valid selector BX
-	_xchg bx,cx                      ; swap int number with int selector
+	_xchg bx,cx                     ; swap int number with int selector
 
-	_mov bh,bl                       ; isolate IRQ base interrupt number
+	_mov bh,bl                      ; isolate IRQ base interrupt number
 	and bh,0f8h
 	mov ax,[cs:-pmodewk+picslave]   ; AX = PIC interrupt numbers
 
-	_cmp bh,ah                       ; low IRQ?
+	_cmp bh,ah                      ; low IRQ?
 	je short .int310205f2
 
-	_cmp bh,al                       ; high IRQ?
+	_cmp bh,al                      ; high IRQ?
 	jne short .int310205f1
 
 	sub bh,8
@@ -3592,8 +3590,8 @@ int310205:                              ; set protected mode interrupt vector
 	cmp bl,3                        ; INT 3 vector?
 	jne short .00                  ; if no, normal interrupt vector set
 
-	mov dword ptr fs:int3vector[0],edx      ; set offset of INT 3
-	mov word ptr fs:int3vector[4],cx        ; set selector of INT 3
+	fixpre2_mov [fs:-pmodewk+int3vector+0],edx      ; set offset of INT 3
+	mov [fs:-pmodewk+int3vector+4],cx        ; set selector of INT 3
 
 	jmp int31ok                     ; return ok
 %endif
@@ -5288,7 +5286,7 @@ _relocate1_PMW1:
 %endif
 
 %if PMW1UNCOMP
-	movzx ecx,word ptr [gs:102h]
+	fixpre_movzx_word ecx,gs,102h
 	mov edx,[-pmodewe+_fixupbufptr]
 	call _readfile                  ; Read in relocation block
 %else
@@ -7638,11 +7636,11 @@ _openexe1:
 	jmp _openexe2
 %endif
 
-%if OPENTYPE==3  ; !!! Compile and compare to TASM. !!! Compile all false conditiionals.
+%if OPENTYPE==3
 _filename	times 128 db ANY
 _openexe1:
 	cld
-	push es ds
+	multipush es, ds
 	mov ds,[cs:-pmodewe+_pspseg]
 	mov ax,cs
 	mov es,ax
@@ -7692,11 +7690,11 @@ _openexe3e:
 	pop ds
 	mov ax,3dc0h
 	int 21h
-	pop ds es
+	multipop ds, es
 	jc _loaderror
 	jmp _openexe2
 _openexe3err:
-	pop ds es
+	multipop ds, es
 	jmp _loaderror
 %endif
 
@@ -7764,7 +7762,7 @@ _openexe2:
 	mov ah,3fh
 	int 21h
 	jc _loaderror
-	mov ax,PMODE_TEXT
+	reloc mov ax,PMODE_TEXT
 	mov ds,ax
 	mov word [-pmodewk+_pm_pmstacklen],PM_PMSTACKLEN
 	mov word [-pmodewk+_pm_rmstacklen],PM_RMSTACKLEN

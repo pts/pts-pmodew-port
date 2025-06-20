@@ -43,27 +43,29 @@ check() {
   "$kvikdos" "$tasm_exe" /t /ml /m2 $znflag /q $tasmdflag pmodewe,pmodewed
   "$kvikdos" "$tasm_exe" /t /ml /m2 $znflag /q $tasmdflag pmodewk,pmodewkd
   "$kvikdos" "$tlink_exe" /3 /x pmodewed pmodewkd,pmodewtd.exe
+  # Some variants need sorting of relocations: a few of them are in the wrong order. Oddly, the TLINK output for original is in good order.
+  ! test "$1" || ./execons pmodewtd.exe
   if ! cmp pmodewtd.exe pmodewnd.exe; then
     ndisasm -b 16 -k 0,0x592 -k 0x23c0,0x38b pmodewnd.exe >pmodewnd.ndisasm
     ndisasm -b 16 -k 0,0x592 -k 0x23c0,0x38b pmodewtd.exe >pmodewtd.ndisasm
-    diff -u pmodewtd.ndisasm pmodewnd.ndisasm
+    diff -u pmodewtd.ndisasm pmodewnd.ndisasm >t.diff
     cmp -l pmodewtd.exe pmodewnd.exe  # Will fail.
   fi
 }
 
 check  # defaults="PMWV=33 UNC=0 DEBUG=0 PMW1UNCOMP=0 LOADLE=1 LOADPMW1=1 EXCEPTIONS=1 INT3108FUNC=1 INT1B=1 INT33=1 OPENTYPE=1 VARTYPE=1"
+gcc -W -Wall -s -O2 -o execons execons.c
 for PMWV in 33 34; do check "PMWV=$PMWV"; done
-# !! Try these variations below.
-#for UNC in 0 1; do check "UNC=$UNC"; done
-#for DEBUG in 0 1; do check "DEBUG=$DEBUG"; done
-#for PMW1UNCOMP in 0 1; do check "PMW1UNCOMP=$PMW1UNCOMP"; done
-#for LOADLE in 1 0; do check "LOADLE=$LOADLE"; done
-#for LOADPMW1 in 1 0; do check "LOADPMW1=$LOADPMW1"; done
-#for EXCEPTIONS in 1 0; do check "EXCEPTIONS=$EXCEPTIONS"; done
-#for INT3108FUNC in 1 0; do check "INT3108FUNC=$INT3108FUNC"; done
-#for INT1B in 1 0; do check "INT1B=$INT1B"; done
-#for INT33 in 1 0; do check "INT33=$INT33"; done
-#for OPENTYPE in 1 2 3; do check "OPENTYPE=$OPENTYPE"; done
-#for VARTYPE in 1 2; do check "VARTYPE=$VARTYPE"; done
+for UNC in 0 1; do check "UNC=$UNC"; done
+#for DEBUG in 0 1; do check "DEBUG=$DEBUG"; done  # DEBUG=1 is not implemented, because the file debug.inc is missing.
+for PMW1UNCOMP in 0 1; do check "PMW1UNCOMP=$PMW1UNCOMP"; done  # !! Bad relocation order?? with PMW1UNCOMP
+for LOADLE in 1 0; do check "LOADLE=$LOADLE"; done
+for LOADPMW1 in 1 0; do check "LOADPMW1=$LOADPMW1"; done
+for EXCEPTIONS in 1 0; do check "EXCEPTIONS=$EXCEPTIONS"; done
+for INT3108FUNC in 1 0; do check "INT3108FUNC=$INT3108FUNC"; done
+for INT1B in 1 0; do check "INT1B=$INT1B"; done
+for INT33 in 1 0; do check "INT33=$INT33"; done
+for OPENTYPE in 1 2 3; do check "OPENTYPE=$OPENTYPE"; done
+for VARTYPE in 1 2; do check "VARTYPE=$VARTYPE"; done
 
 : "$0" OK.

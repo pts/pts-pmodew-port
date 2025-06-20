@@ -1,6 +1,40 @@
 ; PMODE/W DPMI/VCPI/XMS/raw protected mode interface kernel.
 ; Copyright (c) 1994, 1996, Tran (a.k.a. Thomas Pytel).
 
+; --- Configuration.
+
+IFDEF PMWV  ; Can be specified on the command-line.
+  PMWV_=PMWV  ; TASM 2.0 can't handle PMWV_ being the same as PMWV.
+ELSE
+  PMWV_=33
+ENDIF
+
+IFDEF UNC  ; Can be specified on the command-line.
+  UNC_=UNC  ; TASM 2.0 can't handle UNC being the same as UNC_.
+ELSE
+  UNC_=0
+ENDIF
+
+IFDEF DEBUG  ; Can be specified on the command-line.
+  DEBUG_=DEBUG  ; TASM 2.0 can't handle DEBUG being the same as DEBUG_.
+ELSE
+  DEBUG_=0
+ENDIF
+
+IFDEF EXCEPTIONS  ; Can be specified on the command-line.
+  EXCEPTIONS_=EXCEPTIONS  ; TASM 2.0 can't handle EXCEPTIONS being the same as EXCEPTIONS_.
+ELSE
+  EXCEPTIONS_=1
+ENDIF
+
+IFDEF INT3108FUNC  ; Can be specified on the command-line.
+  INT3108FUNC_=INT3108FUNC  ; TASM 2.0 can't handle INT3108FUNC being the same as INT3108FUNC_.
+ELSE
+  INT3108FUNC_=1
+ENDIF
+
+; --- End of configuration.
+
 public  _pm_selectors, _pm_pagetables, _pm_rmstacklen, _pm_rmstacks
 public  _pm_callbacks, _pm_pmstacklen, _pm_pmstacks, _pm_mode, _pm_pampagemax
 public  _pm_maxextmem, _pm_options
@@ -16,7 +50,7 @@ assume  cs:PMODE_TEXT, ds:PMODE_TEXT
 
 off             equ     offset
 
-IFDEF UNC  ; By `tasm /dUNC'. Must be at te beginning of the .exe image, _openexe2 is looking for it there.
+IF UNC_  ; By `tasm /dUNC'. Must be at te beginning of the .exe image, _openexe2 is looking for it there.
 pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the .exe image (hdrsize<<<4).
 @@pagetables: db 4  ; Number of page tables under VCPI. @00 _pm_pagetables
 @@selectors: dw 100h  ; Max selectors under VCPI/XMS/raw. @01 _pm_selectors
@@ -36,9 +70,6 @@ if (pmodew_config-$) AND 1
   db 0
 endif
 ENDIF
-
-INT3108FUNC     = 1                     ; comment out to disable
-EXCEPTIONS      = 1                     ; comment out to disable
 
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; DATA
@@ -150,11 +181,11 @@ extmemsize      dd      0
 extmembase      dd      ?
 extmemlast      dd      ?
 
-ifdef   INT3108FUNC
+IF INT3108FUNC_
 pampagebase     dd      ?
 pampagetop      dd      ?
 pampagemask     dw      ?
-endif
+ENDIF
 
 xms_callip      dw      ?               ; XMS driver offset                 |
 xms_callcs      dw      ?               ; XMS driver segment                |
@@ -191,13 +222,13 @@ int31functbl    dw      0900h,0901h,0902h
                 dw      0500h,0501h,0502h,0503h
                 dw      0600h,0601h,0702h,0703h
 
-ifdef   INT3108FUNC
+IF INT3108FUNC_
                 dw      0800h,0801h
-endif
+ENDIF
 
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
                 dw      0202h,0203h
-endif
+ENDIF
 
                 dw      05ffh
 
@@ -215,18 +246,18 @@ int31routtbl    dw      int310900,int310901,int310902
 int3105routtbl  dw      int310500nomem,int31fail,int31fail,int31fail
                 dw      int31ok,int31ok,int31ok,int31ok
 
-ifdef   INT3108FUNC
+IF INT3108FUNC_
 int3108routtbl  dw      int31ok,int31ok
-endif
+ENDIF
 
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
                 dw      int310202,int310203
-endif
+ENDIF
 
                 dw      int3105ff
 
 ;ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
 
 align   2
 exceptionivect  dw      intrmatrix + 00h, 0, SELCODE
@@ -301,7 +332,7 @@ aborts_xcr2     db      'CR2: ',0
 aborts_tbl      dw      aborts_xception, aborts_callback, aborts_IRQtoPM
                 dw      aborts_INTtoRM, aborts_INT3103
 
-endif
+ENDIF
 
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; DETECT/INIT CODE
@@ -1126,9 +1157,9 @@ vxr_init:                               ; VCPI/XMS/raw common init tail
         add ax,bx
         mov rmstacktop,ax
 
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
         mov abortrmstacktop,ax          ; store stack top for possible abort
-endif
+ENDIF
 
         xor di,di                       ; set up IDT
         mov dx,word ptr picslave
@@ -1138,7 +1169,7 @@ endif
         mov bl,cl                       ; isolate high 5 bits of int num
         and bl,0f8h
 
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
         cmp cl,0eh                      ; one of the low 0eh interrupts?
         ja short @@00                   ; if no, skip exception init
 
@@ -1154,7 +1185,7 @@ ifdef   EXCEPTIONS
         stos dword ptr es:[di]          ; store low dword of IDT entry
 
         jmp short @@01
-endif
+ENDIF
 
 @@00:
         mov bh,bl
@@ -1865,11 +1896,11 @@ intr:                                   ; general interrupt redirector
         cmp word ptr [esp+4],SELCODE    ; INT redirection or internal INT 3?
         je short intrredirect           ; if not INT 3, jump to redirection
 
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
         jmp exception_intlowentry+4*3   ; go to exception 3 handler
-else
+ELSE
         jmp fword ptr cs:int3vector     ; INT 3, jump to INT 3 vector
-endif
+ENDIF
 
 ;ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
 intrredirect:
@@ -2154,7 +2185,7 @@ int24:                                  ; DOS INT 24h pass-up mode interface
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; EXCEPTIONS
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
 
 ;ÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍ
 exception_intlowentry:                  ; raw exception entry points
@@ -2560,7 +2591,7 @@ abort_INT3103:                          ; ran out of RM stacks in INT 31h 03h
         out 61h,al
 
         jmp $                           ; now hang
-endif
+ENDIF
 
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; INT 31h INTERFACE
@@ -3049,7 +3080,7 @@ int310204:                              ; get protected mode interrupt vector
 
         movzx ebx,bl                    ; EBX = BL (interrupt number)
 
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
         cmp bl,0eh                      ; exception interrupt?
         ja short @@00                   ; if no, process normally
 
@@ -3063,7 +3094,7 @@ ifdef   EXCEPTIONS
 else
         cmp bl,3                        ; INT 3 vector?
         je short @@int310204f00         ; if yes, go to special INT 3 handling
-endif
+ENDIF
 
 ;-----------------------------------------------------------------------------
 @@00:
@@ -3077,13 +3108,13 @@ endif
         jmp int31okedx                  ; return ok, with EDX, CX, AX
 
 ;-----------------------------------------------------------------------------
-ifndef  EXCEPTIONS
+IFE EXCEPTIONS_
 @@int310204f00:
         mov edx,dword ptr cs:int3vector[0]      ; get offset of INT 3
         mov cx,word ptr cs:int3vector[4]        ; get selector of INT 3
 
         jmp int31okedx                  ; return ok, with EDX, CX, AX
-endif
+ENDIF
 
 ;ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
 int310205:                              ; set protected mode interrupt vector
@@ -3161,7 +3192,7 @@ int310205:                              ; set protected mode interrupt vector
 
 ;-----------------------------------------------------------------------------
 @@int310205f5:                          ; set actual vector
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
         cmp bl,0eh                      ; exception interrupt?
         ja short @@00                   ; if no, process normally
 
@@ -3180,7 +3211,7 @@ else
         mov word ptr fs:int3vector[4],cx        ; set selector of INT 3
 
         jmp int31ok                     ; return ok
-endif
+ENDIF
 
 ;-----------------------------------------------------------------------------
 @@00:
@@ -3627,20 +3658,20 @@ int3105ff:                              ; initialize protected mode system
         mov eax,cs:vcpi_cr3
         mov cr3,eax
 
-ifdef   INT3108FUNC
+IF INT3108FUNC_
         movzx ecx,cs:_pm_pampagemax
         sub ebp,ecx
         jnc short @@02
 
         add ecx,ebp
         xor ebp,ebp
-endif
+ENDIF
 
 @@02:
         shl ebp,12
         mov fs:extmemsize,ebp
 
-ifdef   INT3108FUNC
+IF INT3108FUNC_
         or cl,cl
         jz @@00
 
@@ -3698,7 +3729,7 @@ ifdef   INT3108FUNC
 
         mov eax,cs:vcpi_cr3
         mov cr3,eax
-endif
+ENDIF
 
 ;-----------------------------------------------------------------------------
 @@00:
@@ -4025,7 +4056,7 @@ pma_findblock:                          ; find a block and test if used
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; PHYSICAL ADDRESS MAPPING FUNCTIONS
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
-ifdef   INT3108FUNC
+IF INT3108FUNC_
 
 ;ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
 int310800:
@@ -4166,12 +4197,12 @@ int310801:
         jz @@00l
 
         jmp int3108done
-endif
+ENDIF
 
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; EXCEPTIONS
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
-ifdef   EXCEPTIONS
+IF EXCEPTIONS_
 
 ;-----------------------------------------------------------------------------
 int31exceptionnum:                      ; test and set up exception number
@@ -4217,7 +4248,7 @@ int310203:                              ; get processor exception vector
         mov fs:[bx+4],cx
 
         jmp int31ok                     ; return ok
-endif
+ENDIF
 
 PMODE_TEXT      ends
 end

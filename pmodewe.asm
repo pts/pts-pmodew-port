@@ -2,31 +2,78 @@
 ; PMODE/W DOS Extender - Main Code
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 
+; --- Configuration.
+
+IFDEF PMWV  ; Can be specified on the command-line.
+  PMWV_=PMWV  ; TASM 2.0 can't handle PMWV_ being the same as PMWV.
+ELSE
+  PMWV_=33
+ENDIF
+
+IFDEF UNC  ; Can be specified on the command-line.
+  UNC_=UNC  ; TASM 2.0 can't handle UNC being the same as UNC_.
+ELSE
+  UNC_=0
+ENDIF
+
+IFDEF DEBUG  ; Can be specified on the command-line.
+  DEBUG_=DEBUG  ; TASM 2.0 can't handle DEBUG being the same as DEBUG_.
+ELSE
+  DEBUG_=0
+ENDIF
+
+IFDEF PMW1UNCOMP  ; Can be specified on the command-line.
+  PMW1UNCOMP_=PMW1UNCOMP  ; TASM 2.0 can't handle PMW1UNCOMP being the same as PMW1UNCOMP_.
+ELSE
+  PMW1UNCOMP_=0
+ENDIF
+
+IFDEF LOADLE  ; Can be specified on the command-line.
+  LOADLE_=LOADLE  ; TASM 2.0 can't handle LOADLE being the same as LOADLE_.
+ELSE
+  LOADLE_=1
+ENDIF
+
+IFDEF LOADPMW1  ; Can be specified on the command-line.
+  LOADPMW1_=LOADPMW1  ; TASM 2.0 can't handle LOADPMW1 being the same as LOADPMW1_.
+ELSE
+  LOADPMW1_=1
+ENDIF
+
+IFDEF INT1B  ; Can be specified on the command-line.
+  INT1B_=INT1B  ; TASM 2.0 can't handle INT1B being the same as INT1B_.
+ELSE
+  INT1B_=1
+ENDIF
+
+IFDEF INT33  ; Can be specified on the command-line.
+  INT33_=INT33  ; TASM 2.0 can't handle INT33 being the same as INT33_.
+ELSE
+  INT33_=1
+ENDIF
+
+IFDEF OPENTYPE  ; Can be specified on the command-line.
+  OPENTYPE_=OPENTYPE  ; TASM 2.0 can't handle OPENTYPE being the same as OPENTYPE_.
+ELSE
+  OPENTYPE_=1
+ENDIF
+
+IFDEF VARTYPE  ; Can be specified on the command-line.
+  VARTYPE_=VARTYPE  ; TASM 2.0 can't handle VARTYPE being the same as VARTYPE_.
+ELSE
+  VARTYPE_=1
+ENDIF
+
+; --- End of configuration.
+
 .386p
 locals
 jumps
 
-IFDEF PMWV
-  PMWVV=PMWV  ; TASM 2.0 can't handle PMWVV being the same as PMWV.
-ELSE
-  PMWVV=33
-ENDIF
-
 STACKLEN        = 40h       ; Stub stack size in para - KEEP THIS 40h OR ABOVE!
 
 PMWVER_MAJOR    = 1
-PMWVER_MINOR    = PMWVV
-
-OPENTYPE        = 1
-VARTYPE         = 1
-;DEBUG           = 1
-
-;PMW1UNCOMP      = 1
-LOADLE          = 1
-LOADPMW1        = 1
-
-INT33           = 1
-INT1B           = 1
+PMWVER_MINOR    = PMWV_
 
 EXTMAX          = 7fffffffh
 LOWMIN          = 00000h
@@ -62,9 +109,9 @@ extrn   _pm_options:byte
 pmcode16        segment para public use16 'CODE'
                 assume cs:pmcode16,ds:pmcode16
 
-ifdef DEBUG
+IF DEBUG_
 include debug.inc
-endif
+ENDIF
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; DATA
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
@@ -84,7 +131,7 @@ errmsg7         db 'Error Loading EXE!',36
 errmsg8         db 'Unrecognized Fixup Data!',36
 errmsg9         db '16bit Fixup Overflow!',36
 
-IF PMWVV-33
+IF PMWV_-33
 _copyrightmsg   db 'PMODE/W DOS Extender v1.34',10,13
                 db 'Copyright (C) 1994-2000, Charles Scheffold and Thomas Pytel'
 ELSE
@@ -95,7 +142,7 @@ ENDIF
 
 align 4
 
-IFNDEF  PMW1UNCOMP
+IF PMW1UNCOMP_ EQ 0
 decode_bufsize          = 4096
 decode_bufbase          dd ?     ;decode_buf
 decode_bufthreshold     dd ?     ;decode_buf + decode_bufsize - 16
@@ -182,39 +229,30 @@ _int21lowbufsel         dw ?
 _int21dtasel            dw ?
 _int21dtaoff            dd ?
 
-IFDEF INT33
-  INT33_OR_INT1B = 1
-ELSE
-  IFDEF INT1B
-    INT33_OR_INT1B = 1
-  ENDIF
-ENDIF
-
-IFDEF INT33
+IF INT33_
 _int33vectoff           dd ?
 _int33vectsel           dw ?
 ENDIF
 
-IF PMWVV-33
-ELSE
-  IFDEF INT33_OR_INT1B
+IFE PMWV_-33
+  IF INT33_ OR INT1B_
     _int33cursorbufseg  dw ?
   ENDIF
 ENDIF
-IFDEF INT33
+IF INT33_
   _int33mousebufsize    dd ?
   _int33callback        dd 0
   _int33entryflag       db 0
   _int330Ccalloff       dd ?
   _int330Ccallsel       dw ?
 ENDIF
-IF PMWVV-33
-  IFDEF INT33_OR_INT1B
+IF PMWV_-33
+  IF INT33_ OR INT1B_
     _int33cursorbufseg  dw ?
   ENDIF
 ENDIF
 
-IFDEF INT1B
+IF INT1B_
 _int1Bcallback          dd 0
 _int1Bflag              db 0
 ENDIF
@@ -243,7 +281,7 @@ _ss                    equ 30h
 ; EXE DECOMPRESSION CODE
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 
-IFNDEF  PMW1UNCOMP
+IF PMW1UNCOMP_ EQ 0
 include decode.asm
 ENDIF
 
@@ -307,7 +345,7 @@ _noborfix1:
         add ax,STACKLEN
         mov _membase,eax
 
-IFDEF INT33_OR_INT1B
+IF INT33_ OR INT1B_
                                         ; INT 33h Function 9 inherits the old
         mov _int33cursorbufseg,ss       ; real mode stack for its buffer
 ENDIF
@@ -331,8 +369,8 @@ ENDIF
 
         call _openexe1                  ; Open the EXE file for processing
                                         ; NOTE: This function changes
-                                        ; depending on the values of OPENTYPE
-                                        ; and VARTYPE
+                                        ; depending on the values of OPENTYPE_
+                                        ; and VARTYPE_.
 
         mov ax,PMODE_TEXT
         mov gs,ax                       ; Increase required callbacks for use
@@ -502,11 +540,11 @@ _l1f1:
         mov edx,_dtabufptr              ; Read In Executable Signature
         call _readfile
 
-IFDEF   LOADLE
+IF LOADLE_
         cmp word ptr gs:[0],'EL'        ; Is it an LE?
         jz _loadLE
 ENDIF
-IFDEF   LOADPMW1
+IF LOADPMW1_
         cmp dword ptr gs:[0],'1WMP'     ; Is it a PMW1?
         jz _loadPMW1
 ENDIF
@@ -515,13 +553,13 @@ ENDIF
 ;°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
 ; Load A PMW1 Executable - Must ONLY Be Called From _loadexe
 ;°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
-IFDEF   LOADPMW1
+IF LOADPMW1_
 _loadPMW1:
         mov ecx,24h
         add edx,4
         call _readfile                  ; Read in the rest of the PMW1 header
 
-IFNDEF  PMW1UNCOMP
+IF PMW1UNCOMP_ EQ 0
         mov eax,_int21lowbufptr         ; Fill the decompression variables
         mov decode_bufbase,eax
         add eax,decode_bufsize
@@ -569,13 +607,11 @@ _loadobjects_PMW1:
         pop edi
 _nozerobss1_PMW1:
 
-IFDEF   PMW1UNCOMP
+IF PMW1UNCOMP_
         mov ecx,gs:[104h]
         mov edx,edi
         call _readfile                  ; Read object data into memory
-ENDIF
-
-IFNDEF  PMW1UNCOMP
+ELSE
         call _int213Fbuftoggle          ; Turn off read buffer transfer
         mov ecx,gs:[104h]
         mov decode_filesize,ecx         ; Get the compressed block size
@@ -619,13 +655,11 @@ _relocate1_PMW1:
 ;        cmp ecx,_fixupbufsize           ; Make sure it will fit in our fixup
 ;        ja _loaderror                   ; buffer
 
-IFDEF   PMW1UNCOMP
+IF PMW1UNCOMP_
         movzx ecx,word ptr gs:[102h]
         mov edx,_fixupbufptr
         call _readfile                  ; Read in relocation block
-ENDIF
-
-IFNDEF  PMW1UNCOMP
+ELSE
         call _int213Fbuftoggle          ; Turn off read buffer transfer
         mov edi,_fixupbufptr
         movzx ecx,word ptr gs:[100h]
@@ -679,7 +713,7 @@ ENDIF
 ;°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
 ; Load An LE Executable - Must ONLY Be Called From _loadexe
 ;°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
-IFDEF   LOADLE
+IF LOADLE_
 _loadLE:
         mov ecx,0c0h
         add edx,4
@@ -1347,7 +1381,7 @@ _initdosext:
         mov edx,offset _int21handler
         int 31h                         ; Hook protected mode INT 21h
 
-IFDEF   INT33
+IF INT33_
         cmp dword ptr gs:[33h*4],0      ; Check mouse driver interrupt vector
         jnz _nomousedriver1             ; and continue if its not 0
         mov word ptr ds:_int33handler,0cf66h
@@ -1382,7 +1416,7 @@ _nomousedriver2:
 _nomousedriver3:
 ENDIF
 
-IFDEF   INT1B
+IF INT1B_
         db 66h,65h,0c7h,6,6ch,0
         dw offset _int1Brmhandler,pmcode16
 
@@ -1409,7 +1443,7 @@ _initdosextnoerror:
 _ret:
         ret
 
-IFDEF INT33_OR_INT1B
+IF INT33_ OR INT1B_
 _initgetcallback:
         push ds es
         mov ax,303h
@@ -1478,7 +1512,7 @@ _int31not0EEFF:
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; INT 33h Handler
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
-IFDEF   INT33
+IF INT33_
 _int33handler:
         pushad
         push es
@@ -1695,7 +1729,7 @@ ENDIF
 _int21handler:
         pushad
         push es
-IFDEF   INT1B
+IF INT1B_
         cmp cs:_int1Bflag,1
         jnz _int21no1B
         mov word ptr [esp+1eh],4c00h
@@ -2608,7 +2642,7 @@ _int214Bnocp2:
 ;   None
 ;°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
 _int214C:
-IFDEF   INT33
+IF INT33_
         mov edx,cs:_int33callback
         mov ecx,edx
         shr ecx,16
@@ -2616,7 +2650,7 @@ IFDEF   INT33
         int 31h
 _int214C_no33:
 ENDIF
-IFDEF   INT1B
+IF INT1B_
         mov edx,cs:_int1Bcallback
         mov ecx,edx
         shr ecx,16
@@ -2850,7 +2884,7 @@ _int21err_leave_eax:
 ;°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
 ; Call Real Mode Interrupt Routine
 ;°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
-IFDEF   INT33
+IF INT33_
 _realmodeint33:
         mov bx,33h
         jmp short _realmodeintq
@@ -2898,7 +2932,7 @@ _int21bufferpath:
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; INT 1Bh Handler
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
-IFDEF   INT1B
+IF INT1B_
 _int1Brmhandler:
         jmp dword ptr cs:_int1Bcallback
 _int1Brmreturn:
@@ -2922,7 +2956,7 @@ ENDIF
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
 ; SUPPLEMENTAL REAL MODE ROUTINES
 ;±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±±
-IF OPENTYPE EQ 1
+IF OPENTYPE_ EQ 1
 _openexe1:
         push ds es
         mov es,_envseg
@@ -2961,7 +2995,7 @@ _openexe1:
         jmp _openexe2
 ENDIF
 
-IF OPENTYPE EQ 2
+IF OPENTYPE_ EQ 2
 _openexe1:
         push ds
         xor ax,ax
@@ -2974,7 +3008,7 @@ _openexe1:
         jmp _openexe2
 ENDIF
 
-IF OPENTYPE EQ 3
+IF OPENTYPE_ EQ 3
 _filename       db 128 dup (?)
 _openexe1:
         cld
@@ -3036,13 +3070,13 @@ _openexe3err:
         jmp _loaderror
 ENDIF
 
-IF VARTYPE EQ 1
+IF VARTYPE_ EQ 1
 _openexe2:
         mov _exehandle,ax
         push ds
         mov bx,ax
         ; Read the LE/PMW1 header and pmodew_config from the .exe.
-IFDEF UNC  ; By `tasm /dUNC'.
+IF UNC_  ; By `tasm /dUNC'.
         mov cx,110h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h.
         mov ds,_int21lowdtaseg
         xor dx,dx
@@ -3088,7 +3122,7 @@ ENDIF
         ret
 ENDIF
 
-IF VARTYPE EQ 2
+IF VARTYPE_ EQ 2
 _openexe2:
         mov _exehandle,ax
         mov _lowmin,LOWMIN
