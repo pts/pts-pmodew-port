@@ -16,65 +16,62 @@ tasm_exe="${1:-tasm41.exe}"
 # It's not working with WLINK in OpenWatcom 2.0 2023-03-04, it generates incorrect relocations.
 tlink_exe="${2:-tlink40.exe}"
 kvikdos="${3:-$HOME/prg/kvikdos/kvikdos}"
+nasm=tools/nasm-0.98.39.upx
 
+PMWV="${6:-33}"
+
+is_consistent=; ! test "$5" || is_consistent=1  # If we use execons.c, then it's consistent.
 case "$tasm_exe" in
  t32*.exe | tasm32*.exe)
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
-  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmwca
+  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewe
+  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewk
+  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" /dUNC pmodewe,pmodewev
+  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" /dUNC pmodewk,pmodewkv
+  dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmwca
   ;;
  tasm[12]*.exe)  # The /zn flag has been introduced in TASM 3.0.
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 pmodewe
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 pmodewk
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 /dUNC pmodewe,pmodewev
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 /dUNC pmodewk,pmodewkv
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV=33 pmwca  # Default input extension: .asm. Default output extension: .obj.
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV="$PMWV" pmodewe
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV="$PMWV" pmodewk
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV="$PMWV" /dUNC pmodewe,pmodewev
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV="$PMWV" /dUNC pmodewk,pmodewkv
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /q /dPMWV="$PMWV" pmwca  # Default input extension: .asm. Default output extension: .obj.
   ;;
  tasm3[01]*.exe)  # They produce `int 3' in kvikdos. Without --mem-mb=2, they just hang in dosbox.nox.static.
-  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
-  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
-  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
-  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
-  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmwca
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewe
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewk
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" /dUNC pmodewe,pmodewev
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" /dUNC pmodewk,pmodewkv
+  dosbox.nox.static --cmd --mem-mb=2 "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmwca
   ;;
  *.exe)
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
-  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmwca
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewe
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewk
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" /dUNC pmodewe,pmodewev
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" /dUNC pmodewk,pmodewkv
+  "$kvikdos" "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmwca
   ;;
  *)
   if test "$tasm_exe" = "${tasm_exe#*/}"; then tasm_exe="./$tasm_exe"; fi
-  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewe
-  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmodewk
-  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewe,pmodewev
-  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 /dUNC pmodewk,pmodewkv
-  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV=33 pmwca
+  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewe
+  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmodewk
+  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" /dUNC pmodewe,pmodewev
+  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" /dUNC pmodewk,pmodewkv
+  "$tasm_exe" /t /ml /m2 /zn /q /dPMWV="$PMWV" pmwca
   ;;
 esac
 "$kvikdos" "$tlink_exe" /3 /x pmodewe  pmodewk ,pmodewu.exe
 "$kvikdos" "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
 "$kvikdos" "$tlink_exe" /t /x pmwca
 
-rm -f pmodew.exe
-"$kvikdos" pmwca.com pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
-test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
-
 # Now pmodewv.exe is already ready to be used as a stub by OpenWatcom:
 #
 #   owcc -bpmodew -Wl,op -Wl,stub=pmodewv.exe -s -Os -fno-stack-check -march=i386 -W -Wall -o hdxc.exe hdx.c
 #   wcl386 -l=pmodew -'"op"' -'"stub=pmodewv.exe"' -os -s -W -w4 -3r -fo=.o -fr -q -fe=hdxc.exe hdx.c
 
-# We don't check the checksum, because DOS .exe headers depend on the TLINK
-# version. Processing the output with execons.c would make it consistent.
-#test "$(sha256sum pmodewv.exe)" = "4890ffd8fcf52b24bb91eb9896464a366851ac74849031288ecef935a767a7f1  pmodewv.exe"
-
-# No need to make the output consistent (i.e. bitwise identical) across TASM
-# (and TLINK) versions, because pmwc.c below would make its output
-# consistent anyway.
+# Do post-processing with execons.c to make pmodevu.exe and pmodewe.exe
+# consistent across TLINK versions. Apart from the SHA256 checksum
+# calculations, there is no need to do it for pmodewu.exe, because pmwc.c
+# and pmwca.com make the final pmodew.exe consistent anyway.
 if test "$5"; then
   if true; then
     test "$WATCOM"
@@ -122,112 +119,125 @@ if test "$5"; then
     : '! Missing compiler for execons.c' >&2
     false
   fi
+fi
+if test "$is_consistent"; then
+  if test "$PMWV" = 33; then
+    test "$(sha256sum pmodewu.exe)" = "debfc84a0278890a8676b49220b607decf4d7772da98cbe96b69ba4a294c6db0  pmodewu.exe"  # /dPMWV=33
+    test "$(sha256sum pmodewv.exe)" = "f0acd20dca7f037ab04b262bb22a9ca7b34813ebeb57f2a9c9eafe2119eddb0d  pmodewv.exe"  # /dPMWV=33 /dUNC
+  else
+    test "$(sha256sum pmodewu.exe)" = "7bb0de82fb0ed9c5ba6ad6f8772764a3fb47bc925a0e1a4bd7b64b698ffefb7f  pmodewu.exe"  # /dPMWV=34
+    test "$(sha256sum pmodewv.exe)" = "fe01d303904677238ec5af7014de08495657407546a69a4d143446778e14c2e9  pmodewv.exe"  # /dPMWV=34 /dUNC
+  fi
+fi
 
-  #cmp ../pmodewu.exe pmodewu.exe
-  test "$(sha256sum pmodewu.exe)" = "debfc84a0278890a8676b49220b607decf4d7772da98cbe96b69ba4a294c6db0  pmodewu.exe"  # /dPMWV=33
-  #test "$(sha256sum pmodewu.exe)" = "7bb0de82fb0ed9c5ba6ad6f8772764a3fb47bc925a0e1a4bd7b64b698ffefb7f  pmodewu.exe" # /dPMWV=34
-  test "$(sha256sum pmodewv.exe)" = "f0acd20dca7f037ab04b262bb22a9ca7b34813ebeb57f2a9c9eafe2119eddb0d  pmodewv.exe"  # /dPMWV=33 /dUNC
-  #test "$(sha256sum pmodewv.exe)" = "fe01d303904677238ec5af7014de08495657407546a69a4d143446778e14c2e9  pmodewv.exe" # /dPMWV=34 /dUNC
-  #cp -ai pmodewu.exe pmodewu.exe.good
+rm -f pmodew.exe
+"$kvikdos" pmwca.com pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
+if test "$PMWV" = 33; then
+  test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
+else
+  test "$(sha256sum pmodew.exe)" = "b6813ff1f052dbe69b968a427a1eeceefe434519ca4cc5ddd43c501ed214de47  pmodew.exe"  # For PMWV=34.
 fi
 
 rm -f pmodew.exe
 if false; then
-  minicc -DPMWV=33 -o pmwc pmwc.c
+  minicc -DPMWV="$PMWV" -o pmwc pmwc.c
   ./pmwc pmodewu.exe pmodew.exe
 elif false; then
-  gcc -g -O2 -ansi -pedantic -W -Wall -DPMWV=33 -o pmwc pmwc.c
+  gcc -g -O2 -ansi -pedantic -W -Wall -DPMWV="$PMWV" -o pmwc pmwc.c
   valgrind ./pmwc pmodewu.exe pmodew.exe  # Works and it is faster without valgrind.
 elif true; then
   test "$WATCOM"
   test -f "$WATCOM/lh/stdio.h"
   export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
   rm -f pmwc
-  owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -o pmwc pmwc.c
+  owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV="$PMWV" -o pmwc pmwc.c
   unset INCLUDE
   ./pmwc pmodewu.exe pmodew.exe
 elif false; then
   rm -f pmwc.exe pmwc.obj pmwc.o
-  "$kvikdos" tcc.exe -ms -Itcch -f87 -DPMWV=33 pmwc.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
+  "$kvikdos" tcc.exe -ms -Itcch -f87 -DPMWV="$PMWV" pmwc.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
   "$kvikdos" pmwc.exe pmodewu.exe pmodew.exe
 elif true; then
   test "$WATCOM"
   test -f "$WATCOM/h/stdio.h"
   export INCLUDE="$WATCOM/h"  # For OpenWatcom.
   rm -f pmwc.exe pmwc.obj pmwc.o
-  owcc -bdos -mcmodel=s -std=c89 -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV=33 -o pmwc.exe pmwc.c
+  owcc -bdos -mcmodel=s -std=c89 -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV="$PMWV" -o pmwc.exe pmwc.c
   unset INCLUDE
   "$kvikdos" pmwc.exe pmodewu.exe pmodew.exe
 fi
-#test "$(sha256sum pmodew.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodew.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
-#test "$(sha256sum pmodew.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodew.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
-#test "$(sha256sum pmodew.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodew.exe"  # Same as of pmodew133rrr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 .
-test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01). For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 .
+if test "$PMWV" = 33; then
+  #test "$(sha256sum pmodew.exe)" = "2c453d800d04413c5798c3428b55fb4c71d6987027acc876aef2bdd9c5d865a8  pmodew.exe"  # Same as of pmodew133r.exe.   For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=0 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
+  #test "$(sha256sum pmodew.exe)" = "3868bdb478ec59ea75bde9eeb87b0cb9615a6f368419519df085f1a53ea2cc56  pmodew.exe"  # Same as of pmodew133rr.exe.  For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=0 -DCOMPRESS_LONGDIST=0 .
+  #test "$(sha256sum pmodew.exe)" = "1b90ffce71198f5a39238afce205c8fcc3b2da383ac85cf08123f4c3fbc8e6b5  pmodew.exe"  # Same as of pmodew133rrr.exe. For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=0 .
+  test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01). For -DCOMPRESS_BITS=16 -DCOMPRESS_BITREV=1 -DCOMPRESS_M1BITFIRST=1 -DCOMPRESS_EARLYNEXTBLOCK=1 -DCOMPRESS_LONGDIST=1 .
+else
+  test "$(sha256sum pmodew.exe)" = "b6813ff1f052dbe69b968a427a1eeceefe434519ca4cc5ddd43c501ed214de47  pmodew.exe"  # For PMWV=34.
+fi
 
-if ! test "$4"; then  # No need for debugging.
-  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew.exe'" -DHUEXEFN="'pmodewu.exe'" -o dec.com dec.nasm
+if ! test "$4"; then  # No need for decompression debugging.
+  "$nasm" -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew.exe'" -DHUEXEFN="'pmodewu.exe'" -o dec.com dec.nasm
   "$kvikdos" dec.com >pmodew.uprog.exe
   cmp pmodew.uprog.exe pmodewu.exe
-else  # Debugging.
+else  # Decompression debugging.
   test "$WATCOM"
   test -f "$WATCOM/lh/stdio.h"
   export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
-  owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV=33 -DDEBUG -o pmwc pmwc.c
+  owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV="$PMWV" -DDEBUG -o pmwc pmwc.c
   unset INCLUDE
   ./pmwc pmodewu.exe pmodew.exe >pmodewc.log
 
-  nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew.exe'" -DDEBUG -o dec.com dec.nasm
+  "$nasm" -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew.exe'" -DDEBUG -o dec.com dec.nasm
   "$kvikdos" dec.com >dec.log  # This is slow, it takes a few seconds.
   <pmodewc.log grep '^[LDE]' >pmodewc.lde.log
   <dec.log grep '^[LDE]' >dec.lde.log
   diff pmodewc.lde.log dec.lde.log
 
-  if test -f pmodew133.exe; then
-    nasm-0.98.39 -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew133.exe'" -DDEBUG -o deco133.com dec.nasm
-    "$kvikdos" deco133.com >deco133.log  # This is slow, it takes a few seconds.
-    <deco133.log grep '^[LDE]' >deco133.lde.log
-    <deco133.log grep '^[LE]' >deco133.le.log
+  if test -f "pmodew1$PMWV.exe"; then
+    "$nasm" -O0 -w+orphan-labels -DPMWV -DCEXEFN="'pmodew1$PMWV.exe'" -DDEBUG -o deco.com dec.nasm  # pmodew133.exe or pmodew134.com.
+    "$kvikdos" deco.com >deco.log  # This is slow, it takes a few seconds.
+    <deco.log grep '^[LDE]' >deco.lde.log
+    <deco.log grep '^[LE]' >deco.le.log
     <dec.log grep '^[LE]' >dec.le.log
     <pmodewc.log grep '^[LdDE]' >pmodewc.ldde.log
-  fi
-
-  perl -we 'use integer; use strict;
-      die("fatal: open A: $ARGV[0]\n") if !open(A, "< $ARGV[0]");
-      die("fatal: open B: $ARGV[1]\n") if !open(B, "< $ARGV[1]");
-      my $lb;
-      my $bigc = 0; my $nonbigc = 0; my $last_length = "0000";
-      while (defined($lb = <B>)) {
-        if ($lb =~ s@^d,(?=[^,\r\n])@@) {
-          chomp($lb);
-          my @hex_distances = split(/,/, $lb);
-          my $length = hex($last_length);
-          die("fatal: missing E before D\n") if !$length;
-          die("fatal: bad length\n") if $length < 2;
-          my $min_distance = hex($hex_distances[-1]);  # Smallest.
-          my $max_distance_limit = ($length == 2) ? (($min_distance <= 0xfe) ? 0xfe : 0xffff) : (($min_distance <= 0xff) ? 0xff : ($min_distance <= 0x3ff) ? 0x3ff : 0xffff);
-          my @limited_hex_distances = grep { hex($_) <= $max_distance_limit } @hex_distances;
-          die("fatal: unexpected EOF in B after d\n") if !defined($lb = <B>);
-          die("fatal: expected D in B after d\n") if $lb !~ m@^D@;
-          my $la = <A>;
-          die("fatal: unexpected EOF in A after D in b\n") if !defined($la);
-          die("fatal: expected D in A after d in B\n") if $la !~ s@^D@@;
-          chomp($la);
-          if ($la eq $limited_hex_distances[0]) {
-            ++$bigc;
+    perl -we 'use integer; use strict;
+        die("fatal: open A: $ARGV[0]\n") if !open(A, "< $ARGV[0]");
+        die("fatal: open B: $ARGV[1]\n") if !open(B, "< $ARGV[1]");
+        my $lb;
+        my $bigc = 0; my $nonbigc = 0; my $last_length = "0000";
+        while (defined($lb = <B>)) {
+          if ($lb =~ s@^d,(?=[^,\r\n])@@) {
+            chomp($lb);
+            my @hex_distances = split(/,/, $lb);
+            my $length = hex($last_length);
+            die("fatal: missing E before D\n") if !$length;
+            die("fatal: bad length\n") if $length < 2;
+            my $min_distance = hex($hex_distances[-1]);  # Smallest.
+            my $max_distance_limit = ($length == 2) ? (($min_distance <= 0xfe) ? 0xfe : 0xffff) : (($min_distance <= 0xff) ? 0xff : ($min_distance <= 0x3ff) ? 0x3ff : 0xffff);
+            my @limited_hex_distances = grep { hex($_) <= $max_distance_limit } @hex_distances;
+            die("fatal: unexpected EOF in B after d\n") if !defined($lb = <B>);
+            die("fatal: expected D in B after d\n") if $lb !~ m@^D@;
+            my $la = <A>;
+            die("fatal: unexpected EOF in A after D in b\n") if !defined($la);
+            die("fatal: expected D in A after d in B\n") if $la !~ s@^D@@;
+            chomp($la);
+            if ($la eq $limited_hex_distances[0]) {
+              ++$bigc;
+            } else {
+              ++$nonbigc;
+              print("$la -- @limited_hex_distances -- $last_length\n");
+            }
           } else {
-            ++$nonbigc;
-            print("$la -- @limited_hex_distances -- $last_length\n");
+            $last_length = $1 if $lb =~ m@^E(.*)@;
+            my $la = <A>;
+            die("fatal: unexpected EOF in A\n") if !defined($la);
+            chomp($la), chomp($lb), die("fatal: mismatch in A and B: ($la) vs ($lb)\n") if $la ne $lb;
           }
-        } else {
-          $last_length = $1 if $lb =~ m@^E(.*)@;
-          my $la = <A>;
-          die("fatal: unexpected EOF in A\n") if !defined($la);
-          chomp($la), chomp($lb), die("fatal: mismatch in A and B: ($la) vs ($lb)\n") if $la ne $lb;
         }
-      }
-      { my $la; die("fatal: missing EOF in A\n") if defined($la = <A>); }
-      print(STDERR "info: bigc=$bigc nonbigc=$nonbigc\n");
-      ' deco133.lde.log pmodewc.ldde.log
+        { my $la; die("fatal: missing EOF in A\n") if defined($la = <A>); }
+        print(STDERR "info: bigc=$bigc nonbigc=$nonbigc\n");
+        ' deco.lde.log pmodewc.ldde.log
+  fi
 fi
 
 : "$0" OK.

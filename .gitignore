@@ -7,9 +7,13 @@
 /pmodewk.obj
 /pmodewev.obj
 /pmodewkv.obj
+/pmodewed.obj
+/pmodewkd.obj
 /pmodewu.exe
 /pmodewv.exe
 /pmodewc.exe
+/pmodewtd.exe
+/pmodewnd.exe
 /dec.com
 /dec.out
 /dec.log
@@ -20,3 +24,7 @@
 /execons.exe
 /execons.o
 /pmodew.uprog.exe
+/deco.com
+/deco.log
+/deco.lde.log
+/deco.le.log
