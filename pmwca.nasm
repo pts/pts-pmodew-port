@@ -67,7 +67,7 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		cmp al, TAB
 		je short .ws2
 .fn2i:		dec si  ; SI := offset of output filename.
-		push si  ; Save offset of output filename. Will be popped by `pop dx' in write_udata.
+		push si  ; Save offset of output filename. Will be popped by `pop dx' in write_cdata.
 .fn2:		lodsb
 		cmp al, ' '
 		je short .fn2e
@@ -91,7 +91,7 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 fatal:		mov [fatal_msg.code], bp
 		mov ah, 0x40  ; Write to file using handle.
 		mov bx, 2  ; STDERR_FILENO.
-		mov dx, fatal_msg  ; DS:DI == pointer to start of buffer to be written.
+		mov dx, fatal_msg  ; DS:DX == pointer to start of buffer to be written.
 		mov cx, fatal_msg.end-fatal_msg  ; CX == number of bytes to write.
 		int 0x21  ; DOS syscall.
 		mov ax, 0x4c01  ; Exit with exit code EXIT_FAILURE (1).
