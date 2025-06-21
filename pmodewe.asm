@@ -4,61 +4,61 @@
 
 ; --- Configuration.
 
-IFDEF PMWV  ; Can be specified on the command-line.
+IFDEF PMWV  ; Can be specified on the command line.
   PMWV_=PMWV  ; TASM 2.0 can't handle PMWV_ being the same as PMWV.
 ELSE
   PMWV_=33
 ENDIF
 
-IFDEF UNC  ; Can be specified on the command-line.
+IFDEF UNC  ; Can be specified on the command line.
   UNC_=UNC  ; TASM 2.0 can't handle UNC being the same as UNC_.
 ELSE
   UNC_=0
 ENDIF
 
-IFDEF DEBUG  ; Can be specified on the command-line.
+IFDEF DEBUG  ; Can be specified on the command line.
   DEBUG_=DEBUG  ; TASM 2.0 can't handle DEBUG being the same as DEBUG_.
 ELSE
   DEBUG_=0
 ENDIF
 
-IFDEF PMW1UNCOMP  ; Can be specified on the command-line.
+IFDEF PMW1UNCOMP  ; Can be specified on the command line.
   PMW1UNCOMP_=PMW1UNCOMP  ; TASM 2.0 can't handle PMW1UNCOMP being the same as PMW1UNCOMP_.
 ELSE
   PMW1UNCOMP_=0
 ENDIF
 
-IFDEF LOADLE  ; Can be specified on the command-line.
+IFDEF LOADLE  ; Can be specified on the command line.
   LOADLE_=LOADLE  ; TASM 2.0 can't handle LOADLE being the same as LOADLE_.
 ELSE
   LOADLE_=1
 ENDIF
 
-IFDEF LOADPMW1  ; Can be specified on the command-line.
+IFDEF LOADPMW1  ; Can be specified on the command line.
   LOADPMW1_=LOADPMW1  ; TASM 2.0 can't handle LOADPMW1 being the same as LOADPMW1_.
 ELSE
   LOADPMW1_=1
 ENDIF
 
-IFDEF INT1B  ; Can be specified on the command-line.
+IFDEF INT1B  ; Can be specified on the command line.
   INT1B_=INT1B  ; TASM 2.0 can't handle INT1B being the same as INT1B_.
 ELSE
   INT1B_=1
 ENDIF
 
-IFDEF INT33  ; Can be specified on the command-line.
+IFDEF INT33  ; Can be specified on the command line.
   INT33_=INT33  ; TASM 2.0 can't handle INT33 being the same as INT33_.
 ELSE
   INT33_=1
 ENDIF
 
-IFDEF OPENTYPE  ; Can be specified on the command-line.
+IFDEF OPENTYPE  ; Can be specified on the command line.
   OPENTYPE_=OPENTYPE  ; TASM 2.0 can't handle OPENTYPE being the same as OPENTYPE_.
 ELSE
   OPENTYPE_=1
 ENDIF
 
-IFDEF VARTYPE  ; Can be specified on the command-line.
+IFDEF VARTYPE  ; Can be specified on the command line.
   VARTYPE_=VARTYPE  ; TASM 2.0 can't handle VARTYPE being the same as VARTYPE_.
 ELSE
   VARTYPE_=1

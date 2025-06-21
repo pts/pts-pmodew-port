@@ -20,14 +20,14 @@
 
 ; --- Configuration.
 
-%ifndef PMWV  ; Can be specified on the command-line.
+%ifndef PMWV  ; Can be specified on the command line.
   %define PMWV 33  ; Generate PMODE/W version 1.33.
   ;%define PMWV 34  ; Generate PMODE/W version 1.34.
 %else
   %assign PMWV PMWV  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef UNC  ; Can be specified on the command-line.
+%ifndef UNC  ; Can be specified on the command line.
   %define UNC 0  ; Generate non-working, uncompressed DOS .exe (pmodewu.exe), which will have to be compressed by pmwc to produce the working, compressed, final, release pmodew.exe.
   ;%define UNC 1  ; Generate the working, remains-uncompressed DOS .exe stub (pmodewv.exe).
 %elifidn (UNC), ()
@@ -36,7 +36,7 @@
   %assign UNC UNC  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef DEBUG  ; Can be specified on the command-line.
+%ifndef DEBUG  ; Can be specified on the command line.
   %define DEBUG 0  ; Disable debug code.
   ;%define DEBUG 1  ; Enable debug code. Not implemented.
 %elifidn (DEBUG), ()
@@ -45,7 +45,7 @@
   %assign DEBUG DEBUG  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef PMW1UNCOMP  ; Can be specified on the command-line.
+%ifndef PMW1UNCOMP  ; Can be specified on the command line.
   %define PMW1UNCOMP 0  ; PMW1-format executables are compressed.
   ;%define PMW1UNCOMP 1 ; PMW1-format executables are uncompressed.
 %elifidn (PMW1UNCOMP), ()
@@ -54,7 +54,7 @@
   %assign PMW1UNCOMP PMW1UNCOMP  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef LOADLE  ; Can be specified on the command-line.
+%ifndef LOADLE  ; Can be specified on the command line.
   %define LOADLE 1  ; Enable loading of LE-format executables.
   ;%define LOADLE 0  ; Disable loading of LE-format executables.
 %elifidn (LOADLE), ()
@@ -63,7 +63,7 @@
   %assign LOADLE LOADLE  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef LOADPMW1  ; Can be specified on the command-line.
+%ifndef LOADPMW1  ; Can be specified on the command line.
   %define LOADPMW1 1  ; Enable loading of PMW1-format executables.
   ;%define LOADPMW1 0  ; Disble loading of PMW1-format executables.
 %elifidn (LOADPMW1), ()
@@ -72,7 +72,7 @@
   %assign LOADPMW1 LOADPMW1  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef EXCEPTIONS  ; Can be specified on the command-line.
+%ifndef EXCEPTIONS  ; Can be specified on the command line.
   %define EXCEPTIONS 1  ; Enable DPMI processor exception handler API (int 31h, AX == 202h and AX == 203h).
   ;%define EXCEPTIONS 0  ; Disable DPMI processor exception handler API (int 31h, AX == 202h and AX == 203h).
 %elifidn (EXCEPTIONS), ()
@@ -81,7 +81,7 @@
   %assign EXCEPTIONS EXCEPTIONS  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef INT3108FUNC  ; Can be specified on the command-line.
+%ifndef INT3108FUNC  ; Can be specified on the command line.
   %define INT3108FUNC 1  ; Enable DPMI physical address mapping API (int 31h, AX == 8000h and AX == 8001h).
   ;%define INT3108FUNC 0
 %elifidn (INT3108FUNC), ()
@@ -90,7 +90,7 @@
   %assign INT3108FUNC INT3108FUNC  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef INT1B  ; Can be specified on the command-line.
+%ifndef INT1B  ; Can be specified on the command line.
   %define INT1B 1  ; Enable handling of the Ctrl-Break interrupt (int 1bh).
   ;%define INT1B 0  ; Disable handling of the Ctrl-Break interrupt (int 1bh).
 %elifidn (INT1B), ()
@@ -99,7 +99,7 @@
   %assign INT1B INT1B  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef INT33  ; Can be specified on the command-line.
+%ifndef INT33  ; Can be specified on the command line.
   %define INT33 1  ; Enable handling of the mouse interrupt (int 33h).
   ;%define INT33 0  ; Disable handling of the mouse interrupt (int 33h).
 %elifidn (INT33), ()
@@ -108,7 +108,7 @@
   %assign INT33 INT33  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef OPENTYPE  ; Can be specified on the command-line.
+%ifndef OPENTYPE  ; Can be specified on the command line.
   %define OPENTYPE 1  ; ??.
   ;%define OPENTYPE 2  ; ??.
   ;%define OPENTYPE 3  ; ??.
@@ -118,7 +118,7 @@
   %assign OPENTYPE OPENTYPE  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef VARTYPE  ; Can be specified on the command-line.
+%ifndef VARTYPE  ; Can be specified on the command line.
   %define VARTYPE 1  ; ??.
   ;%define VARTYPE 2  ; ??.
 %elifidn (VARTYPE), ()

@@ -3,31 +3,31 @@
 
 ; --- Configuration.
 
-IFDEF PMWV  ; Can be specified on the command-line.
+IFDEF PMWV  ; Can be specified on the command line.
   PMWV_=PMWV  ; TASM 2.0 can't handle PMWV_ being the same as PMWV.
 ELSE
   PMWV_=33
 ENDIF
 
-IFDEF UNC  ; Can be specified on the command-line.
+IFDEF UNC  ; Can be specified on the command line.
   UNC_=UNC  ; TASM 2.0 can't handle UNC being the same as UNC_.
 ELSE
   UNC_=0
 ENDIF
 
-IFDEF DEBUG  ; Can be specified on the command-line.
+IFDEF DEBUG  ; Can be specified on the command line.
   DEBUG_=DEBUG  ; TASM 2.0 can't handle DEBUG being the same as DEBUG_.
 ELSE
   DEBUG_=0
 ENDIF
 
-IFDEF EXCEPTIONS  ; Can be specified on the command-line.
+IFDEF EXCEPTIONS  ; Can be specified on the command line.
   EXCEPTIONS_=EXCEPTIONS  ; TASM 2.0 can't handle EXCEPTIONS being the same as EXCEPTIONS_.
 ELSE
   EXCEPTIONS_=1
 ENDIF
 
-IFDEF INT3108FUNC  ; Can be specified on the command-line.
+IFDEF INT3108FUNC  ; Can be specified on the command line.
   INT3108FUNC_=INT3108FUNC  ; TASM 2.0 can't handle INT3108FUNC being the same as INT3108FUNC_.
 ELSE
   INT3108FUNC_=1
