@@ -959,15 +959,14 @@ int main(int argc, char **argv) {
   unsigned relocofs, relocseg;
 
   (void)argc;
-  if (!argv[0] || !argv[1] || !argv[2]) {
-    fprintf(stderr, "Usage: %s <input.exe> <compressed-output.exe>\n", argv[0]);
+  if (!argv[0] || !argv[1] || (argv[2] && argv[3])) {
+    fprintf(stderr, "Usage: %s <input.exe> [<compressed-output.exe>]\n", argv[0]);
     return 1;
   }
   /* For probes >= 113 && probes <= 10000, the file size is the same. */
   if (argv[3]) probes = atoi(argv[3]);  /* !! Document it. */
   srcfn = argv[1]; dstfn = argv[2];
-  if (!(src = fopen(srcfn, "rb"))) fatal_s("error opening source file", srcfn);
-  if (!(dst = fopen(dstfn, "wb"))) fatal_s("error opening destination file", dstfn);
+  if (!(src = fopen(srcfn, dstfn ? "rb" : "r+b"))) fatal_s("error opening source file", srcfn);
   if (fread(exehd, 1, sizeof(exehd), src) != sizeof(exehd)) fatal_s("error reading DOS .exe header", srcfn);
   if (get_le16(exehd) != ('M' | 'Z' << 8)) fatal_s("missing DOS .exe signature", srcfn);
   lastsize = get_le16(exehd + 1 * 2);
@@ -988,6 +987,35 @@ int main(int argc, char **argv) {
   if (maxalloc != 0xffff) fatal_s("unexpected maxalloc in DOS .exe", srcfn);
   /* Not supported reading that many relocations to exehd. */
   if (relocpos >= sizeof(exehd) || ((sizeof(exehd) - relocpos) >> 1) < nreloc) fatal_s("unsupported: too many relocations in DOS .exe", srcfn);
+
+  if (!dstfn) {  /* Just make the relocations consistent in srcfn */
+    if (relocpos != 0x3e) {  /* For TLINK 2.0. TLINK 3.0-- generates relocpos == 0x3e. */
+      if (relocpos > 0x3e) fatal_s("unexpected large relocpos in DOS .exe", srcfn);  /* TLINK doesn't generate relocpos > 0x3e. */
+      memmove(exehd + 0x3e, exehd + relocpos, nreloc << 2);
+      set_le16(exehd + 12 * 2, relocpos = 0x3e);
+    }
+    /* Sort relocations for consistency. See comment also for the other qsort below. */
+    qsort(exehd + relocpos, nreloc, 4, cmp_reloc);
+    set_le16(exehd + (13 * 2), 0);  /* noverlay at exehd + 0x1a. It's 0 already for all TLINK versions, but we play it safe. */
+    set_le16(exehd + 0x1c, 1);
+    /* This value seems to depend on the TLINK version number.
+     *
+     * * TLINK 2.0: dw 0x20fb, 0x6a72
+     * * TLINK 3.0--4.01 (last tlink.exe running on a 8086, we imitate this): dw 0x30fb, 0x726a
+     * * TLINK 5.0--5.1--??: (used by pmw133src/PMODEW.EXE): dw 0x50fb, 0x726a
+     * * TLINK 7.0: dw 0x61fb, 0x726a
+     */
+    set_le16(exehd + 0x1e, 0x30fb);  /* We imitate TLINK 3.0--4.01. */
+    /* OK with TLINK >=3.0, but TLINK 2.0 generates 0x6a72 here. */
+    set_le16(exehd + 0x20, 0x726a);  /* We imitate TLINK 3.0--4.01--7.0. */
+    memset(exehd + 0x22, 0, 0x3e - 0x22);
+    memset(exehd + 0x3e + (nreloc << 2), 0, sizeof(exehd) - 0x3e - (nreloc << 2));
+    if (fseek(src, 0, SEEK_SET)) fatal_s("error seeking in source DOS .exe", srcfn);
+    if (fwrite(exehd, 1, sizeof(exehd), src) != sizeof(exehd) || fflush(src) || fclose(src)
+       ) fatal_s("error writing consitent DOS .exe header", srcfn);
+    return 0;
+  }
+
   img_start = hdrsize << 4;
   img_size = ((lastsize & 0x1ff) ? (lastsize & 0x1ff) : 0x200) + ((nblocks - 1) << 9);  /* !! Check 16-bit overflow, or use `unsigned long'. */
   if (img_size <= img_start) fatal_s("source DOS .exe image size too small for header", srcfn);
@@ -999,10 +1027,13 @@ int main(int argc, char **argv) {
 
   /* Sort relocations for consistency.
    *
-   * TASM <=4.1 does the sorting (so this call is unnecesary), but TASM
-   * >=5.0 doesn't. It doesn't depend on the TLINK version. Without this
-   * call, the DOS .exe output of (TASM 5.3 + TLINK 4.01) would differ from
-   * of (TASM 4.1 + TLINK 4.01).
+   * TASM <=4.1 happens to do the sorting for podewu.exe and pmodewv.exe
+   * with the default config (so this call is unnecesary), but with some
+   * other features enabled (see compile_tasm_nasm_diffs.sh), TASM <=4.1
+   * doesn't sort corretly; also TASM >=5.0 doesn't sort correctly even with
+   * the default config. It doesn't depend on the TLINK version. Without
+   * this call, the DOS .exe output of (TASM 5.3 + TLINK 4.01) would differ
+   * from of (TASM 4.1 + TLINK 4.01).
    */
   qsort(exehd + relocpos, nreloc, 4, cmp_reloc);
   for (relocsrc = exehd + relocpos, u = 0; u < nreloc; ++u) {  /* Keep the original relocation order, for bitwise identical .exe output. */
@@ -1030,6 +1061,7 @@ int main(int argc, char **argv) {
   set_le16(preparator_buf + 0x135, ss);  /* U_SS. */
   set_le16(preparator_buf + 0x13a, sp);  /* U_SP. */
   if (fseek(src, img_start, SEEK_SET)) fatal_s("error seeking in source DOS .exe", srcfn);
+  if (!(dst = fopen(dstfn, "wb"))) fatal_s("error opening destination file", dstfn);
   if (fwrite(preparator_buf, 1, sizeof(preparator_buf), dst) != sizeof(preparator_buf)) fatal_s("error writing compressed DOS .exe preparator", dstfn);
   csize = Compress(dst, src, img_size, probes);
   if ((int)csize <= 0) { fflush(dst); fprintf(stderr, "fatal: pmwliteraw compression error: %d\n", (int)csize); return 2; }

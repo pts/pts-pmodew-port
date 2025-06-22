@@ -36,8 +36,8 @@ CR equ 13
 start:  ; DOS .com program entry point.
 		; Falls through.
 
-parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-output.exe>
-		mov si, 0x81  ; Offset of DOS command-line string within the PSP segment (== CS == DS == ES ==SS), terminated by CR.
+parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> [<compressed-output.exe>]
+		mov si, 0x81  ; Offset of DOS command-line string within the PSP segment (== CS == DS == ES == SS), terminated by CR.
 .ws1:		lodsb
 		cmp al, ' '
 		je short .ws1
@@ -49,6 +49,7 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		jmp short fatal
 .fn1i:		mov dx, si
 		dec dx  ; DX := offset of input filename.
+		push dx  ; Save offset of input filename. `pop ax' in make_exe_headers_consistent and write_cdata will pop it.
 .fn1:		lodsb
 		cmp al, ' '
 		je short .fn1e
@@ -56,18 +57,20 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-out
 		je short .fn1e
 		cmp al, CR
 		jne short .fn1
-.fatal_mo:	mov bp, 'MO'  ; Missing output filename.
-		jmp short fatal
 .fn1e:		mov byte [si-1], 0  ; Modify command-line string in place: add terminating NUL for input filename.
+		db 0xa8  ; Opcode of `test al, ...', to skip over the next `lodsb'.
 .ws2:		lodsb
 		cmp al, CR
-		je short .fatal_mo
-		cmp al, ' '
+		jne short .ws2ncr
+		xor si, si
+		push si  ; Save (the NULL) offset of (missing) output filename. Will be popped by `pop dx' in sort_relocs and write_cdata.
+		jmp short .done
+.ws2ncr:	cmp al, ' '
 		je short .ws2
 		cmp al, TAB
 		je short .ws2
 .fn2i:		dec si  ; SI := offset of output filename.
-		push si  ; Save offset of output filename. Will be popped by `pop dx' in write_cdata.
+		push si  ; Save offset of output filename. Will be popped by `pop dx' in sort_relocs and write_cdata.
 .fn2:		lodsb
 		cmp al, ' '
 		je short .fn2e
@@ -121,7 +124,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		int 0x21  ; DOS syscall. Sets AX to the number of bytes read.
 		mov bp, 'RH'  ; File read error reading the uncompressed DOS .exe header.
 		call fatal_if_c
-		mov bp, 'HT'  ; Input file headers too short.
+		mov bp, 'HT'  ; DOS .exe header too short.
 		cmp ax, strict word EXEHDRSIZE
 		jne short .j_fatal
 		mov si, dx  ; DS:SI := DS:DX == pointer to start of uexehdr.
@@ -143,13 +146,13 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		jb short .usize_ok
 		mov bp, 'TL'  ; Input file too long.
 .j_fatal:	jmp short fatal
-.usize_ok:	push ax  ; Save offset of end of udata.
+.usize_ok:	push ax  ; Save offset of end of udata. Will be popped by `pop dx' in sort_relocs.
 		mov ah, 0x3e  ; Close file using handle.
 		int 0x21  ; DOS syscall.
 		; Now: DS:SI == pointer to start of uexehdr.
 		; Falls through.
 
-compress_relocs:
+sort_relocs:
 		mov cx, [si+3*2]  ; nreloc.
 		test cx, cx
 		mov bp, 'NR'  ; No relocations. (apply_relocs) depends on a nonzero nreloc value.
@@ -169,10 +172,81 @@ compress_relocs:
 		lea ax, [word di+uexehdr]  ; AX := uexehdr+relocpos.
 		mov dx, cx  ; nreloc.
 		call sort4  ; Sorts relocations by (segment descending, then offset ascending). Ruins AX, BX, DX, SI, BP and FLAGS. Keeps CX and DI.
-.squeeze_relocs:  ; Convert each relocation from dword-sized (offset, segment) pair to word-sized offset+0x100.
+		pop dx  ; Restore DX := offset of end of udata.
+		pop ax  ; Restore AX := offset of output filename.
+		test ax, ax
+		jnz strict short squeeze_relocs  ; Jump if output filename has been specified.
+		; Falls through.
+
+make_exe_headers_consistent:
+		mov bx, uexehdr
+		mov si, word [bx+12*2]  ; relocpos.
+		;mov cx, word [bx+3*2]  ; CX still contains nreloc.
+		times 2 add cx, cx  ; CX := nreloc<<2.
+		lea di, [bx+0x3e-2]
+		add di, cx  ; DI := uexehdr+0x3e+(nreloc<<2)-2.
+		push di  ; Save uexehdr+0x3e+(nreloc<<2)-2. The -2 is also needed by the `scasw' below.
+		cmp si, byte 0x3e
+		je short .relocpos_ok  ; TLINK 3.0-- generates relocpos == 0x3e, so it jumps. It doesn't jump for TLINK 2.0.
+		mov bp, 'ER'  ; Unexpected large relocpos in DOS .exe. TLINK doesn't generate relocpos > 0x3e.
+		ja short read_udata.j_fatal
+		add si, cx  ; SI := relocpos+(nreloc<<2).
+		lea si, [si+bx-2]  ; SI := uexehdr+relocpos+(nreloc<<2)-2.
+		shr cx, 1  ; Speed optimization with `rep movsw' instead of `rep movsd'. Also needs -2 (instead of -2) everywhere above.
+		std
+		rep movsw  ; memmove(uexehdr + 0x3e, uexehdr + relocpos, nreloc << 2);
+		cld
+		mov word [bx+12*2], 0x3e  ; Set relocpos in uexehdr.
+.relocpos_ok:	lea di, [bx+0x1a]  ; DI := uexehdr+0x1a.
+		xor ax, ax
+		stosw  ; Set noverlay in uexehdr to 0.
+		inc ax
+		stosw  ; Set word [uexehdr+0x1c] to 1. We imitate TLINK.
+		; Thie word [uexehdr+0x1e] value seems to depend on the TLINK version number.
+		;
+		; * TLINK 2.0: dw 0x20fb, 0x6a72
+		; * TLINK 3.0--4.01 (last tlink.exe running on a 8086, we imitate this): dw 0x30fb, 0x726a
+		; * TLINK 5.0--5.1--??: (used by pmw133src/PMODEW.EXE): dw 0x50fb, 0x726a
+		; * TLINK 7.0: dw 0x61fb, 0x726a
+		mov ax, 0x30fb
+		stosw  ; Set word [uexehdr+0x1e] to 0x30fb.
+		mov ax, 0x726a
+		stosw  ; Set word [uexehdr+0x20] to 0x726a. We imitate TLINK 3.0--4.01--7.0. TLINK 2.0 generates 0x6a72 here.
+		mov cl, (0x3e-0x22)>>1  ; Sets the whole CX, because higher bytes are already 0 because of the `rep' abvoe.
+		xor ax, ax
+		rep stosw  ; memset(uexehdr + 0x22, 0, 0x3e - 0x22);
+		pop di  ; Restore DI := uexehdr+0x3e+(nreloc<<2)-2.
+		scasw  ; DI += 2. DI := uexehdr+0x3e+(nreloc<<2).
+		mov cx, uexehdr+EXEHDRSIZE
+		sub cx, di
+		shr cx, 1  ; For speed of `rep stosw' below. We couldn't have done `rep stosd', because the size is not divisible by 4.
+		rep stosw  ; memset(uexehdr + 0x3e + (nreloc << 2), 0, EXEHDRSIZE - 0x3e - (nreloc << 2));
+		pop ax  ; Restore AX := offset of input filename.
+		sub dx, udata
+		push dx  ; Save number of DOS .exe image bytes to write.
+		xchg dx, ax  ; DX := offset of input filename; AX := junk.
+		mov ah, 0x3c  ; Open file for writing, optionally create it, truncate it, using handle.
+		xor cx, cx  ; File attributes: none.
+		int 0x21  ; DOS syscall. Sets AX to the filehandle.
+		mov bp, 'OR'  ; Error opening input file for rewriting.
+		call fatal_if_c
+		xchg bx, ax  ; BX := filehandle of output file; AX := junk.
+		mov ah, 0x40  ; Write to file using handle.
+		;mov bx, ...  ; BX == filehandle of output file.
+		mov dx, uexehdr  ; DS:DX == pointer to start of buffer to be written.
+		mov cx, EXEHDRSIZE  ; Number of bytes to write.
+		int 0x21  ; DOS syscall.
+		mov bp, 'WR'  ; File write error.
+		call fatal_if_c
+		;mov bx, ...  ; BX == filehandle of output file.
+		mov dx, udata  ; DS:DX == pointer to start of buffer to be written.
+		pop cx  ; Number of DOS .exe image bytes to write.
+		jmp strict near final_write
+
+squeeze_relocs:  ; Converts each relocation from dword-sized (offset, segment) pair to word-sized offset+0x100.
+		push ax  ; Again, save offset of output filename.
 		lea si, [word di+uexehdr]  ; SI := uexehdr+relocpos.  Source of (offset, segment) pairs.
 		mov di, creloc  ; DS:DI := pointer to the squeezed relocations.
-		pop dx  ; DX := offset of end of udata.
 		;mov cx, [si+3*2]  ; CX == nreloc. Nonzero.
 		push cx  ; Save nreloc.
 		push di  ; Save creloc.
@@ -229,19 +303,22 @@ build_preparator_buf:
 		; Falls through.
 
 write_cdata:	mov ah, 0x3c  ; Open file for writing, optionally create it, truncate it, using handle.
+		pop dx  ; Restore DX := offset of output filename.
+		pop cx  ; Discard offset of input filename.
 		xor cx, cx  ; File attributes: none.
-		pop dx  ; Restore DX := output filename.
 		int 0x21  ; DOS syscall. Sets AX to the filehandle.
-		mov bp, 'OO'  ; Error opening input file.
+		mov bp, 'OO'  ; Error opening output file.
 		call fatal_if_c
-		xchg bx, ax  ; BX := filehandle of input file; AX := junk.
-		mov ah, 0x40  ; Write to file using handle.
+		xchg bx, ax  ; BX := filehandle of output file; AX := junk.
 		;mov bx, ...  ; BX == filehandle of output file.
 		mov dx, preparator_buf  ; DS:DX == pointer to start of buffer to be written.
 		mov cx, di  ; Pointer to the end of cdata.
 		sub cx, dx  ; CX := DI - preparator_buf. CX == number of bytes to write.
-		mov bp, 'WR'  ; File write error.
+		; Falls through.
+
+final_write:	mov ah, 0x40  ; Write to file using handle.
 		int 0x21  ; DOS syscall.
+		mov bp, 'WR'  ; File write error.
 		call fatal_if_c
 %if 0  ; No need to close the output file, DOS will close it right below, when to process exits.
 		mov ah, 0x3e  ; Close file using handle.
@@ -885,9 +962,9 @@ cexehdr:  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archive
 .ip:		dw exe_start-exe_image  ; Initial value of IP.
 .cs:		dw 0       ; Offset of code segment within load module (segment).
 .relocpos:	dw 0x003e  ; File offset of first relocation item. Unused because of nreloc == 0.
-.noverlay:	dw 0      ; Overlay number. Unused.
+.noverlay:	dw 0       ; Overlay number. Unused.
 
-padding:	dd 0  ; At file offset 0x1c. Unused.
+padding:	dd 0       ; At file offset 0x1c. Unused.
 
 exe_image:
 

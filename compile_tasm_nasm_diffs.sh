@@ -44,7 +44,7 @@ check() {
   "$kvikdos" "$tasm_exe" /t /ml /m2 $znflag /q $tasmdflag pmodewk,pmodewkd
   "$kvikdos" "$tlink_exe" /3 /x pmodewed pmodewkd,pmodewtd.exe
   # Some variants need sorting of relocations: a few of them are in the wrong order. Oddly, the TLINK output for original is in good order.
-  ! test "$1" || ./execons pmodewtd.exe
+  ! test "$1" || ./pmwc pmodewtd.exe
   if ! cmp pmodewtd.exe pmodewnd.exe; then
     ndisasm -b 16 -k 0,0x592 -k 0x23c0,0x38b pmodewnd.exe >pmodewnd.ndisasm
     ndisasm -b 16 -k 0,0x592 -k 0x23c0,0x38b pmodewtd.exe >pmodewtd.ndisasm
@@ -54,7 +54,7 @@ check() {
 }
 
 check  # defaults="PMWV=33 UNC=0 DEBUG=0 PMW1UNCOMP=0 LOADLE=1 LOADPMW1=1 EXCEPTIONS=1 INT3108FUNC=1 INT1B=1 INT33=1 OPENTYPE=1 VARTYPE=1"
-gcc -W -Wall -s -O2 -o execons execons.c
+gcc -s -O2 -ansi -pedantic -W -Wall -s -O2 -DPMWV=33 -o pmwc pmwc.c  # No need to specify -DPMWV="$PMWV" etc., signle-argument pmwc.c doesn't need it.
 for PMWV in 33 34; do check "PMWV=$PMWV"; done
 for UNC in 0 1; do check "UNC=$UNC"; done
 #for DEBUG in 0 1; do check "DEBUG=$DEBUG"; done  # DEBUG=1 is not implemented, because the file debug.inc is missing.
