@@ -103,7 +103,7 @@ int main(int argc, char **argv) {
       return 12;
     }
     if (relocpos < 0x3e && relocpos >= 0x1c && hdrsize > 3 && (((hdrsize << 4) - 0x3e) >> 2) >= nreloc) {
-      /* OK with LINK >=3.0 (it generates relocpos == 0x3e), but TLINK 2.0
+      /* OK with TLINK >=3.0 (it generates relocpos == 0x3e), but TLINK 2.0
        * generates relocpos == 0x22.
        */
       memmove(buf + 0x3e, buf + relocpos, nreloc << 2);
