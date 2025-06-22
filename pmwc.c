@@ -982,7 +982,7 @@ int main(int argc, char **argv) {
   cs = get_le16(exehd + 11 * 2);
   relocpos = get_le16(exehd + 12 * 2);
   if (nblocks > 0x7ff) fatal_s("DOS .exe nblocks too large", srcfn);  /* Turbo C++ 3 BOSS NE stub has nblocks > 0x7ff. We could do nblocks &= 0x7ff. */
-  if (!nreloc) fatal_s("DOS .exe hsa no relocations", srcfn);  /* The `loop' in the preparator code doesn't work without relocations. */
+  if (!nreloc) fatal_s("DOS .exe has no relocations", srcfn);  /* The `loop' in the preparator code doesn't work without relocations. */
   if (nreloc > 0xff) fatal_s("too many relocations in DOS .exe", srcfn);  /* Won't fit to single byte in preparator_buf. */
   if (minalloc == 0 || minalloc == 0xffff) fatal_s("unexpected minalloc in DOS .exe", srcfn);
   if (maxalloc != 0xffff) fatal_s("unexpected maxalloc in DOS .exe", srcfn);
