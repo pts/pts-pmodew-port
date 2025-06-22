@@ -59,10 +59,10 @@ if test "$is_nasm"; then
   # -O32767 instead of -O999999999 for compatibility with 16-bit NASM 0.98.39.
   # This NASM invocation is one of the slowest compilation steps (!).
   "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -o pmodewu.exe pmodew.nasm
-  "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -DUNC -o pmodewv.exe pmodew.nasm
-  "$nasm" -O0 -w+orphan-labels -f bin -DPMWV="$pmwv" -o pmwca.com pmwca.nasm
+  "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -DUNC=1 -o pmodewv.exe pmodew.nasm
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca.com pmwca.nasm
   rm -f pmwca
-  "$nasm" -O0 -w+orphan-labels -f bin -DPMWV="$pmwv" -o pmwca pmwcax.nasm && chmod +x pmwca
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca pmwcax.nasm && chmod +x pmwca
 else
   if ! test "${asm_prog#tasm30*.exe}" && ! test "$is_emu2"; then
     # TASM 3.0 produces `int 3' in kvikdos. Without --mem-mb=2, TASM
