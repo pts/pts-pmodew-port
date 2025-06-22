@@ -6,7 +6,7 @@
 ; Minimum NASM version needed: 0.98.39
 ;
 ; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe && cmp pmodew133.exe pmodew.exe && echo OK
-; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodew.exe && echo OK
+; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe >pmwca.log && <pmodewc.log grep '^[BLDEXY]' >pmodewc.bldexy.log && diff pmodewc.bldexy.log pmwca.log && cmp pmodew133.exe pmodew.exe && echo OK
 ;
 ; There is an eqivalent NASM 0.98.39-- source of this program in pwmca.nasm.
 ;
@@ -121,11 +121,10 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 		int 0x21  ; DOS syscall. Sets AX to the number of bytes read.
 		mov bp, 'RH'  ; File read error reading the uncompressed DOS .exe header.
 		call fatal_if_c
-		cmp ax, strict word EXEHDRSIZE
-		je short .hdrsize_ok
 		mov bp, 'HT'  ; Input file headers too short.
-		jmp short fatal
-.hdrsize_ok:	mov si, dx  ; DS:SI := DS:DX == pointer to start of uexehdr.
+		cmp ax, strict word EXEHDRSIZE
+		jne short .j_fatal
+		mov si, dx  ; DS:SI := DS:DX == pointer to start of uexehdr.
 		mov bp, 'MZ'
 		cmp [si+0*2], bp  ; signature.
 		jne short fatal  ; Bad DOS .exe signature.
@@ -147,7 +146,7 @@ read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
 .usize_ok:	push ax  ; Save offset of end of udata.
 		mov ah, 0x3e  ; Close file using handle.
 		int 0x21  ; DOS syscall.
-		; Now: DS:SI := DS:DX == pointer to start of uexehdr.
+		; Now: DS:SI == pointer to start of uexehdr.
 		; Falls through.
 
 compress_relocs:
@@ -319,19 +318,19 @@ sort4:
 		push di  ; Save.
 		mov bp, sp
 		sub sp, byte 8
-		mov cx, ax
+		xchg cx, ax  ; CX := base; AX := junk.
 		mov bx, dx
 		shr bx, 1
 		shl bx, 1
 		shl bx, 1
-		mov si, ax
+		mov si, cx
 		add si, bx
 		mov word [bp-2], si
 		mov bx, dx
 		shl bx, 1
 		shl bx, 1
 		sub bx, byte 4
-		add bx, ax
+		add bx, cx
 		cmp dx, byte 2
 		jb short .done
   .1:		mov ax, word [bp-2]
@@ -414,11 +413,11 @@ sort4:
   ;          cur != end;
   ;          cur = newcur) {
   ;       newcur = cur + SIZE;
-  ;       if (is_less(cur, cur - SIZE)) {
+  ;       if (is_reloc_less(cur, cur - SIZE)) {
   ;         oldcur = cur;
   ;         do {
   ;           cur -= SIZE;
-  ;         } while (cur != (char*)base && is_less(oldcur, cur - SIZE));
+  ;         } while (cur != (char*)base && is_reloc_less(oldcur, cur - SIZE));
   ;         /* memrotate(cur, oldcur, SIZE); */
   ;         while (oldcur != newcur) {
   ;           mid = oldcur;
@@ -441,24 +440,24 @@ sort4:
 		cmp dx, byte 1  ; Argument n.
 		jbe short .done
 		xchg ax, dx  ; AX := DX (argument n); DX := old_AX (argument base).
-		mov bp, dx  ; BX will keep holding argument base throughout the rest of the function.
+		mov bp, dx  ; BP will keep holding argument base throughout the rest of the function.
 		lea bx, [bp+4]  ; BX (cur) := base + SIZE.
 		times 2 add ax, ax  ; AX *= 4.
 		add dx, ax  ; DX (var_end) := base + SIZE * n.
   .next:	lea di, [bx-4]
 		mov si, bx  ; SI := BX *cur).
-		call is_reloc_less  ; is_less(cur, cur - SIZE).
+		call is_reloc_less  ; is_reloc_less(cur, cur - SIZE).
 		jnc short .continue  ; Jump if not less.
 		mov si, bx  ; SI (oldcur) := BX (cur).
   .scan_next:	mov bx, di  ; BX (cur) -= SIZE.
 		cmp bx, bp  ; while (cur != base ...)
 		je short .rotate
 		lea di, [bx-4]
-		call is_reloc_less  ; is_less(oldcur, cur - SIZE).
+		call is_reloc_less  ; is_reloc_less(oldcur, cur - SIZE).
 		jc short .scan_next  ; Jump if less.
-  .rotate:	; Now, until .continue, we will rotate the region BX...(SI+4) left (forward) by a dword (SIZE == 4).
+  .rotate:	; Now, until .continue, we will rotate the region BX...(SI+4) right (forward) by a dword (SIZE == 4).
 		; That is, save `dword [si]' to tmp, then copy from BX...SI to (BX+4)..(SI+4), then restore `dword [bx]' from tmp.
-		; We are allowed to ruin AX, CX, SI, DI and FLAGS until continue.
+		; We are allowed to ruin AX, CX, SI, DI and FLAGS until .continue.
 		mov cx, si
 		sub cx, bx
 		shr cx, 1  ; Convert byte count to word count.
@@ -469,7 +468,7 @@ sort4:
 		rep movsw
 		cld  ; Restore DF := 0, we are not allowed to ruin that flag.
 		pop word [di]  ; Restore highest word.
-		mov [bx], ax  ; Restore second highest word.
+		mov [bx], ax  ; Restore second highest word to the lowest position.
 		; Rotation done. Now AX, CX (== 0), SI, DI and FLAGS are ruined.
   .continue:	lea bx, [bx+4]  ; BX (cur) := BX + 4 (newcur).
 		cmp bx, dx  ; cur != end.
@@ -759,16 +758,13 @@ compress:	mov ax, 1
 		movsb  ; Copies a literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
 		jmp short .j_next_byte
 .match:		add si, dx  ; Skip over matched bytes in the uncompresed input data.
-		call emit_match  ; Ruins AX, BX, CX, DX, DI, BP, FLAGS. Keeps SI and BP intact.
+		call emit_match  ; Ruins AX, BX, CX, DX, FLAGS. Modifies DI. Keeps SI and BP intact.
 .j_next_byte:	jmp strict near .next_byte
 
-; Emits CL (1 <= CL <= 7) bits from AH, highest (of the CL) bits first.
-; Ruins: CX (sets it to 0), FLAGS.
-emit_bits:
-		mov ch, 0
-.next:		push ax  ; Save.
-		shr ah, cl  ; CF := pint to print.
-		pop ax  ; Restore.
+; Emits CL (1 <= CL <= 7) bits from AH, highest (of the CL) bits first. Assumes CH == 0.
+; Ruins: CL (sets it to 0), FLAGS.
+emit_bits:	ror ah, cl
+.next:		rol ah, 1  ; CF := pint to print.
 		call emit_bit
 		loop .next
 		ret
@@ -780,6 +776,7 @@ emit_bits:
 ; Keeps SI and BP intact.
 ; Ruins: AX, BX, CX, DX, FLAGS.
 emit_match:
+		mov ch, 0  ; For emit_bits.
 %ifdef DEBUG
 		mov ax, bx
 %else
@@ -790,6 +787,7 @@ emit_match:
 		cmp dx, byte 3  ; Also CF := (len == 2).
 		cmc  ; CF := (len != 2).
 		call emit_bit
+		mov cl, 3
 		cmp dx, byte 2
 		jne short .dist_3plus
 .dist_2:	cmp ax, strict word 0xff
@@ -802,7 +800,7 @@ emit_match:
 .dist_2_big:	do_emit_m1  ; In AL.
 		stc
 		call emit_bit
-		mov cl, 3
+		;mov cl, 3  ; Not needed, set above.
 		call emit_bits
 		jmp short .after_bits
 .dist_3plus:	do_emit_m1  ; In AL.
@@ -815,12 +813,9 @@ emit_match:
 .dist_3plus_mid_or_big:
 		stc
 		call emit_bit
-		mov cl, 3
-		cmp ah, 4
-		jae short .dist_3plus_big
-.dist_3plus_mid:
-		and ax, strict word 0x3ff  ; Same size as: `and ah, 3'. Makes the next `print bit' start with a 0 bit.
-		jmp short .dist_bits  ; With CL == 3.
+		;mov cl, 3  ; Not needed, set above.
+		cmp ah, cl
+		jna short .dist_bits  ; Jumps CL == 3 and 0 <= AH <= 3. No need for `and ah, 3' here. Because of 0 <= AH <= 3, the next `print bit' of 3 bits will start with a 0 bit.
 .dist_3plus_big:
 		stc
 		call emit_bit

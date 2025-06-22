@@ -61,6 +61,8 @@ if test "$is_nasm"; then
   "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -o pmodewu.exe pmodew.nasm
   "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -DUNC -o pmodewv.exe pmodew.nasm
   "$nasm" -O0 -w+orphan-labels -f bin -DPMWV="$pmwv" -o pmwca.com pmwca.nasm
+  rm -f pmwca
+  "$nasm" -O0 -w+orphan-labels -f bin -DPMWV="$pmwv" -o pmwca pmwcax.nasm && chmod +x pmwca
 else
   if ! test "${asm_prog#tasm30*.exe}" && ! test "$is_emu2"; then
     # TASM 3.0 produces `int 3' in kvikdos. Without --mem-mb=2, TASM
@@ -189,6 +191,15 @@ if test "$pmwv" = 33; then
   test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
 else
   test "$(sha256sum pmodew.exe)" = "b6813ff1f052dbe69b968a427a1eeceefe434519ca4cc5ddd43c501ed214de47  pmodew.exe"  # For PMWV=34.
+fi
+if test "$is_nasm"; then  # Double-check that the DOS and the Linux i386 implementation of pmwca produce the same output.
+  rm -f pmodew.exe
+  ./pmwca pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
+  if test "$pmwv" = 33; then
+    test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
+  else
+    test "$(sha256sum pmodew.exe)" = "b6813ff1f052dbe69b968a427a1eeceefe434519ca4cc5ddd43c501ed214de47  pmodew.exe"  # For PMWV=34.
+  fi
 fi
 
 rm -f pmodew.exe

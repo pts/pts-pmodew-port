@@ -6,7 +6,7 @@
 ; Link with TLINK 2.0-- on DOS, creating pmwca.com: tlink /t /x pmwca
 ;
 ; End-to-end check: ~/prg/kvikdos/kvikdos tasm20.exe /t /ml /m2 /q /dPMWV=33 pmwca && ~/prg/kvikdos/kvikdos tlink20.exe /t /x pmwca && rm -f pmodew.exe && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe && cmp pmodew133.exe pmodew.exe && echo OK
-; End-to-end check: ~/prg/kvikdos/kvikdos tasm20.exe /t /ml /m2 /q /dPMWV=33 /dDEBUG pmwca && ~/prg/kvikdos/kvikdos tlink20.exe /t /x pmwca && rm -f pmodew.exe && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe >pmwca.log && <pmwca.log grep '^[BLDE]' >pmwca.blde.log && diff pmodewc.blde.log pmwca.blde.log && cmp pmodew133.exe pmodew.exe && echo OK
+; End-to-end check: ~/prg/kvikdos/kvikdos tasm20.exe /t /ml /m2 /q /dPMWV=33 /dDEBUG pmwca && ~/prg/kvikdos/kvikdos tlink20.exe /t /x pmwca && rm -f pmodew.exe && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe >pmwca.log && <pmodewc.log grep '^[BLDEXY]' >pmodewc.bldexy.log && diff pmodewc.bldexy.log pmwca.log && cmp pmodew133.exe pmodew.exe && echo OK
 ;
 ; There is an eqivalent NASM 0.98.39-- source of this program in pwmca.nasm.
 ;
@@ -125,6 +125,8 @@ _nasm_mov_bx_dx = 0d389h
 _mov_bx_dx = 0da8bh
 _nasm_mov_si_ax = 0c689h
 _mov_si_ax = 0f08bh
+_nasm_mov_si_cx = 0ce89h
+_mov_si_cx = 0f18bh
 _nasm_add_si_bx = 0de01h
 _add_si_bx = 0f303h
 _nasm_add_bx_ax = 0c301h
@@ -147,6 +149,8 @@ _nasm_mov_sp_bp = 0ec89h
 _mov_sp_bp = 0e58bh
 _nasm_mov_al_ah = 0e088h
 _mov_al_ah = 0c48ah
+_nasm_cmp_ah_cl = 0cc38h
+_mov_ah_cl = 0e13ah
 
 parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> <compressed-output.exe>
 		mov si, 81h  ; Offset of DOS command-line string within the PSP segment (== CS == DS == ES ==SS), terminated by CR.
@@ -233,11 +237,10 @@ read_udata:	mov ax, 3d00h  ; Open file for reading, using handle.
 		int 21h  ; DOS syscall. Sets AX to the number of bytes read.
 		mov bp, 'HR'  ; 'RH': File read error reading the uncompressed DOS .exe header.
 		call fatal_if_c
-		cmp ax, strict_word EXEHDRSIZE
-		je short @@hdrsize_ok
 		mov bp, 'TH'  ; 'HT': Input file headers too short.
-		jmp short fatal
-@@hdrsize_ok:	dw _nasm_mov_si_dx  ; DS:SI := DS:DX == pointer to start of uexehdr.
+		cmp ax, strict_word EXEHDRSIZE
+		jne short read_udata@@j_fatal
+		dw _nasm_mov_si_dx  ; DS:SI := DS:DX == pointer to start of uexehdr.
 		mov bp, 'ZM'  ; 'MZ'.
 		cmp [si+0*2], bp  ; signature.
 		jne short fatal  ; 'MZ': Bad DOS .exe signature.
@@ -261,7 +264,7 @@ read_udata@@usize_ok:
 		push ax  ; Save offset of end of udata.
 		mov ah, 3eh  ; Close file using handle.
 		int 21h  ; DOS syscall.
-		; Now: DS:SI := DS:DX == pointer to start of uexehdr.
+		; Now: DS:SI == pointer to start of uexehdr.
 		; Falls through.
 
 compress_relocs:
@@ -438,19 +441,19 @@ ifdef FASTSORT
 		push di  ; Save.
 		dw _nasm_mov_bp_sp
 		sub sp, byte_imm 8
-		dw _nasm_mov_cx_ax
+		xchg cx, ax  ; CX := base; AX := junk.
 		dw _nasm_mov_bx_dx
 		shr bx, 1
 		shl bx, 1
 		shl bx, 1
-		dw _nasm_mov_si_ax
+		dw _nasm_mov_si_cx
 		dw _nasm_add_si_bx
 		mov [word bp-2], si
 		dw _nasm_mov_bx_dx
 		shl bx, 1
 		shl bx, 1
 		sub bx, byte_imm 4
-		dw _nasm_add_bx_ax
+		dw _nasm_add_bx_cx
 		cmp dx, byte_imm 2
 		jb short @@done
   @@1:		mov ax, [word bp-2]
@@ -533,11 +536,11 @@ else
   ;          cur != end;
   ;          cur = newcur) {
   ;       newcur = cur + SIZE;
-  ;       if (is_less(cur, cur - SIZE)) {
+  ;       if (is_reloc_less(cur, cur - SIZE)) {
   ;         oldcur = cur;
   ;         do {
   ;           cur -= SIZE;
-  ;         } while (cur != (char*)base && is_less(oldcur, cur - SIZE));
+  ;         } while (cur != (char*)base && is_reloc_less(oldcur, cur - SIZE));
   ;         /* memrotate(cur, oldcur, SIZE); */
   ;         while (oldcur != newcur) {
   ;           mid = oldcur;
@@ -560,25 +563,25 @@ else
 		cmp dx, byte_imm 1  ; Argument n.
 		jbe short @@done
 		xchg ax, dx  ; AX := DX (argument n); DX := old_AX (argument base).
-		dw _nasm_mov_bp_dx  ; BX will keep holding argument base throughout the rest of the function.
+		dw _nasm_mov_bp_dx  ; BP will keep holding argument base throughout the rest of the function.
 		lea bx, [bp+4]  ; BX (cur) := base + SIZE.
 		dw _nasm_add_ax_ax  ; Continued below...
 		dw _nasm_add_ax_ax  ; AX *= 4.
 		dw _nasm_add_dx_ax  ; DX (var_end) := base + SIZE * n.
   @@next:	lea di, [bx-4]
 		dw _nasm_mov_si_bx  ; SI := BX *cur).
-		call is_reloc_less  ; is_less(cur, cur - SIZE).
+		call is_reloc_less  ; is_reloc_less(cur, cur - SIZE).
 		jnc short @@continue  ; Jump if not less.
 		dw _nasm_mov_si_bx  ; SI (oldcur) := BX (cur).
   @@scan_next:	dw _nasm_mov_bx_di  ; BX (cur) -= SIZE.
 		dw _nasm_cmp_bx_bp  ; while (cur != base ...)
 		je short @@rotate
 		lea di, [bx-4]
-		call is_reloc_less  ; is_less(oldcur, cur - SIZE).
+		call is_reloc_less  ; is_reloc_less(oldcur, cur - SIZE).
 		jc short @@scan_next  ; Jump if less.
-  @@rotate:	; Now, until .continue, we will rotate the region BX...(SI+4) left (forward) by a dword (SIZE == 4).
+  @@rotate:	; Now, until .continue, we will rotate the region BX...(SI+4) right (forward) by a dword (SIZE == 4).
 		; That is, save `dword [si]' to tmp, then copy from BX...SI to (BX+4)..(SI+4), then restore `dword [bx]' from tmp.
-		; We are allowed to ruin AX, CX, SI, DI and FLAGS until continue.
+		; We are allowed to ruin AX, CX, SI, DI and FLAGS until .continue.
 		dw _nasm_mov_cx_si
 		dw _nasm_sub_cx_bx
 		shr cx, 1  ; Convert byte count to word count.
@@ -589,7 +592,7 @@ else
 		rep movsw
 		cld  ; Restore DF := 0, we are not allowed to ruin that flag.
 		pop [word di]  ; Restore highest word.
-		mov [bx], ax  ; Restore second highest word.
+		mov [bx], ax  ; Restore second highest word to the lowest position.
 		; Rotation done. Now AX, CX (== 0), SI, DI and FLAGS are ruined.
   @@continue:	lea bx, [bx+4]  ; BX (cur) := BX + 4 (newcur).
 		dw _nasm_cmp_bx_dx  ; cur != end.
@@ -882,16 +885,13 @@ endif
 		movsb  ; Copies a literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
 		jmp short @@j_next_byte
 @@match:	dw _nasm_add_si_dx  ; Skip over matched bytes in the uncompresed input data.
-		call emit_match  ; Ruins AX, BX, CX, DX, DI, BP, FLAGS. Keeps SI and BP intact.
+		call emit_match  ; Ruins AX, BX, CX, DX, FLAGS. Modifies DI. Keeps SI and BP intact.
 @@j_next_byte:	jmp strict_near @@next_byte
 
-; Emits CL (1 <= CL <= 7) bits from AH, highest (of the CL) bits first.
-; Ruins: CX (sets it to 0), FLAGS.
-emit_bits:
-		mov ch, 0
-@@next:		push ax  ; Save.
-		shr ah, cl  ; CF := pint to print.
-		pop ax  ; Restore.
+; Emits CL (1 <= CL <= 7) bits from AH, highest (of the CL) bits first. Assumes CH == 0.
+; Ruins: CL (sets it to 0), FLAGS.
+emit_bits:	ror ah, cl
+@@next:		rol ah, 1  ; CF := pint to print.
 		call emit_bit
 		loop @@next
 		ret
@@ -903,6 +903,7 @@ emit_bits:
 ; Keeps SI and BP intact.
 ; Ruins: AX, BX, CX, DX, FLAGS.
 emit_match:
+		mov ch, 0  ; For emit_bits.
 ifdef DEBUG
 		dw _nasm_mov_ax_bx
 else
@@ -913,6 +914,7 @@ endif
 		cmp dx, byte_imm 3  ; Also CF := (len == 2).
 		cmc  ; CF := (len != 2).
 		call emit_bit
+		mov cl, 3
 		cmp dx, byte_imm 2
 		jne short @@dist_3plus
 @@dist_2:	cmp ax, strict_word 0ffh
@@ -925,7 +927,7 @@ endif
 @@dist_2_big:	do_emit_m1  ; In AL.
 		stc
 		call emit_bit
-		mov cl, 3
+		;mov cl, 3  ; Not needed, set above.
 		call emit_bits
 		jmp short @@after_bits
 @@dist_3plus:	do_emit_m1  ; In AL.
@@ -938,12 +940,9 @@ endif
 @@dist_3plus_mid_or_big:
 		stc
 		call emit_bit
-		mov cl, 3
-		cmp ah, 4
-		jae short @@dist_3plus_big
-@@dist_3plus_mid:
-		and ax, strict_word 3ffh  ; Same size as: `and ah, 3'. Makes the next `print bit' start with a 0 bit.
-		jmp short @@dist_bits  ; With CL == 3.
+		;mov cl, 3  ; Not needed, set above.
+		dw _nasm_cmp_ah_cl
+		jna short @@dist_bits  ; Jumps with CL == 3 and 0 <= AH <= 3. No need for `and ah, 3' here. Because of 0 <= AH <= 3, the next `print bit' of 3 bits will start with a 0 bit.
 @@dist_3plus_big:
 		stc
 		call emit_bit
