@@ -733,6 +733,9 @@ sort4:
 		ret
 %endif
 
+CR equ 13
+LF equ 10
+
 %ifdef DEBUG
   ; Writes the byte in AL to stdout and flushed stdout.
   putcharf:  ; TODO(pts): Add line buffering for faster operation.
@@ -748,8 +751,6 @@ sort4:
 		pop edx  ; Restore.
 		pop ebx  ; Restore.
 		ret
-
-  LF equ 10
 
   print_nibble:	push ax
 		add al, '0'
@@ -1157,7 +1158,12 @@ emit_match:
 		ret
 
 fatal_msg:	db 'pmwca: fatal: '
-.code:		db '??', 13, 10
+.code:		db '??'
+%ifdef OS_WIN32
+		db CR, LF
+%else
+		db LF
+%endif
 .end:
 
 ; --- Code below here is not executed by compressor, but it is copied near
