@@ -114,6 +114,19 @@ NULL equ 0
   Elf32_Phdr:	dd 1, 0, $$, 0, file_end-$$, mem_end-$$, 7, 0x1000
 %endif
 
+%macro R0 1+  ; Indicates that there is a dword-sized relocation at the end of %1.
+  %1
+%endm
+%macro R1 1+  ; Indicates that there is a dword-sized relocation 1 byte before the end of %1.
+  %1
+%endm
+%define R(name) R_ %+ name
+%ifdef OS_WIN32
+  %define RI(name) name
+%else
+  ;%define RI(name) ...  ; Not defined, unused.
+%endif
+
 global _start
 _start:
 %if 1
@@ -123,21 +136,18 @@ _start:
       ; section .idata, because section .data overlaps with cdata. We work it
       ; around by saving and restoring the __imp__* function pointers on the
       ; stack.
-      extern __imp__ExitProcess@4
-      extern __imp__WriteFile@20
-      extern __imp__CreateFileA@28
-		mov eax, [__imp__ExitProcess@4]
-		mov [__copy__ExitProcess@4], eax
-		mov eax, [__imp__WriteFile@20]
-		mov [__copy__WriteFile@20], eax
-		mov eax, [__imp__CreateFileA@28]
-		mov [__copy__CreateFileA@28], eax
+		R0 mov eax, [RI(__imp__ExitProcess@4)]
+		R0 mov [R(__copy__ExitProcess@4)], eax
+		R0 mov eax, [RI(__imp__WriteFile@20)]
+		R0 mov [R(__copy__WriteFile@20)], eax
+		R0 mov eax, [RI(__imp__CreateFileA@28)]
+		R0 mov [R(__copy__CreateFileA@28)], eax
     %endif
 		push byte STD_ERROR_HANDLE
-		call _GetStdHandle@4  ; Ruins EDX and ECX.
+		R0 call dword [RI(__imp__GetStdHandle@4)]  ; Ruins EDX and ECX.
 		call check_handle
-		mov [stderr_handle], eax
-		call _GetCommandLineA@0  ; EAX := pointer to NUL-terminated command-line string.  ; Ruins EDX and ECX.
+		R0 mov [R(stderr_handle)], eax
+		R0 call dword [RI(__imp__GetCommandLineA@0)]  ; EAX := pointer to NUL-terminated command-line string.  ; Ruins EDX and ECX.
 		xor ecx, ecx  ; ECX := 0 (current argc).
 		push 0	; NULL marks end of argv array.
       .argv_next:
@@ -226,7 +236,7 @@ _start:
   _exit_:  ; __attribute__((noreturn)) void __watcall _exit(int exit_code);
 		push eax  ; Argument exit_code.
   %ifdef OS_WIN32
-		call dword [__copy__ExitProcess@4]  ; !! call _ExitProcess@4  ; Doesn't return.
+		R0 call dword [R(__copy__ExitProcess@4)]  ; Doesn't return.
   %else
 		push eax  ; Fake return address for FreeBSD i386 syscall.
 		xchg ebx, eax  ; EBX := EAX (exit_code); EAX := junk. Linux i386 syscall needs the 1st argument in EBX. FreeBSD i386 needs it in [esp+4].
@@ -238,19 +248,19 @@ _start:
 %endif  ; %ifdef __NEED__exit_
 
 %ifdef OS_WIN32  ; These imports make the output .exe program file larger even if the functions are never called.
-  extern _GetStdHandle@4
+  extern RI(__imp__GetStdHandle@4)
   import _GetStdHandle@4 kernel32.dll GetStdHandle
-  extern _GetCommandLineA@0
+  extern RI(__imp__GetCommandLineA@0)
   import _GetCommandLineA@0 kernel32.dll GetCommandLineA
-  extern _ExitProcess@4
+  extern RI(__imp__ExitProcess@4)
   import _ExitProcess@4 kernel32.dll ExitProcess
-  extern _CloseHandle@4
+  extern RI(__imp__CloseHandle@4)
   import _CloseHandle@4 kernel32.dll CloseHandle
-  extern _ReadFile@20
+  extern RI(__imp__ReadFile@20)
   import _ReadFile@20 kernel32.dll ReadFile
-  extern _WriteFile@20
+  extern RI(__imp__WriteFile@20)
   import _WriteFile@20 kernel32.dll WriteFile
-  extern _CreateFileA@28
+  extern RI(__imp__CreateFileA@28)
   import _CreateFileA@28 kernel32.dll CreateFileA
 %endif
 
@@ -414,12 +424,12 @@ _start:
 %endif
 
 ; Exits the process with a fatal error (2 bytes of error message in BP).
-fatal:		mov [fatal_msg.code], bp
+fatal:		R0 mov [R(fatal_msg).code], bp
 		xor eax, eax
 		mov al, 2  ; EAX := STDERR_FILENO.
-		mov edx, fatal_msg  ; DS:EDX := pointer to start of buffer to be written.
+		R0 mov edx, R(fatal_msg)  ; DS:EDX := pointer to start of buffer to be written.
 		xor ebx, ebx
-		mov bl, fatal_msg.end-fatal_msg  ; EBX := number of bytes to write.
+		mov bl, R_fatal_msg.end-R_fatal_msg  ; EBX := number of bytes to write.
 		call write_
 		xor eax, eax
 		inc eax  ; EAX := EXIT_FAILURE == 1.
@@ -472,7 +482,7 @@ read_udata:
 		call fatal_if_eax_lt_0
 		mov ecx, eax  ; ECX := filehandle of input file.
 		;mov eax, ...  ; EAX == filehandle of input file.
-		mov edx, uexehdr  ; DS:EDX == pointer to start of buffer to read uexehdr to.
+		R0 mov edx, R(uexehdr)  ; DS:EDX == pointer to start of buffer to read uexehdr to.
 		mov esi, edx  ; DS:ESI := DS:EDX == pointer to start of uexehdr. Will be used after the reading.
 		mov ebx, EXEHDRSIZE  ; Maximum number of bytes to read.
 		call read_
@@ -488,8 +498,8 @@ read_udata:
 		mov bp, 'HS'  ; Unsupported DOS .exe header size (hdrsize).
 		jne short .j_fatal
 		mov eax, ecx  ; EAX := filehandle of input file.
-		mov edx, udata  ; DS:EDX == pointer to start of buffer to read to.
-		mov ebx, udata.bufend-udata  ; Maximum number of bytes to read.
+		R0 mov edx, R(udata)  ; DS:EDX == pointer to start of buffer to read to.
+		mov ebx, R_udata.bufend-R_udata  ; Maximum number of bytes to read.
 		push ebx  ; Save udata.bufend-udata.
 		call read_
 		pop ebx  ; Restore EBX := udata.bufend-udata.
@@ -499,7 +509,7 @@ read_udata:
 		jb short .usize_ok
 		mov bp, 'TL'  ; Input file too long.
 .j_fatal:	jmp near fatal
-.usize_ok:	add eax, strict dword udata
+.usize_ok:	R0 add eax, strict dword R(udata)
 		push eax  ; Save offset of end of udata. Will be popped by `pop edx' in sort_relocs.
 		xchg eax, ecx  ; EAX := filehandle of input file; ECX := junk.
 		call close_
@@ -521,10 +531,10 @@ sort_relocs:
 		lea eax, [ecx*4+edi] ; EAX := (nreloc<<2)+relocpos.
 		cmp ax, strict word EXEHDRSIZE
 		ja short .fatal_tr
-		lea eax, [edi+uexehdr]  ; EAX := uexehdr+relocpos.
+		R0 lea eax, [edi+R(uexehdr)]  ; EAX := uexehdr+relocpos.
 		mov edx, ecx  ; nreloc.
 %if 0  ; Test sort4.
-		mov eax, cdata
+		R0 mov eax, R(cdata)
 		mov dword [eax], 69
 		mov dword [eax+4], 68
 		mov dword [eax+8], 67
@@ -533,7 +543,7 @@ sort_relocs:
 		mov edx, 5
 		call sort4
 		mov eax, 1  ; STDOUT_FILENO
-		mov edx, cdata
+		R0 mov edx, R(cdata)
 		mov ebx, 5*4
 		call write_
 %endif
@@ -545,7 +555,7 @@ sort_relocs:
 		; Falls through.
 
 make_exe_headers_consistent:
-		mov ebx, uexehdr
+		R0 mov ebx, R(uexehdr)
 		movzx esi, word [ebx+12*2]  ; relocpos.
 		;movzx ecx, word [ebx+3*2]  ; ECX still contains nreloc.
 		lea edi, [ebx+ecx*4+0x3e-4]
@@ -576,12 +586,12 @@ make_exe_headers_consistent:
 		rep stosd  ; memset(uexehdr + 0x22, 0, 0x3e - 0x22);
 		pop edi  ; Restore EDI := uexehdr+0x3e+(nreloc<<2)-4.
 		scasd  ; EDI += 4. EDI := uexehdr+0x3e+(nreloc<<2).
-		mov ecx, uexehdr+EXEHDRSIZE
+		R0 mov ecx, R(uexehdr)+EXEHDRSIZE
 		sub ecx, edi
 		; For speed, we could have done `rep stosw' instead (but not `rep stosd', because it's not divisible by 4). Newer Intel CPUs do a fast `rep stosb' anyway.
 		rep stosb  ; memset(uexehdr + 0x3e + (nreloc << 2), 0, EXEHDRSIZE - 0x3e - (nreloc << 2));
 		pop eax  ; Restore EAX := offset of input filename.
-		sub edx, udata
+		R0 sub edx, R(udata)
 		push edx  ; Save number of DOS .exe image bytes to write.
 		mov edx, O_WRONLY|O_CREAT|O_TRUNC  ; flags.
 		mov ebx, 666o  ; mode.
@@ -590,20 +600,20 @@ make_exe_headers_consistent:
 		call fatal_if_eax_lt_0
 		;mov eax, ...  ; EAX == filehandle of output file.
 		push eax  ; Filehandle of output file.
-		mov edx, uexehdr  ; DS:EDX == pointer to start of buffer to be written.
+		R0 mov edx, R(uexehdr)  ; DS:EDX == pointer to start of buffer to be written.
 		mov ebx, EXEHDRSIZE  ; Number of bytes to write.
 		call write_
 		mov bp, 'WR'  ; File write error.
 		call fatal_if_eax_lt_0
 		pop eax  ; Restore EAX := filehandle of output file.
-		mov edx, udata  ; DS:EDX == pointer to start of buffer to be written.
+		R0 mov edx, R(udata)  ; DS:EDX == pointer to start of buffer to be written.
 		pop ebx  ; Number of DOS .exe image bytes to write.
 		jmp strict near final_write
 
 squeeze_relocs:  ; Converts each relocation from dword-sized (offset, segment) pair to word-sized offset+0x100.
 		push eax  ; Again, save offset of output filename.
-		lea esi, [edi+uexehdr]  ; ESI := uexehdr+relocpos.  Source of (offset, segment) pairs.
-		mov edi, creloc  ; DS:EDI := pointer to the squeezed relocations.
+		R0 lea esi, [edi+R(uexehdr)]  ; ESI := uexehdr+relocpos.  Source of (offset, segment) pairs.
+		R0 mov edi, R(creloc)  ; DS:EDI := pointer to the squeezed relocations.
 		;mov cx, [si+3*2]  ; CX == nreloc. Nonzero.
 		push ecx  ; Save nreloc.
 		push edi  ; Save creloc.
@@ -618,45 +628,46 @@ squeeze_relocs:  ; Converts each relocation from dword-sized (offset, segment) p
 		; Falls through.
 
 build_preparator_buf:
-		mov esi, udata
-		mov edi, cdata
+		R0 mov esi, R(udata)
+		R0 mov edi, R(cdata)
 		;mov edx, ...  ; EDX is already correct: EDX := offset of end of udata.
 		call compress  ; Append compressed data to DS:EDI == ES:EDI. Ruins EAX, EBX, ECX, EDX, ESI, EBP, EFLAGS. Sets EDS:EDI to pointer to end of cdata: new EDI == cdata + csize.
 		pop esi  ; Restore ESI := creloc.
 		pop ecx  ; Restore ECX := nreloc.
 %ifdef BASE  ; The code is shorter if we know the base address.
-		lea ebx, [dword edi+ecx*2-(preparator_buf-$$+BASE)]  ; EBX := csize + (nreloc << 1) + (cdata - preparator_buf).
+		lea ebx, [dword edi+ecx*2-(R_preparator_buf-$$+BASE)]  ; EBX := csize + (nreloc << 1) + (cdata - preparator_buf).
 %else
 		lea ebx, [dword edi+ecx*2]  ; EBX := csize + (nreloc << 1) + csize.
-		sub ebx, preparator_buf  ; EBX := csize + (nreloc << 1) + (cdata - preparator_buf).
+		R0 sub ebx, R(preparator_buf)  ; EBX := csize + (nreloc << 1) + (cdata - preparator_buf).
 %endif
-		mov [apply_relocs.u_nreloc], cl  ; It fits to 1 byte, we've checked it above at 'TR'.
+		R0 mov [R(apply_relocs).u_nreloc], cl  ; It fits to 1 byte, we've checked it above at 'TR'.
 		rep movsw  ; Append compressed relocationss to DS:EDI == ES:EDI.
 		; Now: DS:EDI == pointer to the end of cdata. EDI == cdata + csize.
 		mov eax, ebx
 		and ah, 1  ; AX &= 0x1ff.
-		mov [cexehdr.lastsize], ax
+		R0 mov edx, R(cexehdr)
+		mov [edx-R_cexehdr+R_cexehdr.lastsize], ax
 		lea eax, [ebx+0x1ff]  ; Round up.
 		shr eax, 1
-		mov [cexehdr.nblocks], ah  ; Set low byte. The high byte will remain 0.
+		mov [edx-R_cexehdr+R_cexehdr.nblocks], ah  ; Set low byte. The high byte will remain 0.
 		sub ebx, byte 0x20  ; EBX := csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4).
 		lea eax, [ebx+1]  ; Round up.
 		shr eax, 1
-		mov [copy_code.word_count], ax  ; Number of words to copy.
-		mov esi, uexehdr+7*2  ; U_SS.
+		R0 mov [R(copy_code).word_count], ax  ; Number of words to copy.
+		R0 mov esi, R(uexehdr)+7*2  ; U_SS.
 		lodsw  ; AX := U_SS; SI += 2 (to U_SP).
-		mov [cexehdr.ss], ax
-		mov [jump_to_program.u_ss], ax
+		mov [edx-R_cexehdr+R_cexehdr.ss], ax
+		R0 mov [R(jump_to_program).u_ss], ax
 		lea ebx, [ebx+0xf]  ; Round up.
 		shr ebx, 4  ; EBX := (csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4) + 0xf) >> 4.
 		add ax, strict word ((0x100+0xf)>>4)+1  ; Why the +1? Maybe it's related to the bug in the original PMODE/W compressor.
 		add eax, ebx  ; AX := (U_SS + ((0x100 + 0xf) >> 4)) + ((csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4) + 0xf) >> 4) + 1.
-		mov [cexehdr.minalloc], ax  ; The value computed above is larger than needed, so this is wasting memory at runtime. This is probably a bug in the original PMODE/W compressor.
+		mov [edx-R_cexehdr+R_cexehdr.minalloc], ax  ; The value computed above is larger than needed, so this is wasting memory at runtime. This is probably a bug in the original PMODE/W compressor.
 		lodsw  ; AX := U_SP. SI += 2 (to U_CHECKSUM).
-		mov [jump_to_program.u_sp], ax
+		R0 mov [R(jump_to_program).u_sp], ax
 		times 2 inc esi  ; Ignore U_CHECKSUM (will be ignored). SI += 2 (to U_IP).
 		lodsd  ; EAX := U_IP|U_CS<<16. ESI += 4 (to U_RELOCPOS).
-		mov [uncompressed_start_far_ptr.u_ip], eax  ; Set U_IP and U_CS.
+		R0 mov [R(uncompressed_start_far_ptr).u_ip], eax  ; Set U_IP and U_CS.
 		; Now: DS:DI == pointer to the end of cdata.
 		; Falls through.
 
@@ -668,7 +679,7 @@ write_cdata:	pop eax  ; Restore EAX := offset of output filename.
 		mov bp, 'OO'  ; Error opening output file.
 		call fatal_if_eax_lt_0
 		;mov eax, ...  ; EAX == filehandle of output file.
-		mov edx, preparator_buf  ; DS:EDX == pointer to start of buffer to be written.
+		R0 mov edx, R(preparator_buf)  ; DS:EDX == pointer to start of buffer to be written.
 		mov ebx, edi  ; Pointer to the end of cdata.
 		sub ebx, edx  ; EBX := EDI - preparator_buf. EBX == number of bytes to write.
 		; Fall through.
@@ -752,7 +763,7 @@ final_write:	call write_
   global read_
   read_:  ; ssize_t __watcall read(int fd, void *buf, size_t count);
   %ifdef OS_WIN32
-		push dword _ReadFile@20
+		R0 push dword [RI(__imp__ReadFile@20)]
 		jmp short read_write_helper
   %else
 		push byte 3  ; FreeBSD i386 and Linux i386 SYS_read.
@@ -764,7 +775,7 @@ final_write:	call write_
   global write_
   write_:  ; ssize_t __watcall write(int fd, const void *buf, size_t count);
   %ifdef OS_WIN32
-		push dword [__copy__WriteFile@20]  ; !! push dword _WriteFile@20
+		R0 push dword [R(__copy__WriteFile@20)]  ; !! push dword _WriteFile@20
 		jmp short read_write_helper
 		; Fall through to __M_write_growany_.
   %else
@@ -785,7 +796,7 @@ O_TRUNC equ 1000o  ; Linux.
     ; This function only works with flags==O_RDONLY or flags==(O_WRONLY|O_CREAT|O_TRUNC).
     %ifdef OS_WIN32
 		push ecx  ; Save for __watcall.
-		mov ecx, file_handle
+		R0 mov ecx, R(file_handle)
 		cmp dword [ecx], byte 0
 		je short .found_slot
 		or ecx, byte -1
@@ -807,7 +818,7 @@ O_TRUNC equ 1000o  ; Linux.
 		push byte FILE_SHARE_READ|FILE_SHARE_WRITE  ; dwShareMode. Windows 98 SE fails to open a local file if FILE_SHARE_DELETE is also specified here.
 		push dword GENERIC_READ  ; dwDesiredAccess.
       .open:	push eax  ; lpFileName. From argument pathname.
-		call dword [__copy__CreateFileA@28]  ; !! call _CreateFileA@28  ; Ruins EDX and ECX.
+		R0 call dword [R(__copy__CreateFileA@28)]  ; Ruins EDX and ECX.
 		pop ecx  ; ECX := slot pointer to file_handle.
 		cmp eax, byte INVALID_HANDLE_VALUE  ; -1.
 		je short .done
@@ -841,12 +852,12 @@ O_TRUNC equ 1000o  ; Linux.
 		cmp eax, byte -1
 		je short .pop_eax_bad
 		push eax  ; fd argument of _CloseHandle@4.
-		call _CloseHandle@4  ; Ruins EDX and ECX. Returns nonzero in EAX on success.
+		R0 call dword [RI(__imp__CloseHandle@4)]  ; Ruins EDX and ECX. Returns nonzero in EAX on success.
 		pop edx  ; Restore EDX := fd.
 		sub edx, byte 2
 		cmp edx, byte 3-2
 		ja short .closed
-		and [stderr_handle+edx*4], byte NULL  ; Change the stored handle value to NULL.
+		R1 and [R(stderr_handle)+edx*4], byte NULL  ; Change the stored handle value to NULL.
     .closed:	test eax, eax  ; _CloseHandle@4 returns 0 on success.
 		jnz short .done
     .pop_eax_bad:
@@ -871,7 +882,7 @@ O_TRUNC equ 1000o  ; Linux.
 		ret
     .bad_handle:
 		push byte -2  ; 254.
-		call _ExitProcess@4  ; Doesn't return.
+		R0 call dword [RI(__imp__ExitProcess@4)]  ; Doesn't return.
 		; Not reached.
   %endif
 %endif
@@ -882,7 +893,7 @@ O_TRUNC equ 1000o  ; Linux.
 		sub eax, byte 2
 		cmp eax, byte 3-2
 		ja short .bad
-		mov eax, [stderr_handle+eax*4]
+		R0 mov eax, [R(stderr_handle)+eax*4]
     .found:	inc eax
 		cmp eax, byte 2  ; CF := (handle is invalid: NULL or INVALID_HANDLE_VALUE).
 		dec eax  ; Doesn't affect CF.
@@ -1541,7 +1552,7 @@ emit_match:
 %endif
 		ret
 
-fatal_msg:	db 'pmwca: fatal: '
+R(fatal_msg):	db 'pmwca: fatal: '
 .code:		db '??'
 %ifdef OS_WIN32
 		db CR, LF
@@ -1551,8 +1562,8 @@ fatal_msg:	db 'pmwca: fatal: '
 .end:
 
 %ifdef OS_WIN32  ; !! Put it back to BSS here as soon as we stop using wlink(1), and `nasm -f' can guarantee cdata==file_end. Currently BSS doesn't guarantee zero-initialization and these variables need it.
-  stderr_handle: dd 0
-  file_handle: dd 0  ; Must be directly atfer stderr_handle.  Needs zero-initialization.
+  R(stderr_handle): dd 0
+  R(file_handle): dd 0  ; Must be directly atfer stderr_handle.  Needs zero-initialization.
 %endif
 
 ; --- Code below here is not executed by compressor, but it is copied near
@@ -1564,9 +1575,9 @@ fatal_msg:	db 'pmwca: fatal: '
 ; understand, pts has also added comments, function names, labels and
 ; variable names.
 
-preparator_buf:
+R(preparator_buf):
 
-cexehdr:  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
+R(cexehdr):  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
 ; load module length = 0x2cdc
 .signature:	db 'MZ'
 .lastsize:	dw 0       ; Length of load module mod 200H. build_preparator_buf will populate it.
@@ -1623,7 +1634,7 @@ pmodew_config:
   db 1/0
 %endif
 
-uncompressed_start_far_ptr:
+R(uncompressed_start_far_ptr):
 .u_ip: dw 0  ; build_preparator_buf will populate it.
 .u_cs: dw 0  ; build_preparator_buf will populate it.
 
@@ -1649,14 +1660,14 @@ copy_code:
 		dw _mov_si_di
 		push di  ; 0x100.
 		mov cx, 0  ; Number of words to copy: (cdata.end-exe_image+1)>>1. build_preparator_buf will populate it.
-.word_count: equ $-2
+R(copy_code).word_count: equ $-2
 		rep movsw  ; DS == orig_CS-0x10 == PSP_segment.
 		push es  ; orig_CS+0x3d7.
 		push ds  ; orig_CS-0x10.
 		pop es   ; ES := orig_CS-0x10.
 		pop ds   ; DS := orig_CS+0x3d7.
 		pop di   ; DI := 0x100.
-		mov si, cdata_in_text-exe_image+0x100  ; DS:ESI now points to the start of the copy of cdata. Constant.
+		mov si, R_cdata_in_text-exe_image+0x100  ; DS:ESI now points to the start of the copy of cdata. Constant.
 		push es  ; orig_CS-0x10. Will be popped by `pop ds' in jump_to_program.
 		push cs  ; orig_CS == PSP_segment. Will be popped by `pop dx' in jump_to_program.
 		movsb  ; Copy initial literal token.
@@ -1747,9 +1758,9 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 
 apply_relocs:
 		pop dx  ; Restore DX := orig_CS, pushed by `push cs' in setup_code.
-		add [uncompressed_start_far_ptr-exe_image+0x100+2], dx  ; Relocate segment in uncompressed_start_far_ptr.
+		add [R_uncompressed_start_far_ptr-exe_image+0x100+2], dx  ; Relocate segment in uncompressed_start_far_ptr.
 		mov cl, 0  ; CX := U_NRELOC == (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0. build_preparator_buf will populate it.
-.u_nreloc: equ $-1
+R(apply_relocs).u_nreloc: equ $-1
 .next:		lodsw  ; Load next offset from relocation table. Format: an array of offsets usign segment orig_CS-0x10 == PSP_segment.
 		dw _mov_bx_ax  ; `xchg bx, ax' would have been shorter.
 		add [es:bx], dx  ; Apply single relocation.
@@ -1759,19 +1770,19 @@ jump_to_program:
 		pop ds  ; Restore DS := PSP_segment. ES is already PSP_segment.
 		cli
 		add dx, strict word 0 ; U_SS. build_preparator_buf will populate it.
-.u_ss: equ $-2
+R(jump_to_program).u_ss: equ $-2
 		mov ss, dx  ; SS := orig_CS+U_SS.
 		mov sp, 0  ; U_SP. build_preparator_buf will populate it.
-.u_sp: equ $-2
+R(jump_to_program).u_sp: equ $-2
 		sti
-		jmp far [cs:uncompressed_start_far_ptr-exe_image+0x100]  ; Jump to uncompressed_start_far_ptr.
+		jmp far [cs:R_uncompressed_start_far_ptr-exe_image+0x100]  ; Jump to uncompressed_start_far_ptr.
 
 preparator_buf.end:
 
 MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
 MAX_CSIZE equ MAX_USIZE+((MAX_USIZE+7)>>3)  ; Worst case compressed data size: all tokens are literals. Matches are never longer than their corresponding literals.
 MAX_CRELSIZE equ EXEHDRSIZE>>2  ; Absolue maximum which fits to EXEHDRSIZE bytes of DOS .exe header created by TLINK.
-cdata_in_text:
+R(cdata_in_text):
 file_end:
 %ifdef OS_WIN32
   section _BSS
@@ -1779,38 +1790,35 @@ file_end:
   absolute $  ; Don't emit bytes anymore, just reserve.
 %endif
 bss:
-cdata_bss:	resb MAX_CSIZE+MAX_CRELSIZE  ; Must come directly after preparator_buf.end, without alignment.
-cdata: equ file_end+(cdata_bss-bss)
+%macro bssvar 1  ; Usage: R($name): bssvar $size
+  %00: equ file_end+($-bss)
+  resb %1
+%endm
+R(cdata): bssvar MAX_CSIZE+MAX_CRELSIZE  ; Must come directly after preparator_buf.end, without alignment.
 %ifndef OS_WIN32
-  %if cdata!=file_end
-    %error ERROR_CDATA_MUST_FOLLOW_FILE_END
+  %if R(cdata)!=preparator_buf.end
+    %error ERROR_CDATA_MUST_FOLLOW_PREPARATOR_BUF_END
     db 1/0
   %endif
 %endif
-udata_bss:	resb MAX_USIZE
-.bufend:
-udata: equ file_end+(udata_bss-bss)
-udata.bufend: equ file_end+(udata_bss.bufend-bss)
-%if $-$$>0xffff
+R(udata): bssvar MAX_USIZE
+R(udata.bufend): bssvar 0
+%if R_udata.bufend-R_udata>0xffff
   %error ERROR_UDATA_MEMORY_IMAGE_TOO_LARGE
   db 1/0
 %endif
 
 		resb (-(file_end-text)-($-bss))&3  ; Align to dword boundary.
-uexehdr_bss:	resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
-uexehdr: equ file_end+(uexehdr_bss-bss)
-creloc_bss: equ uexehdr_bss+0x1c  ; Temporary buffer for compressed relocations.
-creloc: equ file_end+(creloc_bss-bss)
+;uexehdr_bss:	resb EXEHDRSIZE
+R(uexehdr): bssvar EXEHDRSIZE  ; Uncompressed DOS .exe header.
+R(creloc): equ R(uexehdr)+0x1c  ; Temporary buffer for compressed relocations.
 
 %ifdef OS_WIN32  ; !! Put it back to BSS here.
-  ;stderr_handle: resd 1
-  ;file_handle: resd 1  ; Must be directly atfer stderr_handle.
-  __copy__ExitProcess@4: equ file_end+($-bss)
-  resd 1
-  __copy__WriteFile@20: equ file_end+($-bss)
-  resd 1
-  __copy__CreateFileA@28: equ file_end+($-bss)
-  resd 1
+  ;R(stderr_handle): bssvar 4
+  ;R(file_handle): bssvar 4  ; Must be directly atfer stderr_handle.
+  R(__copy__ExitProcess@4): bssvar 4
+  R(__copy__WriteFile@20): bssvar 4
+  R(__copy__CreateFileA@28): bssvar 4
 %else
   ___M_is_freebsd_bss: resb 1  ; Are we actually running under FreeBSD (rathar than Linux)?
   ___M_is_freebsd: equ file_end+(___M_is_freebsd_bss-bss)
