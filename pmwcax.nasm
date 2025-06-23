@@ -1397,7 +1397,7 @@ udata:		resb MAX_USIZE
   db 1/0
 %endif
 
-		resb ($$-$)&1  ; Align to word boundary.
+		resb ($$-$)&3  ; Align to dword boundary.
 uexehdr:	resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
 creloc: equ uexehdr+0x1c  ; Temporary buffer for compressed relocations.
 
