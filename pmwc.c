@@ -105,6 +105,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __MINILIBC686__
+#  include <fcntl.h>  /* open(...). */
+#  include <unistd.h>  /* write(...). */
+#endif
 
 #ifdef PMWV  /* Apply defaults to make the compiler command line shorter for DOS. */
 #  ifndef COMPRESS_BITS
@@ -957,6 +961,9 @@ int main(int argc, char **argv) {
   unsigned img_start, img_size, u, mem_para;
   unsigned char *relocsrc;
   unsigned relocofs, relocseg;
+#ifdef __MINILIBC686__
+  int fd;
+#endif
 
   (void)argc;
   if (!argv[0] || !argv[1] || (argv[2] && argv[3])) {
@@ -966,7 +973,7 @@ int main(int argc, char **argv) {
   /* For probes >= 113 && probes <= 10000, the file size is the same. */
   if (argv[3]) probes = atoi(argv[3]);  /* !! Document it. */
   srcfn = argv[1]; dstfn = argv[2];
-  if (!(src = fopen(srcfn, dstfn ? "rb" : "r+b"))) fatal_s("error opening source file", srcfn);
+  if (!(src = fopen(srcfn, dstfn ? "rb" : "rb+"))) fatal_s("error opening source file", srcfn);
   if (fread(exehd, 1, sizeof(exehd), src) != sizeof(exehd)) fatal_s("error reading DOS .exe header", srcfn);
   if (get_le16(exehd) != ('M' | 'Z' << 8)) fatal_s("missing DOS .exe signature", srcfn);
   lastsize = get_le16(exehd + 1 * 2);
@@ -1010,9 +1017,16 @@ int main(int argc, char **argv) {
     set_le16(exehd + 0x20, 0x726a);  /* We imitate TLINK 3.0--4.01--7.0. */
     memset(exehd + 0x22, 0, 0x3e - 0x22);
     memset(exehd + 0x3e + (nreloc << 2), 0, sizeof(exehd) - 0x3e - (nreloc << 2));
+#ifdef __MINILIBC686__  /* minilibc686 fopen(...) doesn't support both reading and writing. So we reopen the file. */
+    fclose(src);
+    if ((fd = open(srcfn, O_WRONLY)) < 0) fatal_s("error reopening source DOS .exe for writing", srcfn);
+    if ((unsigned)write(fd, exehd, sizeof(exehd)) != sizeof(exehd)) fatal_s("error writing consistent DOS .exe header", srcfn);
+    /* No need for close(fd), the operating system will do it for us at process exit, right after `return 0;' below. */
+#else
     if (fseek(src, 0, SEEK_SET)) fatal_s("error seeking in source DOS .exe", srcfn);
     if (fwrite(exehd, 1, sizeof(exehd), src) != sizeof(exehd) || fflush(src) || fclose(src)
-       ) fatal_s("error writing consitent DOS .exe header", srcfn);
+       ) fatal_s("error writing consistent DOS .exe header", srcfn);
+#endif
     return 0;
   }
 
