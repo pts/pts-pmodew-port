@@ -36,9 +36,7 @@
 
 ; --- Connfiguration.
 
-%ifdef OS_WIN32  ; Can be specified on the command line. !! Implement it.
-  %error ERROR_OS_WIN32_UNIMPLEMENTED
-  db 1/0
+%ifdef OS_WIN32  ; Can be specified on the command line.
 %endif
 
 %ifndef PMWV  ; Can be specified on the command line.
@@ -52,26 +50,131 @@
 bits 32
 cpu 386
 
-BASE equ 0x600000  ; Must be divisible by 0x10000 == 64 KiB for 16-bit offset access. The standard value is 0x8048000.
-org BASE
+CR equ 13
+LF equ 10
 
-OSABI:
-.SYSV: equ 0
-.Linux: equ 3
-.FreeBSD: equ 9
+%ifidn __OUTPUT_FORMAT__, bin
+  BASE equ 0x600000 &~0xfff  ; Must be divisible by 0x1000 == 40096 == 4 KiB for i386 page alignment. The standard value is 0x8048000.
+  org BASE
+  %define BASE BASE
+%endif
 
-Ehdr_OSABI equ OSABI.FreeBSD  ; The program works natively on both Linux i386 and FreeBSD i386.
-;Ehdr_OSABI equ OSABI.Linux  ; The program works natively on Linux i386, but not FreeBSD i386.
+NULL equ 0
 
-Elf32_Ehdr:  ; ELF-32 i386 header.
+%ifdef OS_WIN32
+  %undef BASE  ; Make sure we don't use this BASE address, because the loader may relocate the .exe image to another base address.
+  section _TEXT  USE32 class=CODE align=1
+  section _BSS   USE32 class=BSS  align=1 NOBITS  ; NOBITS is ignored by NASM, but class=BSS works.
+  group DGROUP _BSS
+  section _TEXT
+  text:
+
+  ; --- Win32 API constants.
+
+  STD_INPUT_HANDLE equ -11
+  STD_OUTPUT_HANDLE equ -11
+  STD_ERROR_HANDLE equ -12
+
+  INVALID_HANDLE_VALUE equ -1
+
+  ; deDesiredAccess for _CreateFileA@28 (bitfield)
+  GENERIC_READ  equ 0x80000000
+  GENERIC_WRITE equ 0x40000000
+
+  ; dwCreationDisposition for _CreateFileA@28.
+  CREATE_NEW          equ 1
+  CREATE_ALWAYS       equ 2
+  OPEN_EXISTING       equ 3
+  OPEN_ALWAYS         equ 4
+  TRUNCATE_EXISTING   equ 5
+
+  ; dwFlagsAndAttributes for _CreateFileA@28 (bitfield).
+  FILE_ATTRIBUTE_READONLY   equ 1
+  FILE_ATTRIBUTE_NORMAL     equ 0x80
+  FILE_FLAG_SEQUENTIAL_SCAN equ 0x8000000
+
+  ; dwShareMode for _CreateFileA@28 (bitfield).
+  FILE_SHARE_READ     equ 1
+  FILE_SHARE_WRITE    equ 2
+  FILE_SHARE_DELETE   equ 4
+%else
+  OSABI:
+  .SYSV: equ 0
+  .Linux: equ 3
+  .FreeBSD: equ 9
+
+  Ehdr_OSABI equ OSABI.FreeBSD  ; The program works natively on both Linux i386 and FreeBSD i386.
+  ;Ehdr_OSABI equ OSABI.Linux  ; The program works natively on Linux i386, but not FreeBSD i386.
+
+  text:
+  Elf32_Ehdr:  ; ELF-32 i386 header.
 		db 0x7f, 'ELF', 1, 1, 1, Ehdr_OSABI, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 3, 0
 		dd 1, _start, Elf32_Phdr-$$, 0, 0
 		dw Elf32_Phdr-$$, 0x20, 1, 0x28, 0, 0
-Elf32_Phdr:	dd 1, 0, $$, 0, file_end-$$, mem_end-$$, 7, 0x1000
+  Elf32_Phdr:	dd 1, 0, $$, 0, file_end-$$, mem_end-$$, 7, 0x1000
+%endif
 
+global _start
 _start:
 %if 1
-  %ifndef OS_WIN32
+  %ifdef OS_WIN32
+    %if 1  ; !! Remove this when wlink(1) is not used anymore.
+      ; The `compress' function overwrites the __imp__* function pointers in
+      ; section .idata, because section .data overlaps with cdata. We work it
+      ; around by saving and restoring the __imp__* function pointers on the
+      ; stack.
+      extern __imp__ExitProcess@4
+      extern __imp__WriteFile@20
+      extern __imp__CreateFileA@28
+		mov eax, [__imp__ExitProcess@4]
+		mov [__copy__ExitProcess@4], eax
+		mov eax, [__imp__WriteFile@20]
+		mov [__copy__WriteFile@20], eax
+		mov eax, [__imp__CreateFileA@28]
+		mov [__copy__CreateFileA@28], eax
+    %endif
+		push byte STD_ERROR_HANDLE
+		call _GetStdHandle@4  ; Ruins EDX and ECX.
+		call check_handle
+		mov [stderr_handle], eax
+		call _GetCommandLineA@0  ; EAX := pointer to NUL-terminated command-line string.  ; Ruins EDX and ECX.
+		xor ecx, ecx  ; ECX := 0 (current argc).
+		push 0	; NULL marks end of argv array.
+      .argv_next:
+		mov edx, eax  ; Save EAX (remaining command line).
+		call parse_first_arg
+		cmp eax, edx
+		je short .argv_end  ; No more arguments in argv.
+		inc ecx  ; argc += 1.
+		push edx  ; Push argv[i].
+		jmp short .argv_next
+      .argv_end:
+		mov eax, esp
+		;call reverse_ptrs  ; Inline the call.
+      .reverse_ptrs:  ; void __watcall reverse_ptrs(void **p);
+		push ecx
+		push edx
+		lea edx, [eax-4]
+      .rnext1:	add edx, byte 4
+		cmp dword [edx], 0
+		jne short .rnext1
+		cmp edx, eax
+		je short .rnothing
+		sub edx, byte 4
+		jmp short .rcmp2
+      .rnext2:	mov ecx, [eax]
+		xchg ecx, [edx]
+		mov [eax], ecx
+		add eax, byte 4
+		sub edx, byte 4
+      .rcmp2:	cmp eax, edx
+		jb short .rnext2
+      .rnothing:
+		pop edx
+		pop ecx
+		mov edx, esp  ; argv argument of main.
+		xchg eax, ecx  ; EAX := ECX (argc argument of main); ECX := junk.
+  %else
 		; Entry point (_start) of the Linux i386 executable. Same for SVR3 i386, SVR4 i386, FreeBSD i386 and macOS i386 up to the end of envp.
 		; Now the stack looks like (from top to bottom):
 		;   dword [esp]: argc
@@ -109,8 +212,6 @@ _start:
 		;call __M_start_isatty_stdout
 		pop eax  ; argc.
 		mov edx, esp  ; argv.
-  %else  ; %ifndef OS_WIN32
-    ; !! Write it.
   %endif  ; %ifndef OS_WIN32
 		call main_
 		; Fall through to _exit.
@@ -125,7 +226,7 @@ _start:
   _exit_:  ; __attribute__((noreturn)) void __watcall _exit(int exit_code);
 		push eax  ; Argument exit_code.
   %ifdef OS_WIN32
-		call _ExitProcess@4  ; Doesn't return.
+		call dword [__copy__ExitProcess@4]  ; !! call _ExitProcess@4  ; Doesn't return.
   %else
 		push eax  ; Fake return address for FreeBSD i386 syscall.
 		xchg ebx, eax  ; EBX := EAX (exit_code); EAX := junk. Linux i386 syscall needs the 1st argument in EBX. FreeBSD i386 needs it in [esp+4].
@@ -135,6 +236,182 @@ _start:
   %endif
 		; Not reached.
 %endif  ; %ifdef __NEED__exit_
+
+%ifdef OS_WIN32  ; These imports make the output .exe program file larger even if the functions are never called.
+  extern _GetStdHandle@4
+  import _GetStdHandle@4 kernel32.dll GetStdHandle
+  extern _GetCommandLineA@0
+  import _GetCommandLineA@0 kernel32.dll GetCommandLineA
+  extern _ExitProcess@4
+  import _ExitProcess@4 kernel32.dll ExitProcess
+  extern _CloseHandle@4
+  import _CloseHandle@4 kernel32.dll CloseHandle
+  extern _ReadFile@20
+  import _ReadFile@20 kernel32.dll ReadFile
+  extern _WriteFile@20
+  import _WriteFile@20 kernel32.dll WriteFile
+  extern _CreateFileA@28
+  import _CreateFileA@28 kernel32.dll CreateFileA
+%endif
+
+%if 1
+  %ifdef OS_WIN32
+    ; This is a helper function used by _start.
+    ;
+    ; /* Parses the first argument of the Windows command-line (specified in EAX)
+    ;  * in place. Returns (in EAX) the pointer to the rest of the command-line.
+    ;  * The parsed argument will be available as NUL-terminated string at the
+    ;  * same location as the input.
+    ;  *
+    ;  * Similar to CommandLineToArgvW(...) in SHELL32.DLL, but doesn't aim for
+    ;  * 100% accuracy, especially that it doesn't support non-ASCII characters
+    ;  * beyond ANSI well, and that other implementations are also buggy (in
+    ;  * different ways).
+    ;  *
+    ;  * It treats only space and tab and a few others as whitespece. (The Wine
+    ;  * version of CommandLineToArgvA.c treats only space and tab as whitespace).
+    ;  *
+    ;  * This is based on the incorrect and incomplete description in:
+    ;  *  https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-commandlinetoargvw
+    ;  *
+    ;  * See https://nullprogram.com/blog/2022/02/18/ for a more detailed writeup
+    ;  * and a better installation.
+    ;  *
+    ;  * https://github.com/futurist/CommandLineToArgvA/blob/master/CommandLineToArgvA.c
+    ;  * has the 3*n rule, which Wine 1.6.2 doesn't seem to have. It also has special
+    ;  * parsing rules for argv[0] (the program name).
+    ;  *
+    ;  * There is the CommandLineToArgvW function in SHELL32.DLL available since
+    ;  * Windows NT 3.5 (not in Windows NT 3.1). For alternative implementations,
+    ;  * see:
+    ;  *
+    ;  * * https://github.com/futurist/CommandLineToArgvA
+    ;  *   (including a copy from Wine sources).
+    ;  * * http://alter.org.ua/en/docs/win/args/
+    ;  * * http://alter.org.ua/en/docs/win/args_port/
+    ;  */
+    ; static char * __watcall parse_first_arg(char *pw) {
+    ;   const char *p;
+    ;   const char *q;
+    ;   char c;
+    ;   char is_quote = 0;
+    ;   for (p = pw; c = *p, c == ' ' || c == '\t' || c == '\n' || c == '\v'; ++p) {}
+    ;   if (*p == '\0') { *pw = '\0'; return pw; }
+    ;   for (;;) {
+    ;     if ((c = *p) == '\0') goto after_arg;
+    ;     ++p;
+    ;     if (c == '\\') {
+    ;       for (q = p; c = *q, c == '\\'; ++q) {}
+    ;       if (c == '"') {
+    ;         for (; p < q; p += 2) {
+    ;           *pw++ = '\\';
+    ;         }
+    ;         if (p != q) {
+    ;           is_quote ^= 1;
+    ;         } else {
+    ;           *pw++ = '"';
+    ;           ++p;  /* Skip over the '"'. */
+    ;         }
+    ;       } else {
+    ;         *pw++ = '\\';
+    ;         for (; p != q; ++p) {
+    ;           *pw++ = '\\';
+    ;         }
+    ;       }
+    ;     } else if (c == '"') {
+    ;       is_quote ^= 1;
+    ;     } else if (!is_quote && (c == ' ' || c == '\t' || c == '\n' || c == '\v')) {
+    ;       if (p - 1 != pw) --p;  /* Don't clobber the rest with '\0' below. */
+    ;      after_arg:
+    ;       *pw = '\0';
+    ;       return (char*)p;
+    ;     } else {
+    ;       *pw++ = c;  /* Overwrite in-place. */
+    ;     }
+    ;   }
+    ; }
+    parse_first_arg:  ; static char * __watcall parse_first_arg(char *pw);
+		push ebx
+		push ecx
+		push edx
+		push esi
+		xor bh, bh  ; is_quote.
+		mov edx, eax
+    .1:		mov bl, [edx]
+		cmp bl, ' '
+		je short .2  ; The inline assembler is not smart enough with forward references, we need these shorts.
+		cmp bl, 0x9
+		jb short .3
+		cmp bl, 0xb
+		ja short .3
+    .2:		inc edx
+		jmp short .1
+    .3:		test bl, bl
+		jne short .8
+		mov [eax], bl
+		jmp short .ret
+    .4:		cmp bl, '"'
+		jne short .11
+    .5:		lea esi, [eax+0x1]
+		cmp edx, ecx
+		jae short .6
+		mov byte [eax], 0x5c  ; "\\"
+		mov eax, esi
+		inc edx
+		inc edx
+		jmp short .5
+    .6:		je short .10
+    .7:		xor bh, 0x1
+    .8:		mov bl, [edx]
+		test bl, bl
+		je short .16
+		inc edx
+		cmp bl, 0x5c  ; "\\"
+		jne short .13
+		mov ecx, edx
+    .9:		mov bl, [ecx]
+		cmp bl, 0x5c  ; "\\"
+		jne short .4
+		inc ecx
+		jmp short .9
+    .10:	mov byte [eax], '"'
+		mov eax, esi
+		lea edx, [ecx+0x1]
+		jmp short .8
+    .11:	mov byte [eax], 0x5c  ; "\\"
+		inc eax
+    .12:	cmp edx, ecx
+		je short .8
+		mov byte [eax], 0x5c  ; "\\"
+		inc eax
+		inc edx
+		jmp short .12
+    .13:	cmp bl, '"'
+		je short .7
+		test bh, bh
+		jne short .15
+		cmp bl, ' '
+		je short .14
+		cmp bl, 0x9
+		jb short .15
+		cmp bl, 0xb
+		jna short .14
+    .15:	mov [eax], bl
+		inc eax
+		jmp short .8
+    .14:	dec edx
+		cmp eax, edx
+		jne short .16
+		inc edx
+    .16:	mov byte [eax], 0x0
+		xchg eax, edx  ; EAX := EDX: EDX := junk.
+    .ret:	pop esi
+		pop edx
+		pop ecx
+		pop ebx
+		ret
+  %endif
+%endif
 
 ; Exits the process with a fatal error (2 bytes of error message in BP).
 fatal:		mov [fatal_msg.code], bp
@@ -146,7 +423,11 @@ fatal:		mov [fatal_msg.code], bp
 		call write_
 		xor eax, eax
 		inc eax  ; EAX := EXIT_FAILURE == 1.
+%ifdef OS_WIN32
+		jmp near exit_  ; Doesn't return.
+%else
 		jmp short exit_  ; Doesn't return.
+%endif
 
 ; If EAX < 0, exits the process with a fatal error (2 bytes of error message
 ; in BP), otherwise returns. Keeps all registers except for EFLAGS intact.
@@ -186,7 +467,7 @@ read_udata:
 		xchg eax, edx  ; EAX := input filename; EDX := junk.
 		xor edx, edx  ; EDX := O_RDONLY == 0.
 		;xor ebx, ebx  ; No need to set mode if not creating the file (with O_CREAT).
-		call simple_open_
+		call simple_open_  ; Ruins EDX and EBX.
 		mov bp, 'OI'  ; Error opening input file.
 		call fatal_if_eax_lt_0
 		mov ecx, eax  ; ECX := filehandle of input file.
@@ -209,16 +490,18 @@ read_udata:
 		mov eax, ecx  ; EAX := filehandle of input file.
 		mov edx, udata  ; DS:EDX == pointer to start of buffer to read to.
 		mov ebx, udata.bufend-udata  ; Maximum number of bytes to read.
+		push ebx  ; Save udata.bufend-udata.
 		call read_
+		pop ebx  ; Restore EBX := udata.bufend-udata.
 		mov bp, 'RD'  ; File read error reading the uncompressed DOS .exe image.
 		call fatal_if_eax_lt_0
-		add eax, strict dword udata
-		cmp ax, strict word udata.bufend  ; This assumes to opposites of ERROR_BASE_NOT_64KIB_ALIGNED and ERROR_UDATA_MEMORY_IMAGE_TOO_LARGE.
+		cmp eax, ebx
 		jb short .usize_ok
 		mov bp, 'TL'  ; Input file too long.
 .j_fatal:	jmp near fatal
-.usize_ok:	push eax  ; Save offset of end of udata. Will be popped by `pop edx' in sort_relocs.
-		mov eax, ecx  ; EAX := filehandle of input file.
+.usize_ok:	add eax, strict dword udata
+		push eax  ; Save offset of end of udata. Will be popped by `pop edx' in sort_relocs.
+		xchg eax, ecx  ; EAX := filehandle of input file; ECX := junk.
 		call close_
 		; Now: DS:ESI == pointer to start of uexehdr.
 		; Falls through.
@@ -302,7 +585,7 @@ make_exe_headers_consistent:
 		push edx  ; Save number of DOS .exe image bytes to write.
 		mov edx, O_WRONLY|O_CREAT|O_TRUNC  ; flags.
 		mov ebx, 666o  ; mode.
-		call simple_open_
+		call simple_open_  ; Ruins EDX and EBX.
 		mov bp, 'OR'  ; Error opening input file for rewriting.
 		call fatal_if_eax_lt_0
 		;mov eax, ...  ; EAX == filehandle of output file.
@@ -338,14 +621,18 @@ build_preparator_buf:
 		mov esi, udata
 		mov edi, cdata
 		;mov edx, ...  ; EDX is already correct: EDX := offset of end of udata.
-		call compress  ; Append compressed data to DS:EDI == ES:EDI. Ruins EAX, EBX, ECX, EDX, ESI, EBP, EFLAGS. Sets EDS:EDI to pointer to end of cdata.
+		call compress  ; Append compressed data to DS:EDI == ES:EDI. Ruins EAX, EBX, ECX, EDX, ESI, EBP, EFLAGS. Sets EDS:EDI to pointer to end of cdata: new EDI == cdata + csize.
 		pop esi  ; Restore ESI := creloc.
 		pop ecx  ; Restore ECX := nreloc.
-		lea ebx, [dword edi-(preparator_buf-$$+BASE)]  ; EBX := csize + (cdata - preparator_buf).
-		times 2 add ebx, ecx  ; EBX := csize + (nreloc << 1) + (cdata - preparator_buf).
+%ifdef BASE  ; The code is shorter if we know the base address.
+		lea ebx, [dword edi+ecx*2-(preparator_buf-$$+BASE)]  ; EBX := csize + (nreloc << 1) + (cdata - preparator_buf).
+%else
+		lea ebx, [dword edi+ecx*2]  ; EBX := csize + (nreloc << 1) + csize.
+		sub ebx, preparator_buf  ; EBX := csize + (nreloc << 1) + (cdata - preparator_buf).
+%endif
 		mov [apply_relocs.u_nreloc], cl  ; It fits to 1 byte, we've checked it above at 'TR'.
 		rep movsw  ; Append compressed relocationss to DS:EDI == ES:EDI.
-		; Now: DS:EDI == pointer to the end of cdata.
+		; Now: DS:EDI == pointer to the end of cdata. EDI == cdata + csize.
 		mov eax, ebx
 		and ah, 1  ; AX &= 0x1ff.
 		mov [cexehdr.lastsize], ax
@@ -377,7 +664,7 @@ write_cdata:	pop eax  ; Restore EAX := offset of output filename.
 		pop edx  ; Discard offset of input filename.
 		mov edx, O_WRONLY|O_CREAT|O_TRUNC  ; flags.
 		mov ebx, 666o  ; mode.
-		call simple_open_
+		call simple_open_  ; Ruins EDX and EBX.
 		mov bp, 'OO'  ; Error opening output file.
 		call fatal_if_eax_lt_0
 		;mov eax, ...  ; EAX == filehandle of output file.
@@ -399,6 +686,7 @@ final_write:	call write_
 %if 1
   %ifndef OS_WIN32
     ; Input: syscall number in dword [ESP], return address in dword [ESP+4], arg1 in EAX, arg2 in EDX, arg3 in EDX.
+    ; Output: result in EAX. Ruins: EFLAGS.
     ; It assumes same syscall number and behavior for FreeBSD i386 and Linux i386.
     simple_syscall3_WAT:
 		xchg ecx, [esp]  ; ECX := syscall number; save ECX.
@@ -434,6 +722,33 @@ final_write:	call write_
 %endif
 
 %if 1
+  %ifdef OS_WIN32
+    read_write_helper:  ; Inputs: EAX: arg1; EDX: arg2; EBX: arg3; dword [ESP]: function pointer to _ReadFile@20 or _WriteFile@20. Outputs: result in EAX.
+		push ecx  ; Save.
+		push edx  ; Save.
+		push eax  ; Make room for numberOfBytesWritten.
+		mov ecx, esp
+		push byte NULL  ; lpOverlapped.
+		push ecx  ; lpNumberOfBytesWritten.
+		push ebx  ; nNumberOfBytesToWrite.
+		push edx  ; lpBuffer.
+		call handle_from_fd  ; EAX --> EAX.
+		push eax  ; hFile.
+		call dword [esp+8*4]  ; _WriteFile@20 or _ReadFile@20.  ; EAX := success indication. Ruins EDX and ECX.
+		test eax, eax
+		jnz short .ok
+		pop eax  ; Discard numberOfBytesWritten.
+		or eax, byte -1
+		jmp short .done
+    .ok:	pop eax  ; numberOfBytesWritten.
+    .done:	pop edx  ; Restore.
+		pop ecx  ; Restore.
+		add esp, byte 4  ; Discard the function pointer.
+		ret
+  %endif
+%endif
+
+%if 1
   global read_
   read_:  ; ssize_t __watcall read(int fd, void *buf, size_t count);
   %ifdef OS_WIN32
@@ -449,7 +764,7 @@ final_write:	call write_
   global write_
   write_:  ; ssize_t __watcall write(int fd, const void *buf, size_t count);
   %ifdef OS_WIN32
-		push dword _WriteFile@20
+		push dword [__copy__WriteFile@20]  ; !! push dword _WriteFile@20
 		jmp short read_write_helper
 		; Fall through to __M_write_growany_.
   %else
@@ -464,33 +779,53 @@ O_CREAT equ 100o  ; Linux.
 O_TRUNC equ 1000o  ; Linux.
 
 %if 1
-  %ifndef OS_WIN32
-    __M_raw_open_:  ; int __watcall __M_fopen_open(const char *pathname, int flags, mode_t mode);
-		push byte 5  ; FreeBSD i386 and Linux i386 SYS_open.
-		jmp short simple_syscall3_WAT
-  %endif
-%endif
-
-%if 1
   %if 1
     global simple_open_
     simple_open_:  ; int __watcall simple_open_(const char *pathname, int flags, ... mode_t mode);
     ; This function only works with flags==O_RDONLY or flags==(O_WRONLY|O_CREAT|O_TRUNC).
-    %ifdef OS_WIN32  ; !! Write it (__M_fopen_open_), take care of __watcall.
+    %ifdef OS_WIN32
+		push ecx  ; Save for __watcall.
+		mov ecx, file_handle
+		cmp dword [ecx], byte 0
+		je short .found_slot
+		or ecx, byte -1
+		jmp short .done  ; Too many open files. We support 1 open file in addition to stderr.
+      .found_slot:
+		push ecx  ; Save.
+		push byte 0  ; hTemplateFile.
+		push dword FILE_ATTRIBUTE_NORMAL  ; dwFlagsAndAttributes. This would also work for reading: FILE_ATTRIBUTE_READONLY, no matter whether the file is read-only. This would also work for writing: FILE_ATTRIBUTE_NORMAL|FILE_FLAG_SEQUENTIAL_SCAN.
+		cmp edx, byte 0  ; Linux i386 argument flags. Is it O_RDONLY?
+		je short .rdonly
+		; If not O_RDONLY, then we assume O_WRONLY|O_CREAT|O_TRUNC. That's valid for ___M_fopen_open.
+		push byte CREATE_ALWAYS  ; dwCreationDisposition.
+		push byte 0  ; lpSecurityAttributes.
+		push byte FILE_SHARE_READ|FILE_SHARE_WRITE  ; dwShareMode. Windows 98 SE fails to open a local file if FILE_SHARE_DELETE is also specified here.
+		push dword GENERIC_WRITE  ; dwDesiredAccess.
+		jmp short .open
+      .rdonly:	push byte OPEN_EXISTING  ; dwCreationDisposition,.
+		push byte 0  ; lpSecurityAttributes.
+		push byte FILE_SHARE_READ|FILE_SHARE_WRITE  ; dwShareMode. Windows 98 SE fails to open a local file if FILE_SHARE_DELETE is also specified here.
+		push dword GENERIC_READ  ; dwDesiredAccess.
+      .open:	push eax  ; lpFileName. From argument pathname.
+		call dword [__copy__CreateFileA@28]  ; !! call _CreateFileA@28  ; Ruins EDX and ECX.
+		pop ecx  ; ECX := slot pointer to file_handle.
+		cmp eax, byte INVALID_HANDLE_VALUE  ; -1.
+		je short .done
+		mov [ecx], eax  ; Save handle to file_handle.
+		push byte 3
+		pop eax  ; EAX := 3 (fd).
+      .done:	pop ecx  ; Restore for __watcall.
+		ret
     %else  ;  %ifdef OS_WIN32
-		push ebx  ; Save for __watcall.
-		push edx  ; Save for __watcall.
 		cmp byte [___M_is_freebsd], 0
 		je short .flags_done
 		; This only fixes the flags with which _fopen(...) calls open(...). The other flags value is O_RDONLY, which doesn't have to be changed.
 		cmp dx, 1101o  ; flags: Linux   (O_WRONLY | O_CREAT | O_TRUNC) == (1 | 100o | 1000o).
 		jne short .flags_done
 		mov dx, 0x601  ; flags: FreeBSD (O_WRONLY | O_CREAT | O_TRUNC) == (1 | 0x200 | 0x400) == 0x601. In the SYSV i386 calling convention, it's OK to modify an argument on the stack.
-        .flags_done:
-		call __M_raw_open_  ; For proper stack usage (with `push' above and `pop's below).
-		pop edx  ; Restore for __watcall.
-		pop ebx  ; Restore for __watcall.
-		ret
+      .flags_done:
+		push byte 5  ; FreeBSD i386 and Linux i386 SYS_open.
+		jmp short simple_syscall3_WAT
     %endif
   %endif
 %endif
@@ -498,10 +833,62 @@ O_TRUNC equ 1000o  ; Linux.
 %if 1
   global close_
   close_:  ; int __watcall close(int fd);;
-  %ifdef OS_WIN32  ; !! Write it.
+  %ifdef OS_WIN32
+		push ecx  ; Save.
+		push edx  ; Save.
+		push eax  ; Save fd.
+		call handle_from_fd
+		cmp eax, byte -1
+		je short .pop_eax_bad
+		push eax  ; fd argument of _CloseHandle@4.
+		call _CloseHandle@4  ; Ruins EDX and ECX. Returns nonzero in EAX on success.
+		pop edx  ; Restore EDX := fd.
+		sub edx, byte 2
+		cmp edx, byte 3-2
+		ja short .closed
+		and [stderr_handle+edx*4], byte NULL  ; Change the stored handle value to NULL.
+    .closed:	test eax, eax  ; _CloseHandle@4 returns 0 on success.
+		jnz short .done
+    .pop_eax_bad:
+		pop eax  ; Discard fd.
+    .bad:	or eax, byte -1  ; We will return -1 on failure.
+    .done:	pop edx  ; Restore.
+		pop ecx  ; Restore.
+		ret
   %else
 		push byte 6  ; FreeBSD i386 and Linux i386 SYS_close.
 		jmp short simple_syscall3_WAT
+  %endif
+%endif
+
+%if 1
+  %ifdef OS_WIN32
+    check_handle:  ; Checks the handle in EAX.
+		inc eax
+		cmp eax, byte 2  ; CF := (handle is invalid: NULL or INVALID_HANDLE_VALUE).
+		dec eax  ; Doesn't affect CF.
+		jc short .bad_handle
+		ret
+    .bad_handle:
+		push byte -2  ; 254.
+		call _ExitProcess@4  ; Doesn't return.
+		; Not reached.
+  %endif
+%endif
+
+%if 1
+  %ifdef OS_WIN32
+    handle_from_fd:  ; Inputs: EAX: fd; Outputs: EAX: handle or NULL if not found. Equivalent to OpenWatcom int __watcall _get_osfhandle(int fd). Ruins FLAGS (no other register).
+		sub eax, byte 2
+		cmp eax, byte 3-2
+		ja short .bad
+		mov eax, [stderr_handle+eax*4]
+    .found:	inc eax
+		cmp eax, byte 2  ; CF := (handle is invalid: NULL or INVALID_HANDLE_VALUE).
+		dec eax  ; Doesn't affect CF.
+		jnc short .ret
+    .bad:	or eax, byte -1
+    .ret:	ret
   %endif
 %endif
 
@@ -733,9 +1120,6 @@ sort4:
 		ret
 %endif
 
-CR equ 13
-LF equ 10
-
 %ifdef DEBUG
   ; Writes the byte in AL to stdout and flushed stdout.
   putcharf:  ; TODO(pts): Add line buffering for faster operation.
@@ -904,7 +1288,7 @@ compress:
 		mov ecx, edx
 		sub ecx, esi
 		jnc short .edx_esi_ok
-		int3
+		int3  ; Abort with SIGTRAP on Linux i386.
 .edx_esi_ok:
 %endif
 		movsb  ; Uses DS:ESI and ES:EDI. Copy literal byte to compressed output data.
@@ -935,7 +1319,7 @@ compress:
 		pop ebx  ; Restore EBX := udata_start.
 		push ebx  ; Save udata_start.
 		push ecx  ; Save.
-		mov cx, MAX_DISTANCE
+		mov cx, MAX_DISTANCE  ; No need for `mov ecx, ...', since ECX <= 0xffff now, thus the high word of ECX is already 0.
 		sub ecx, eax
 		sub ebx, edi
 		neg ebx
@@ -1030,8 +1414,8 @@ compress:
 		; Falls through to .next_byte.
 .next_byte:	mov [ebp+.var_cdata_cur], edi  ; cdata_end == cdata_cur.
 		mov ecx, [ebp+.var_udata_end]  ; udata_end.
-		sub ecx, esi  ; High word of ECX becomes 0, because the input data is alsways shorter than 64 KiB. Thus CX == ECX.
-		; Now ECX <= 0xffff (because of the opposite of ERROR_UDATA_MEMORY_IMAGE_TOO_LARGE), thus ECX == CX.
+		sub ecx, esi
+		; Now ECX <= 0xffff (because the uncompressed input data is always shorter than 64 KiB, i.e. of the opposite of ERROR_UDATA_MEMORY_IMAGE_TOO_LARGE), thus high word of ECX is 0, thus ECX == CX.
 		jz short .done
 %ifdef DEBUG
 		jnc short .ecx_ok
@@ -1166,6 +1550,11 @@ fatal_msg:	db 'pmwca: fatal: '
 %endif
 .end:
 
+%ifdef OS_WIN32  ; !! Put it back to BSS here as soon as we stop using wlink(1), and `nasm -f' can guarantee cdata==file_end. Currently BSS doesn't guarantee zero-initialization and these variables need it.
+  stderr_handle: dd 0
+  file_handle: dd 0  ; Must be directly atfer stderr_handle.  Needs zero-initialization.
+%endif
+
 ; --- Code below here is not executed by compressor, but it is copied near
 ; the beginning of the compressed .exe.
 ;
@@ -1267,7 +1656,7 @@ copy_code:
 		pop es   ; ES := orig_CS-0x10.
 		pop ds   ; DS := orig_CS+0x3d7.
 		pop di   ; DI := 0x100.
-		mov si, cdata-exe_image+0x100  ; DS:SI now points to the start of the copy of cdata. Constant.
+		mov si, cdata_in_text-exe_image+0x100  ; DS:ESI now points to the start of the copy of cdata. Constant.
 		push es  ; orig_CS-0x10. Will be popped by `pop ds' in jump_to_program.
 		push cs  ; orig_CS == PSP_segment. Will be popped by `pop dx' in jump_to_program.
 		movsb  ; Copy initial literal token.
@@ -1382,24 +1771,48 @@ preparator_buf.end:
 MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
 MAX_CSIZE equ MAX_USIZE+((MAX_USIZE+7)>>3)  ; Worst case compressed data size: all tokens are literals. Matches are never longer than their corresponding literals.
 MAX_CRELSIZE equ EXEHDRSIZE>>2  ; Absolue maximum which fits to EXEHDRSIZE bytes of DOS .exe header created by TLINK.
+cdata_in_text:
 file_end:
-absolute $  ; Don't emit bytes anymore, just reserve.
-cdata:		resb MAX_CSIZE+MAX_CRELSIZE  ; Must come directly after preparator_buf.end, without alignment.
-
-udata:		resb MAX_USIZE
-.bufend:
-%if BASE&0xffff
-  %error ERROR_BASE_NOT_64KIB_ALIGNED
-  db 1/0
+%ifdef OS_WIN32
+  section _BSS
+%else
+  absolute $  ; Don't emit bytes anymore, just reserve.
 %endif
+bss:
+cdata_bss:	resb MAX_CSIZE+MAX_CRELSIZE  ; Must come directly after preparator_buf.end, without alignment.
+cdata: equ file_end+(cdata_bss-bss)
+%ifndef OS_WIN32
+  %if cdata!=file_end
+    %error ERROR_CDATA_MUST_FOLLOW_FILE_END
+    db 1/0
+  %endif
+%endif
+udata_bss:	resb MAX_USIZE
+.bufend:
+udata: equ file_end+(udata_bss-bss)
+udata.bufend: equ file_end+(udata_bss.bufend-bss)
 %if $-$$>0xffff
   %error ERROR_UDATA_MEMORY_IMAGE_TOO_LARGE
   db 1/0
 %endif
 
-		resb ($$-$)&3  ; Align to dword boundary.
-uexehdr:	resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
-creloc: equ uexehdr+0x1c  ; Temporary buffer for compressed relocations.
+		resb (-(file_end-text)-($-bss))&3  ; Align to dword boundary.
+uexehdr_bss:	resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
+uexehdr: equ file_end+(uexehdr_bss-bss)
+creloc_bss: equ uexehdr_bss+0x1c  ; Temporary buffer for compressed relocations.
+creloc: equ file_end+(creloc_bss-bss)
 
-___M_is_freebsd: resb 1  ; Are we actually running under FreeBSD (rathar than Linux)?
-mem_end:
+%ifdef OS_WIN32  ; !! Put it back to BSS here.
+  ;stderr_handle: resd 1
+  ;file_handle: resd 1  ; Must be directly atfer stderr_handle.
+  __copy__ExitProcess@4: equ file_end+($-bss)
+  resd 1
+  __copy__WriteFile@20: equ file_end+($-bss)
+  resd 1
+  __copy__CreateFileA@28: equ file_end+($-bss)
+  resd 1
+%else
+  ___M_is_freebsd_bss: resb 1  ; Are we actually running under FreeBSD (rathar than Linux)?
+  ___M_is_freebsd: equ file_end+(___M_is_freebsd_bss-bss)
+  mem_end:
+%endif

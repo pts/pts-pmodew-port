@@ -24,9 +24,9 @@ is_reproducible=1
 do_consfix=
 is_emu2=
 is_explicit_kvikdos=
-is_nasm=
+#is_nasm=  # Unconditionally overwritten below.
 is_dnx=
-is_compressor_asm=1
+compressor=1
 
 for arg in "$@"; do
   case "$arg" in --*) ;; -*) arg="-$arg" ;; *) arg="--$arg" ;; esac  # Make leading dashes optionol.
@@ -49,27 +49,41 @@ for arg in "$@"; do
    --co | --ro | --consistent | --reproducible) is_reproducible=1 ;;  # Enable reproducible output (i.e. consistent across NASM, TASM and TLINK versions) for for pmodewu.exe and pmodewv.exe. (pmodew.exe is always reproducible.)
    --no-co | --no-ro | --no-consistent | --no-reproducible) is_reproducible= ;;  # Disable reproducible output. Faster.
    --force-consfix | --force-execons) do_consfix=1 ;;  # Force running execons.c, even if not needed by --reproducible.
-   --compressor[-=]asm) is_compressor_asm=1 ;;
-   --compressor[-=]nasm16) is_compressor_asm=2 ;;
-   --compressor[-=]nasm32) is_compressor_asm=3 ;;
-   --compressor[-=]c) is_compressor_asm= ;;
+   --compressor[-=]c) compressor=0 ;;  # Linux i386 ./pmwc or DOS pmwc.exe compiled with a C compiler .
+   --compressor[-=]asm) compressor=1 ;;  #  DOS pmwca.com compiled with TASM .
+   --compressor[-=]nasm16) compressor=2 ;;  # DOS pmwca.com compiled with NASM.
+   --compressor[-=]nasm32) compressor=3 ;;  # Linux i386 ./pmwca compiled with NASM.
+   --compressor[-=]win32 | --compressor[-=]nasmwin32) compressor=4 ;;  # Win32 pmwca.exe compiled with NASM.
    *) echo "fatal: unknown command-line flag: $arg" >&2; exit 1 ;;
   esac
 done
 case "$asm_prog" in nasm* | */nasm*) is_nasm=1 ;; *) is_nasm= ;; esac
+if test "$is_nasm"; then is_reproducible=1; nasm="$asm_prog"; fi
+if test "$is_nasm" && test "$compressor" = 1; then compressor=3; fi  # =nasm32.
 
-rm -f pmwca.com pmwca
+rm -f pmwc.exe pmwca.com pmwca pmwca.exe pmwc.o pmwc.obj pmwca.o pmwca.obj pmwca2.com pmwca2
+if test "$compressor" = 2; then
+  set -x  # Echo all commands run.
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca.com pmwca.nasm
+  set +x
+elif test "$compressor" = 3; then
+  set -x  # Echo all commands run.
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca pmwcax.nasm
+  chmod +x pmwca
+  set +x
+elif test "$compressor" = 4; then
+  set -x  # Echo all commands run.
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -f obj -DOS_WIN32 -o pmwca.obj pmwcax.nasm
+  wlink op q op start=_start op noext op nou op nored op d form win nt ru con=3.10 op h=4K com h=0 op st=1024K com st=4K f pmwca.obj n pmwca.exe  # !!! Generate pmwca.exe with `nasm -f bin', without wlink(1).
+  set +x
+fi
+
 if test "$is_nasm"; then
-  is_reproducible=1; nasm="$asm_prog"
-  if test "$is_compressor_asm" = 1; then is_compressor_asm=3; fi  # =nasm32.
   set -x  # Echo all commands run.
   # -O32767 instead of -O999999999 for compatibility with 16-bit NASM 0.98.39.
   # This NASM invocation is one of the slowest compilation steps (!).
   "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -o pmodewu.exe pmodew.nasm
   "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -DUNC=1 -o pmodewv.exe pmodew.nasm
-  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca.com pmwca.nasm
-  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca pmwcax.nasm
-  chmod +x pmwca
 else
   if ! test "${asm_prog#tasm30*.exe}" && ! test "$is_emu2"; then
     # TASM 3.0 produces `int 3' in kvikdos. Without --mem-mb=2, TASM
@@ -90,21 +104,21 @@ else
     dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
     dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
     dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
-    dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
+    test "$compressor" = 2 || dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
     ;;
    tasm[12]*.exe | tasm.exe)  # The /zn flag (no debug info) has been introduced in TASM 3.0.
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewe
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewk
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
-    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmwca  # Default input extension: .asm. Default output extension: .obj.
+    test "$compressor" = 2 || "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmwca  # Default input extension: .asm. Default output extension: .obj.
     ;;
    *.exe)
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
-    "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
+    test "$compressor" = 2 || "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
     ;;
    *)
     if test "$asm_prog" = "${asm_prog#*/}"; then asm_prog="./$asm_prog"; fi
@@ -112,7 +126,7 @@ else
     "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
     "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
     "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
-    "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
+    test "$compressor" = 2 || "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
     ;;
   esac
   case "$tlink_exe" in
@@ -121,14 +135,7 @@ else
   esac
   "$emudos" $emudosflags "$tlink_exe" /3 /x pmodewe  pmodewk ,pmodewu.exe
   "$emudos" $emudosflags "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
-  "$emudos" $emudosflags "$tlink_exe" /t /x pmwca
-  if test "$is_compressor_asm" = 2; then
-    "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca.com pmwca.nasm  # Overwrite pmwca.com generated by TLINK above.
-  fi
-  if test "$is_compressor_asm" = 3; then
-    "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca pmwcax.nasm
-    chmod +x pmwca
-  fi
+  test "$compressor" = 2 || "$emudos" $emudosflags "$tlink_exe" /t /x pmwca
 fi
 
 # Now pmodewv.exe is already ready to be used as a stub by OpenWatcom:
@@ -194,7 +201,8 @@ if false; then
   fi
 fi
 
-if ! test "$is_compressor_asm"; then
+rm -f pmodew.exe
+if test "$compressor" = 0; then
   rm -f pmwc pmwc.exe
   if false; then
     minicc -DPMWV="$pmwv" -o pmwc pmwc.c
@@ -220,34 +228,43 @@ if ! test "$is_compressor_asm"; then
     owcc -bdos -mcmodel=s -std=c89 -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV="$pmwv" -o pmwc.exe pmwc.c
     unset INCLUDE
   else
-    : '! Missing compiler for pmwc.c' >&2
+    : '! missing compiler for pmwc.c' >&2
     false
   fi
   if test -f pmwc; then
     ./pmwc pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
     if test "$do_consfix"; then
-      ./pmwc pmodewu.exe  # The compression (two-argument pmwc.c) below would works even without this here.
+      ./pmwc pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
       ./pmwc pmodewv.exe
     fi
   else
     "$emudos" $emudosflags pmwc.exe pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
     if test "$do_consfix"; then
-      "$emudos" $emudosflags pmwc.exe pmodewu.exe  # The compression (two-argument pmwc.c) below would works even without this here.
+      "$emudos" $emudosflags pmwc.exe pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
       "$emudos" $emudosflags pmwc.exe pmodewv.exe
     fi
   fi
-elif test "$is_compressor_asm" = 1 || test "$is_compressor_asm" = 2; then
+elif test "$compressor" = 1 || test "$compressor" = 2; then
   "$emudos" $emudosflags pmwca.com pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
   if test "$do_consfix"; then
-    "$emudos" $emudosflags pmwca.com pmodewu.exe  # The compression (two-argument pmwc.c) below would works even without this here.
+    "$emudos" $emudosflags pmwca.com pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
     "$emudos" $emudosflags pmwca.com pmodewv.exe
   fi
-else
+elif test "$compressor" = 3; then
   ./pmwca pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
   if test "$do_consfix"; then
-    ./pmwca pmodewu.exe  # The compression (two-argument pmwc.c) below would works even without this here.
+    ./pmwca pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
     ./pmwca pmodewv.exe
   fi
+elif test "$compressor" = 4; then
+  dosbox.nox.static --cmd --mem-mb=2 mwperun.exe pmwca.exe pmodewu.exe pmodew.exe
+  if test "$do_consfix"; then
+    dosbox.nox.static --cmd --mem-mb=2 mwperun.exe pmwca.exe pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
+    dosbox.nox.static --cmd --mem-mb=2 mwperun.exe pmwca.exe pmodewv.exe
+  fi
+else
+  : "! unsupported compressor: $compressor" >&2
+  false
 fi
 
 if test "$pmwv" = 33; then
@@ -269,16 +286,19 @@ if test "$is_reproducible"; then
   fi
 fi
 
-if test "$is_nasm"; then  # Double-check that the DOS and the Linux i386 implementation of pmwca produce the same output.
-  rm -f pmodew.exe
-  "$emudos" $emudosflags pmwca.com pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
+if true; then  # Double-check that alternative compressor implementations produce the same output.
+  rm -f pmodew.exe pmwca2.com
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca2.com pmwca.nasm
+  "$emudos" $emudosflags pmwca2.com pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
   if test "$pmwv" = 33; then
     test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
   else
     test "$(sha256sum pmodew.exe)" = "b6813ff1f052dbe69b968a427a1eeceefe434519ca4cc5ddd43c501ed214de47  pmodew.exe"  # For PMWV=34.
   fi
-  rm -f pmodew.exe
-  ./pmwca pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
+  rm -f pmodew.exe pmwca2
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca2 pmwcax.nasm
+  chmod +x pmwca2
+  ./pmwca2 pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
   if test "$pmwv" = 33; then
     test "$(sha256sum pmodew.exe)" = "5a2a94207e0830efd835048d81b562097d77267e4b5e8afe4136ad2c8f667764  pmodew.exe"  # Same as of pmodew133.exe (PMODEW.EXE in the official pmw133.zip on 1997-01-01).
   else
