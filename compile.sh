@@ -49,7 +49,11 @@ for arg in "$@"; do
    --co | --ro | --consistent | --reproducible) is_reproducible=1 ;;  # Enable reproducible output (i.e. consistent across NASM, TASM and TLINK versions) for for pmodewu.exe and pmodewv.exe. (pmodew.exe is always reproducible.)
    --no-co | --no-ro | --no-consistent | --no-reproducible) is_reproducible= ;;  # Disable reproducible output. Faster.
    --force-consfix | --force-execons) do_consfix=1 ;;  # Force running execons.c, even if not needed by --reproducible.
-   --compressor[-=]c) compressor=c ;;  # Linux i386 ./pmwc or DOS pmwc.exe compiled with a C compiler . !!!
+   --compressor[-=]c | --compressor[-=]minicc) compressor=minicc ;;  # Linux i386 ./pmwc compiled by minicc.
+   --compressor[-=]gcc) compressor=gcc ;;  # Linux i386 ./pmwc compiled by https://github.com/pts/minilibc686 minicc.
+   --compressor[-=]owcc-linux) compressor=owcc-linux ;;  # Linux i386 ./pmwc compiled by OpenWatcom owcc.
+   --compressor[-=]turboc) compressor=turboc ;;  # DOS pmwc.exe compiled by Borland Turbo C++.
+   --compressor[-=]owcc-dos) compressor=owcc-dos ;;  # DOS pmwc.exe compiled by OpenWatcom owcc.
    --compressor[-=]asm) compressor=asm ;;  #  DOS pmwca.com compiled with TASM .
    --compressor[-=]nasm16) compressor=nasm16 ;;  # DOS pmwca.com compiled with NASM.
    --compressor[-=]nasm32) compressor=nasm32 ;;  # Linux i386 ./pmwca compiled with NASM.
@@ -63,20 +67,73 @@ if test "$is_nasm" && test "$compressor" = asm; then compressor=nasm32; fi
 
 rm -f pmwc.exe pmwca.com pmwca pmwca.exe pmwc.o pmwc.obj pmwca.o pmwca.obj pmwca2.com pmwca2
 if test "$compressor" = nasm16; then
+  compressor=pmwca.com
   set -x  # Echo all commands run.
-  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca.com pmwca.nasm
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o "$compressor" pmwca.nasm
   set +x
 elif test "$compressor" = nasm32; then
+  compressor=pmwca
   set -x  # Echo all commands run.
-  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o pmwca pmwcax.nasm
-  chmod +x pmwca
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o "$compressor" pmwcax.nasm
+  chmod +x "$compressor"
   set +x
 elif test "$compressor" = win32; then
+  compressor=pmwca.exe
   set -x  # Echo all commands run.
   "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -f obj -DOS_WIN32 -o pmwca.obj pmwcax.nasm
-  wlink op q op start=_start op noext op nou op nored op d form win nt ru con=3.10 op h=4K com h=0 op st=1024K com st=4K f pmwca.obj n pmwca.exe  # !!! Generate pmwca.exe with `nasm -f bin', without wlink(1).
+  wlink op q op start=_start op noext op nou op nored op d form win nt ru con=3.10 op h=4K com h=0 op st=1024K com st=4K f pmwca.obj n "pmwca.exe"  # !!! Generate pmwca.exe with `nasm -f bin', without wlink(1).
   set +x
+elif test "$compressor" = asm; then
+  :  # pmwca.com will be built by TASM + TLINK below.
+elif test "$compressor" = minicc; then
+  compressor=pmwc
+  set -x  # Echo all commands run.
+  minicc -DPMWV="$pmwv" -o "$compressor" pmwc.c
+  set +x
+elif test "$compressor" = gcc; then
+  compressor=pmwc
+  set -x  # Echo all commands run.
+  gcc -s -O2 -ansi -pedantic -W -Wall -DPMWV="$pmwv" -o "$compressor" pmwc.c
+  #gcc -O2 -ansi -pedantic -W -Wall -DPMWV="$pmwv" -o pmwc pmwc.c
+  # !! valgrind ./pmwc pmodewu.exe pmodew.exe  # Works and it is faster without valgrind.
+  set +x
+elif test "$compressor" = owcc-linux; then
+  compressor=pmwc
+  set -x  # Echo all commands run.
+  test "$WATCOM"
+  test -f "$WATCOM/lh/stdio.h"
+  export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
+  rm -f pmwc
+  owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV="$pmwv" -o "$compressor" pmwc.c
+  set +x
+  unset INCLUDE
+elif test "$compressor" = turboc; then
+  compressor=pmwc.exe
+  set -x
+  # Output file pmwc.exe is implicity derived from the .c source file nam,
+  # it cannot be specified on the tcc.exe command line.
+  #
+  # With -f (or by default), emu.lib and maths.lib are also required for x87
+  # emulation. With -f87, x86.lib and maths.lib are required instead. With
+  # -f-, no emu.lib or math*.lib is required.
+  #
+  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)? tcc.exe tlink.exe cs.lib c0s.obj tcch/fcntl.h tcch/io.h tcch/stdarg.h tcch/stdio.h tcch/stdlib.h tcch/string.h .
+  "$emudos" $emudosflags tcc.exe -ms -Itcch -f- -DPMWV="$pmwv" pmwc.c
+  set +x
+elif test "$compressor" = owcc-dos; then
+  compressor=pmwc.exe
+  set -x  # Echo all commands run.
+  test "$WATCOM"
+  test -f "$WATCOM/h/stdio.h"
+  export INCLUDE="$WATCOM/h"  # For OpenWatcom.
+  owcc -bdos -mcmodel=s -std=c89 -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV="$pmwv" -o "$compressor" pmwc.c
+  set +x
+  unset INCLUDE
+else
+  echo "fatal: unsupported compressor to build: $compressor" >&2
+  exit 2
 fi
+rm -f pmwc.obj pmwc.o
 
 if test "$is_nasm"; then
   set -x  # Echo all commands run.
@@ -104,21 +161,21 @@ else
     dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
     dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
     dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
-    test "$compressor" = nasm16 || dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
+    ! test "$compressor" = asm || dosbox.nox.static --cmd --mem-mb=3 mwperun.exe "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
     ;;
    tasm[12]*.exe | tasm.exe)  # The /zn flag (no debug info) has been introduced in TASM 3.0.
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewe
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmodewk
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
-    test "$compressor" = nasm16 || "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmwca  # Default input extension: .asm. Default output extension: .obj.
+    ! test "$compressor" = asm || "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /q /dPMWV="$pmwv" pmwca  # Default input extension: .asm. Default output extension: .obj.
     ;;
    *.exe)
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewe
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
     "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
-    test "$compressor" = nasm16 || "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
+    ! test "$compressor" = asm || "$emudos" $emudosflags "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
     ;;
    *)
     if test "$asm_prog" = "${asm_prog#*/}"; then asm_prog="./$asm_prog"; fi
@@ -126,7 +183,7 @@ else
     "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmodewk
     "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewe,pmodewev
     "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" /dUNC=1 pmodewk,pmodewkv
-    test "$compressor" = nasm16 || "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
+    ! test "$compressor" = asm || "$asm_prog" /t /ml /m2 /zn /q /dPMWV="$pmwv" pmwca
     ;;
   esac
   case "$tlink_exe" in
@@ -135,7 +192,10 @@ else
   esac
   "$emudos" $emudosflags "$tlink_exe" /3 /x pmodewe  pmodewk ,pmodewu.exe
   "$emudos" $emudosflags "$tlink_exe" /3 /x pmodewev pmodewkv,pmodewv.exe
-  test "$compressor" = nasm16 || "$emudos" $emudosflags "$tlink_exe" /t /x pmwca
+  if test "$compressor" = asm; then
+    "$emudos" $emudosflags "$tlink_exe" /t /x pmwca
+    compressor=pmwca.com
+  fi
 fi
 
 # Now pmodewv.exe is already ready to be used as a stub by OpenWatcom:
@@ -202,61 +262,31 @@ if false; then
 fi
 
 rm -f pmodew.exe
-if test "$compressor" = c; then
-  rm -f pmwc pmwc.exe
-  if false; then
-    minicc -DPMWV="$pmwv" -o pmwc pmwc.c
-  elif false; then
-    gcc -s -O2 -ansi -pedantic -W -Wall -DPMWV="$pmwv" -o pmwc pmwc.c
-    #gcc -O2 -ansi -pedantic -W -Wall -DPMWV="$pmwv" -o pmwc pmwc.c
-    #valgrind ./pmwc pmodewu.exe pmodew.exe  # Works and it is faster without valgrind.
-  elif true; then
-    test "$WATCOM"
-    test -f "$WATCOM/lh/stdio.h"
-    export INCLUDE="$WATCOM/lh"  # For OpenWatcom.
-    rm -f pmwc
-    owcc -blinux -Os -s -fno-stack-check -march=i386 -W -Wall -DPMWV="$pmwv" -o pmwc pmwc.c
-    unset INCLUDE
-  elif false; then
-    rm -f pmwc.exe pmwc.obj pmwc.o
-    "$emudos" $emudosflags tcc.exe -ms -Itcch -f87 -DPMWV="$pmwv" pmwc.c  # !! What is the minimum set of files needed for compiling with Turbo C++ 1.01 (free)?
-  elif true; then
-    test "$WATCOM"
-    test -f "$WATCOM/h/stdio.h"
-    export INCLUDE="$WATCOM/h"  # For OpenWatcom.
-    rm -f pmwc.exe pmwc.obj pmwc.o
-    owcc -bdos -mcmodel=s -std=c89 -Os -s -fno-stack-check -march=i086 -W -Wall -DPMWV="$pmwv" -o pmwc.exe pmwc.c
-    unset INCLUDE
-  else
-    : '! missing compiler for pmwc.c' >&2
-    false
+if test "$compressor" = pmwc; then
+  ./pmwc pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
+  if test "$do_consfix"; then
+    ./pmwc pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
+    ./pmwc pmodewv.exe
   fi
-  if test -f pmwc; then
-    ./pmwc pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
-    if test "$do_consfix"; then
-      ./pmwc pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
-      ./pmwc pmodewv.exe
-    fi
-  else
-    "$emudos" $emudosflags pmwc.exe pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
-    if test "$do_consfix"; then
-      "$emudos" $emudosflags pmwc.exe pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
-      "$emudos" $emudosflags pmwc.exe pmodewv.exe
-    fi
+elif test "$compressor" = pmwc.exe; then
+  "$emudos" $emudosflags pmwc.exe pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
+  if test "$do_consfix"; then
+    "$emudos" $emudosflags pmwc.exe pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
+    "$emudos" $emudosflags pmwc.exe pmodewv.exe
   fi
-elif test "$compressor" = asm || test "$compressor" = nasm16; then
+elif test "$compressor" = pmwca.com; then
   "$emudos" $emudosflags pmwca.com pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
   if test "$do_consfix"; then
     "$emudos" $emudosflags pmwca.com pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
     "$emudos" $emudosflags pmwca.com pmodewv.exe
   fi
-elif test "$compressor" = nasm32; then
+elif test "$compressor" = pmwca; then
   ./pmwca pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
   if test "$do_consfix"; then
     ./pmwca pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
     ./pmwca pmodewv.exe
   fi
-elif test "$compressor" = win32; then
+elif test "$compressor" = pmwca.exe; then
   dosbox.nox.static --cmd --mem-mb=2 mwperun.exe pmwca.exe pmodewu.exe pmodew.exe
   if test "$do_consfix"; then
     dosbox.nox.static --cmd --mem-mb=2 mwperun.exe pmwca.exe pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
