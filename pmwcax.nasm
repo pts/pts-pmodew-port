@@ -1,12 +1,14 @@
 ;
-; pmwcax.nasm: PMODE/W stub compressor, 386 assembly implementation for NASM 0.98.39--, as a combined Linux i386 and FreeBSD i386 program
+; pmwcax.nasm: PMODE/W stub compressor, 386 assembly implementation for NASM 0.98.39--, as a combined Linux i386 and FreeBSD i386 program, also as a combined Win32 and DOS 8086 .exe program
 ; by pts@fazekas.hu at Sat Jun 21 12:29:43 CEST 2025
 ;
 ; Compile with: nasm -O0 -w+orphan-labels -o pmwca pmwcax.nasm && chmod +x pmwca
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -f bin -o pmwca pmwcax.nasm && chmod +x pmwca && ./pmwca pmodewu.exe pmodew.exe && cmp pmodew133.exe pmodew.exe && echo OK
-; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca pmwcax.nasm && chmod +x pmwca && ./pmwca pmodewu.exe pmodew.exe >pmwca.log && <pmodewc.log grep '^[BLDEXY]' >pmodewc.bldexy.log && diff pmodewc.bldexy.log pmwca.log && cmp pmodew133.exe pmodew.exe && echo OK
+; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -o pmwca pmwcax.nasm && chmod +x pmwca && ./pmwca pmodewu.exe pmodew.exe && cmp pmodew133.exe pmodew.exe && echo OK
+; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -DDEBUG -o pmwca pmwcax.nasm && chmod +x pmwca && ./pmwca pmodewu.exe pmodew.exe >pmwca.log && <pmodewc.log grep '^[BLDEXY]' >pmodewc.bldexy.log && diff pmodewc.bldexy.log pmwca.log && cmp pmodew133.exe pmodew.exe && echo OK
+; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -DOS_WIN32 -o pmwca.exe pmwcax.nasm && tools/kvikdos-v1 pmwca.exe pmodewu.exe pmodew.exe && cmp pmodew133.exe pmodew.exe && echo OK
+; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -DDEBUG -DOS_WIN32 -o pmwca.exe pmwcax.nasm && tools/kvikdos-v1 pmwca.exe pmodewu.exe pmodew.exe >pmwca.log && <pmodewc.log grep '^[BLDEXY]' >pmodewc.bldexy.log && diff pmodewc.bldexy.log pmwca.log && cmp pmodew133.exe pmodew.exe && echo OK
 ;
 ; There is an eqivalent NASM 0.98.39-- source of this program in pwmca.nasm.
 ;
@@ -17,6 +19,7 @@
 ;
 ; !! Check diff with `nasm -O999999999'. It seems to be OK now.
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
+; !! why segfault? Is this a NASM bug? How not to trigger it? ./nasm-2.16.03 -O0 -w+orphan-labels -DOS_WIN32 -o pmwca.exe pmwcax.nasm
 ;
 ; The __watcall calling convention passes the first 3 function arguments in
 ; EAX, EDX, EBX respectively, returns the result in EAX, and the callee has
@@ -55,23 +58,22 @@ LF equ 10  ; ASCII line feed '\n'.
 TAB equ 9  ; ASCII tabulator '\t'.
 NULL equ 0
 
+EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early for optimizations in the included pmwca.nasm.
+
 %ifdef OS_WIN32
   %include 'flexpe.nasm'
   FILE_HEADER:  ; Needed by our reimplementation of pe_stub in flexpe.nasm.
-  DOS_STACK_SIZE equ 0x200  ; Must be at least 0x200 so that the exe_header.minalloc and exe_header.maxalloc are always positive.
-  HDRSIZE equ 4
-  BASE equ 0x100
-  org BASE-(HDRSIZE<<4)
+  DOS_STACK_SIZE equ 0x200  ; Must be at least 0x200 so that the exe_header.minalloc and exe_header.maxalloc are always positive. !!! Relax it to 0x100.
   %define EXIT_SUCCESS_TO_DOS int 0x20  ; Works in a DOS .exe (us) or .com program if CS == PSP. Used by the included pmwca.nasm.
 
-  exe_header:  ; DOS .exe header of the compressor: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
+  dos_exe_header:  ; DOS .exe header of the compressor: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
   .signature:	db 'MZ'
-  .lastsize:	dw (file_end-exe_header)&0x1ff  ; Length of load module mod 200H.
-  .nblocks:	dw (file_end-exe_header+0x1ff)>>9  ; Number of 200H pages in load module.
+  .lastsize:	dw (file_end-dos_exe_header)&0x1ff  ; Length of load module mod 200H.
+  .nblocks:	dw (file_end-dos_exe_header+0x1ff)>>9  ; Number of 200H pages in load module.
   .nreloc:	dw 0  ; Number of relocation items; no relocations.
   .hdrsize:	dw HDRSIZE  ; Size of header in paragraphs.
-  .minalloc:	dw ((dos_mem_end-exe_image+0xf)>>4)-((file_end-exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Minimum number of paragraphs required above load mod.
-  .maxalloc:	dw ((dos_mem_end-exe_image+0xf)>>4)-((file_end-exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Maximum number of paragraphs required above load mod.
+  .minalloc:	dw ((dos_mem_end-dos_exe_image+0xf)>>4)-((file_end-dos_exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Minimum number of paragraphs required above load mod.
+  .maxalloc:	dw ((dos_mem_end-dos_exe_image+0xf)>>4)-((file_end-dos_exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Maximum number of paragraphs required above load mod.
   .ss:		dw 0xfff0  ;  Offset of stack segment in load module. Initial CS == DS == ES == PSP segment.
   .sp:		dw dos_stack+DOS_STACK_SIZE  ; Initial value of SP.
   .checksum:	dw 0  ; Checksum.
@@ -82,27 +84,40 @@ NULL equ 0
     .noverlay:	dw 0  ; Overlay number. Unused.
   %endif
   ; !! Add something useful between file offsets 0x18 and 0x3c.
-  times 0x3c-($-exe_header) db 0  ; Fails to compile if the header above is too long.
+  times 0x3c-($-dos_exe_header) db 0  ; Fails to compile if the header above is too long.
   dd IMAGE_NT_HEADERS-FILE_HEADER  ; Windows uses this dword pointer at file offset 0x3c to find the PE header.
   %define FILE_HEADER FILE_HEADER  ; Indicate to pe_start_text that the stub has been created.
-  exe_image:
-  com_file_start:  ; Used by pwmca.nasm.
-  %if $-exe_header!=(HDRSIZE<<4)
-    %error ERROR_BAD_DOS_HDRSIZE
+
+  pe_header _start
+  ; Now we are near file offset 0x130. If we haven't added anything here,
+  ; there would be padding until file offset 0x200 (SECTION_TEXT). We add
+  ; the 16-bit 8086 code from pmwca.nasm.
+  ;
+  ; !!! To make the DOS .exe image smaller, move the imported symbol names early, here.
+  ; !!! To make the DOS .exe image smaller, move the entire pe_structures early, here. Predict the number of relocations.
+  ; !!! As an alternative, move the start of the DOS .exe image after pe_structures, so that DOS won't load the Win32 code, saving memory. This would waste the file bytes 0x130...0x200.
+
+  HDRSIZE equ ($-dos_exe_header)>>4  ; Round down.
+  %if HDRSIZE<4
+    %error ERROR_ASSERT_HDRSIZE_TOO_SMALL
     db 1/0
   %endif
+  dos_exe_image: equ dos_exe_header+(HDRSIZE<<4)
 
-  ; !!! Put some more DOS code into the first 0x200 bytes. Put it into the alignment part after the header?
-  pe_start_text _start
-  text:
-
-  ; !!! Replace this with: %include 'pmwca.nasm'
   bits 16
   cpu 8086
-  %define PMWCA_CODE_ONLY  ; Used by the included pmwca.nasm.
+  %define PMWCA_CODE_ONLY  ; Don't emit R_fatal_msg or R_preparator_buf here. Used by the included pmwca.nasm.
+  BASE equ 0x100  ; Used by the included pmwca.nasm.
+  org BASE-(HDRSIZE<<4)  ; For DOS .exe. It works as late as this.
+  com_file_start: equ dos_exe_image  ; Used by the included pwmca.nasm.
   %include 'pmwca.nasm'
   cpu 386
   bits 32
+  ; Now we are near file offset 0x50d.
+
+  pe_start_text
+  text: equ SECTION_TEXT
+  %undef BASE  ; Make sure we don't use any specific BASE address, because the loader may relocate the .exe image to another base address.
 
   ; These imports make the output .exe program file larger even if the functions are never called.
   pe_kimport __imp__GetStdHandle@4, 'GetStdHandle'
@@ -112,8 +127,6 @@ NULL equ 0
   pe_kimport __imp__ReadFile@20, 'ReadFile'
   pe_kimport __imp__WriteFile@20, 'WriteFile'
   pe_kimport __imp__CreateFileA@28, 'CreateFileA'
-
-  %undef BASE  ; Make sure we don't use this BASE address, because the loader may relocate the .exe image to another base address.
 
   ; --- Win32 API constants.
 
@@ -184,7 +197,7 @@ _start:
 		R0 mov [R(stderr_handle)], eax
 		R0 call dword [R(__imp__GetCommandLineA@0)]  ; EAX := pointer to NUL-terminated command-line string.  ; Ruins EDX and ECX.
 		xor ecx, ecx  ; ECX := 0 (current argc).
-		push 0	; NULL marks end of argv array.
+		push byte NULL  ; NULL marks end of argv array.
       .argv_next:
 		mov edx, eax  ; Save EAX (remaining command line).
 		call parse_first_arg
@@ -201,7 +214,7 @@ _start:
 		push edx
 		lea edx, [eax-4]
       .rnext1:	add edx, byte 4
-		cmp dword [edx], 0
+		cmp dword [edx], byte 0
 		jne short .rnext1
 		cmp edx, eax
 		je short .rnothing
@@ -489,8 +502,6 @@ parse_command_line:  ; Usage: ./pmwca <uncompressed-input.exe> [<compressed-outp
 		jnz short fatal
 .done:		; Falls through.
 
-EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK.
-
 read_udata:
 		xchg eax, edx  ; EAX := input filename; EDX := junk.
 		xor edx, edx  ; EDX := O_RDONLY == 0.
@@ -664,23 +675,23 @@ build_preparator_buf:
 		mov eax, ebx
 		and ah, 1  ; AX &= 0x1ff.
 		R0 mov edx, R(cexehdr)
-		mov [edx-R_cexehdr+R_cexehdr.lastsize], ax
+		mov [byte edx-R_cexehdr+R_cexehdr.lastsize], ax
 		lea eax, [ebx+0x1ff]  ; Round up.
 		shr eax, 1
-		mov [edx-R_cexehdr+R_cexehdr.nblocks], ah  ; Set low byte. The high byte will remain 0.
+		mov [byte edx-R_cexehdr+R_cexehdr.nblocks], ah  ; Set low byte. The high byte will remain 0.
 		sub ebx, byte 0x20  ; EBX := csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4).
 		lea eax, [ebx+1]  ; Round up.
 		shr eax, 1
 		R0 mov [R(copy_code).word_count], ax  ; Number of words to copy.
 		R0 mov esi, R(uexehdr)+7*2  ; U_SS.
 		lodsw  ; AX := U_SS; SI += 2 (to U_SP).
-		mov [edx-R_cexehdr+R_cexehdr.ss], ax
+		mov [byte edx-R_cexehdr+R_cexehdr.ss], ax
 		R0 mov [R(jump_to_program).u_ss], ax
 		lea ebx, [ebx+0xf]  ; Round up.
 		shr ebx, 4  ; EBX := (csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4) + 0xf) >> 4.
 		add ax, strict word ((0x100+0xf)>>4)+1  ; Why the +1? Maybe it's related to the bug in the original PMODE/W compressor.
 		add eax, ebx  ; AX := (U_SS + ((0x100 + 0xf) >> 4)) + ((csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4) + 0xf) >> 4) + 1.
-		mov [edx-R_cexehdr+R_cexehdr.minalloc], ax  ; The value computed above is larger than needed, so this is wasting memory at runtime. This is probably a bug in the original PMODE/W compressor.
+		mov [byte edx-R_cexehdr+R_cexehdr.minalloc], ax  ; The value computed above is larger than needed, so this is wasting memory at runtime. This is probably a bug in the original PMODE/W compressor.
 		lodsw  ; AX := U_SP. SI += 2 (to U_CHECKSUM).
 		R0 mov [R(jump_to_program).u_sp], ax
 		times 2 inc esi  ; Ignore U_CHECKSUM (will be ignored). SI += 2 (to U_IP).
@@ -1795,8 +1806,15 @@ R_jump_to_program.u_sp: equ $-2
 
 preparator_buf.end:
 
-;MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
-MAX_USIZE equ 0x6000  ; For DOS + Win32 combo. !!!
+%ifdef PMWCA_CODE_ONLY  ; !!! Simplify this: use the smallest limit of these, they are not too far from 0x7000.
+  %ifdef DEBUG
+    MAX_USIZE equ 0x6f20  ; Smaller limit DOS in the DOS + Win32 combined target in DEBUG mode. !!! Find the exact limit.
+  %else
+    MAX_USIZE equ 0x6fee  ; Smaller limit DOS in the DOS + Win32 combined target. !!! Find the exact limit.
+  %endif
+%else
+  MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
+%endif
 MAX_CSIZE equ MAX_USIZE+((MAX_USIZE+7)>>3)  ; Worst case compressed data size: all tokens are literals. Matches are never longer than their corresponding literals.
 MAX_CRELSIZE equ EXEHDRSIZE>>2  ; Absolue maximum which fits to EXEHDRSIZE bytes of DOS .exe header created by TLINK.
 R_cdata_in_text:
@@ -1827,7 +1845,7 @@ R_creloc: equ R_uexehdr+0x1c  ; Temporary buffer for compressed relocations.
 %ifdef OS_WIN32
   dos_stack:  ; The position is still aligned to dword boundary (4). 2 is good enough for the DOS stack.
   dos_mem_end: equ dos_stack+DOS_STACK_SIZE
-  %if dos_mem_end-com_start>0xff00
+  %if dos_mem_end-dos_exe_image>0xffff-0x100  ; For simplicity, we don't allow 0x10000, that would make SP 0 initially. We subtract BASE == 0x100 == PSP size.
     %error ERROR_DOS_EXE_MEMORY_IMAGE_TOO_LARGE
     db 1/0
   %endif

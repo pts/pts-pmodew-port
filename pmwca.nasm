@@ -5,8 +5,8 @@
 ; Compile with: nasm -O0 -w+orphan-labels -o pmwca.com pmwca.nasm
 ; Minimum NASM version needed: 0.98.39
 ;
-; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe && cmp pmodew133.exe pmodew.exe && echo OK
-; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe >pmwca.log && <pmodewc.log grep '^[BLDEXY]' >pmodewc.bldexy.log && diff pmodewc.bldexy.log pmwca.log && cmp pmodew133.exe pmodew.exe && echo OK
+; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -o pmwca.com pmwca.nasm && tools/kvikdos-v1 pmwca.com pmodewu.exe pmodew.exe && cmp pmodew133.exe pmodew.exe && echo OK
+; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -DDEBUG -o pmwca.com pmwca.nasm && tools/kvikdos-v1 pmwca.com pmodewu.exe pmodew.exe >pmwca.log && <pmodewc.log grep '^[BLDEXY]' >pmodewc.bldexy.log && diff pmodewc.bldexy.log pmwca.log && cmp pmodew133.exe pmodew.exe && echo OK
 ;
 ; There is an eqivalent NASM 0.98.39-- source of this program in pmwca.nasm.
 ;
@@ -19,14 +19,15 @@
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
 ;
 
+bits 16
 %ifndef PMWCA_CODE_ONLY
-  bits 16
   cpu 8086
   BASE equ 0x100  ; DOS .com program base `org' value, the first program byte is loaded to this offset.
   org BASE
 
-  TAB equ 9
-  CR equ 13
+  CR equ 13  ; ASCII carriage return '\r'.
+  LF equ 10  ; ASCII line feed '\n'.
+  TAB equ 9  ; ASCII tabulator '\t'.
 
   com_file_start:
 %endif
@@ -570,9 +571,7 @@ pmwca_sort4:
 %endif
 
 %ifdef DEBUG
-  LF equ 10
-
-  pmwca_print_nibble:  ; !!! Check that pwmca.exe is small enough even if debugging is enabled.
+  pmwca_print_nibble:
 		push ax
 		add al, '0'
 		cmp al, '9'
