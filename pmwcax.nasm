@@ -19,7 +19,6 @@
 ;
 ; !! Check diff with `nasm -O999999999'. It seems to be OK now.
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
-; !!! This looks like a NASM 2.16.03 compilation bug: segfault on any %include and incbin -- too many open files? ./nasm-2.16.03 -O0 -w+orphan-labels -DOS_WIN32 -o pmwca.exe pmwcax.nasm
 ;
 ; The __watcall calling convention passes the first 3 function arguments in
 ; EAX, EDX, EBX respectively, returns the result in EAX, and the callee has
@@ -39,23 +38,55 @@
 
 ; --- Connfiguration.
 
-; -DDEBUG can also be specified on the command line.
-; -DMINDOSMEM can also be specified on the command line.
-; -DFASTSORT can also be specified on the command line.
-
-%ifdef OS_WIN32  ; Can be specified on the command line.
-%endif
-
 %ifndef PMWV  ; Can be specified on the command line.
   %define PMWV 33
 %else
   %assign PMWV PMWV  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-_nasm32_xchg_ebx_ecx equ 0xd987  ; To make `xchg ebx, ecx' in `bits 32' in NASM 2.16.03 behave like in NASM 0.98.39.
-_nasm32_xchg_al_ah equ 0xc486  ; To make `xchg al, ah' in `bits 16' in NASM 2.16.03 behave like in NASM 0.98.39.
+%ifndef DEBUG  ; Can be specified on the command line.
+  ;%define DEBUG 1  ; Enable debug output generation on stdout, containing various compression events.
+  %define DEBUG 0  ; Disable debug output generation on stdout, containing various compression events.
+%elifidn (DEBUG), ()
+  %define DEBUG 1
+%else
+  %assign DEBUG DEBUG  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef FASTSORT  ; Can be specified on the command line.
+  ;%define FASTSORT 1  ; Use faster but longer sort algorithm (heapsort4).
+  %define FASTSORT 0  ; Use slower but shorter sort algorithm (insertion_sort4). It's fast enough, because it only has to sort ~26 items.
+%elifidn (FASTSORT), ()
+  %define FASTSORT 1
+%else
+  %assign FASTSORT FASTSORT  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef OS_WIN32  ; Can be specified on the command line.
+  ;%define OS_WIN32 1  ; Generate combined Win32 and DOS 8086 .exe program (pmwca.exe)
+  %define OS_WIN32 0  ; Generate combined Linux i386 and FreeBSD i386 program (pmwca).
+%elifidn (OS_WIN32), ()
+  %define OS_WIN32 1
+%else
+  %assign OS_WIN32 OS_WIN32  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef MINDOSMEM  ; Can be specified on the command line.
+  %if DEBUG  ; If debugging, use MINDOSMEM=1 by default to keep MAX_USIZE in parity with non-debugging.
+    %define MINDOSMEM 1  ; Enable generating a larger .exe whose code uses less memory on DOS, so MAX_USIZE can be larger.
+  %else
+    %define MINDOSMEM 0  ; Disable generating a larger .exe whose code uses less memory on DOS, so MAX_USIZE can be larger.
+  %endif
+%elifidn (MINDOSMEM), ()
+  %define MINDOSMEM 1
+%else
+  %assign MINDOSMEM MINDOSMEM  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 ; ---
 
+_nasm32_xchg_ebx_ecx equ 0xd987  ; To make `xchg ebx, ecx' in `bits 32' in NASM 2.16.03 behave like in NASM 0.98.39.
+_nasm32_xchg_al_ah equ 0xc486  ; To make `xchg al, ah' in `bits 16' in NASM 2.16.03 behave like in NASM 0.98.39.
 
 bits 32
 cpu 386
@@ -67,7 +98,7 @@ NULL equ 0
 
 EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early for optimizations in the included pmwca.nasm.
 
-%ifdef OS_WIN32
+%if OS_WIN32
   %include 'flexpe.nasm'
   FILE_HEADER:  ; Needed by our reimplementation of pe_stub in flexpe.nasm.
   DOS_STACK_SIZE equ 0xa0  ; The program itself uses <0x20 bytes. See https://retrocomputing.stackexchange.com/q/30996 why 0xa0 should be enough, including interrupts and TSRs.
@@ -119,7 +150,7 @@ EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early f
   pe_set SizeOfHeapReserve, 4<<10  ; Setting it to 0 would Windows use 1 MiB (too much).
   pe_set SizeOfHeapCommit, 4<<10  ; Setting it to 0 would Windows use 4 KiB.
   pe_header _start
-  %ifndef MINDOSMEM
+  %if MINDOSMEM==0
     ; Now we are near file offset 0x130. If we haven't added anything here,
     ; there would be padding until file offset 0x200 (SECTION_TEXT). We add
     ; the 16-bit 8086 code from pmwca.nasm.
@@ -188,7 +219,7 @@ EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early f
   Elf32_Phdr:	dd 1, 0, $$, 0, file_end-$$, mem_end-$$, 7, 0x1000
 %endif
 
-%ifdef OS_WIN32
+%if OS_WIN32
   %define R0 pe_r0  ; As an instruction prefix, it indicates that there is a dword-sized relocation at the end of %1.
   %define R1 pe_r1  ; As an instruction prefix, it indicates that there is a dword-sized relocation 1 byte before the end of %1.
   %define R(name) VADDR_TEXT(name)
@@ -201,7 +232,13 @@ EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early f
 global _start
 _start:
 %if 1
-  %ifdef OS_WIN32
+  %if OS_WIN32
+    %if DEBUG
+		push byte STD_OUTPUT_HANDLE
+		R0 call dword [R(__imp__GetStdHandle@4)]  ; Ruins EDX and ECX.
+		call check_handle
+		R0 mov [R(stdout_handle)], eax
+    %endif
 		push byte STD_ERROR_HANDLE
 		R0 call dword [R(__imp__GetStdHandle@4)]  ; Ruins EDX and ECX.
 		call check_handle
@@ -281,20 +318,20 @@ _start:
 		;call __M_start_isatty_stdout
 		pop eax  ; argc.
 		mov edx, esp  ; argv.
-  %endif  ; %ifndef OS_WIN32
+  %endif
 		call main_
 		; Fall through to _exit.
-%endif  ; %ifdef __NEED_start
+%endif
 %if 1
   global exit_
   exit_:  ; __attribute__((noreturn)) void __watcall exit(int status);
 		; Fall through to __exit.
-%endif  ; %ifdef __NEED_exit_
+%endif
 %if 1
   global _exit_
   _exit_:  ; __attribute__((noreturn)) void __watcall _exit(int exit_code);
 		push eax  ; Argument exit_code.
-  %ifdef OS_WIN32
+  %if OS_WIN32
 		R0 call dword [R(__imp__ExitProcess@4)]  ; Doesn't return.
   %else
 		push eax  ; Fake return address for FreeBSD i386 syscall.
@@ -304,10 +341,10 @@ _start:
 		int 0x80  ; FreeBSD i386 and Linux i386 syscall. Doesn't return.
   %endif
 		; Not reached.
-%endif  ; %ifdef __NEED__exit_
+%endif
 
 %if 1
-  %ifdef OS_WIN32
+  %if OS_WIN32
     ; This is a helper function used by _start.
     ;
     ; /* Parses the first argument of the Windows command-line (specified in EAX)
@@ -475,7 +512,7 @@ fatal:		R0 mov [R(fatal_msg).code], bp
 		call write_
 		xor eax, eax
 		inc eax  ; EAX := EXIT_FAILURE == 1.
-%ifdef OS_WIN32
+%if OS_WIN32
 		jmp near exit_  ; Doesn't return.
 %else
 		jmp short exit_  ; Doesn't return.
@@ -735,7 +772,7 @@ final_write:	call write_
 		ret  ; Return from main(...), exit from the program.
 
 %if 1
-  %ifndef OS_WIN32
+  %if OS_WIN32==0
     ; Input: syscall number in dword [ESP], return address in dword [ESP+4], arg1 in EAX, arg2 in EDX, arg3 in EDX.
     ; Output: result in EAX. Ruins: EFLAGS.
     ; It assumes same syscall number and behavior for FreeBSD i386 and Linux i386.
@@ -773,7 +810,7 @@ final_write:	call write_
 %endif
 
 %if 1
-  %ifdef OS_WIN32
+  %if OS_WIN32
     read_write_helper:  ; Inputs: EAX: arg1; EDX: arg2; EBX: arg3; dword [ESP]: function pointer to _ReadFile@20 or _WriteFile@20. Outputs: result in EAX.
 		push ecx  ; Save.
 		push edx  ; Save.
@@ -802,7 +839,7 @@ final_write:	call write_
 %if 1
   global read_
   read_:  ; ssize_t __watcall read(int fd, void *buf, size_t count);
-  %ifdef OS_WIN32
+  %if OS_WIN32
 		R0 push dword [R(__imp__ReadFile@20)]
 		jmp short read_write_helper
   %else
@@ -814,7 +851,7 @@ final_write:	call write_
 %if 1
   global write_
   write_:  ; ssize_t __watcall write(int fd, const void *buf, size_t count);
-  %ifdef OS_WIN32
+  %if OS_WIN32
 		R0 push dword [R(__imp__WriteFile@20)]
 		jmp short read_write_helper
 		; Fall through to __M_write_growany_.
@@ -834,7 +871,7 @@ O_TRUNC equ 1000o  ; Linux.
     global simple_open_
     simple_open_:  ; int __watcall simple_open_(const char *pathname, int flags, ... mode_t mode);
     ; This function only works with flags==O_RDONLY or flags==(O_WRONLY|O_CREAT|O_TRUNC).
-    %ifdef OS_WIN32
+    %if OS_WIN32
 		push ecx  ; Save for __watcall.
 		R0 mov ecx, R(file_handle)
 		cmp dword [ecx], byte 0
@@ -867,7 +904,7 @@ O_TRUNC equ 1000o  ; Linux.
 		pop eax  ; EAX := 3 (fd).
       .done:	pop ecx  ; Restore for __watcall.
 		ret
-    %else  ;  %ifdef OS_WIN32
+    %else
 		cmp byte [___M_is_freebsd], 0
 		je short .flags_done
 		; This only fixes the flags with which _fopen(...) calls open(...). The other flags value is O_RDONLY, which doesn't have to be changed.
@@ -884,7 +921,7 @@ O_TRUNC equ 1000o  ; Linux.
 %if 1
   global close_
   close_:  ; int __watcall close(int fd);;
-  %ifdef OS_WIN32
+  %if OS_WIN32
 		push ecx  ; Save.
 		push edx  ; Save.
 		push eax  ; Save fd.
@@ -894,10 +931,17 @@ O_TRUNC equ 1000o  ; Linux.
 		push eax  ; fd argument of _CloseHandle@4.
 		R0 call dword [R(__imp__CloseHandle@4)]  ; Ruins EDX and ECX. Returns nonzero in EAX on success.
 		pop edx  ; Restore EDX := fd.
-		sub edx, byte 2
+    %if DEBUG
+		dec edx
+		cmp edx, byte 3-1
+		ja short .closed
+		R1 and [R(stdout_handle)+edx*4], byte NULL  ; Change the stored handle value to NULL.
+    %else
+		times 2 dec edx
 		cmp edx, byte 3-2
 		ja short .closed
 		R1 and [R(stderr_handle)+edx*4], byte NULL  ; Change the stored handle value to NULL.
+    %endif
     .closed:	test eax, eax  ; _CloseHandle@4 returns 0 on success.
 		jnz short .done
     .pop_eax_bad:
@@ -913,7 +957,7 @@ O_TRUNC equ 1000o  ; Linux.
 %endif
 
 %if 1
-  %ifdef OS_WIN32
+  %if OS_WIN32
     check_handle:  ; Checks the handle in EAX.
 		inc eax
 		cmp eax, byte 2  ; CF := (handle is invalid: NULL or INVALID_HANDLE_VALUE).
@@ -928,12 +972,19 @@ O_TRUNC equ 1000o  ; Linux.
 %endif
 
 %if 1
-  %ifdef OS_WIN32
+  %if OS_WIN32
     handle_from_fd:  ; Inputs: EAX: fd; Outputs: EAX: handle or NULL if not found. Equivalent to OpenWatcom int __watcall _get_osfhandle(int fd). Ruins FLAGS (no other register).
-		sub eax, byte 2
+    %if DEBUG
+		dec eax
+		cmp eax, byte 3-1
+		ja short .bad
+		R0 mov eax, [R(stdout_handle)+eax*4]
+    %else
+		times 2 dec eax
 		cmp eax, byte 3-2
 		ja short .bad
 		R0 mov eax, [R(stderr_handle)+eax*4]
+    %endif
     .found:	inc eax
 		cmp eax, byte 2  ; CF := (handle is invalid: NULL or INVALID_HANDLE_VALUE).
 		dec eax  ; Doesn't affect CF.
@@ -975,7 +1026,7 @@ is_reloc_less:
 ; void sort4(void *base, size_t n);
 ; #pragma aux heapsort4 __parm [__eax] [__edx] __modify [__eax __ebx __edx __esi __ebp]
 sort4:
-%ifdef FASTSORT
+%if FASTSORT
   ; Based on heapsort algorithm H from Knuth TAOCP 5.2.3H. Not stable.
   ; Worst case execution time: O(n*log(n)), 3*n*log_2(n) comparisons, and
   ; fewer swaps.
@@ -1171,7 +1222,7 @@ sort4:
 		ret
 %endif
 
-%ifdef DEBUG
+%if DEBUG
   ; Writes the byte in AL to stdout and flushed stdout.
   putcharf:  ; TODO(pts): Add line buffering for faster operation.
 		push ebx  ; Save.
@@ -1292,7 +1343,7 @@ sort4:
 emit_bit:
 .var_bitmask equ 4*4  ; Only 16 of the 32 bits are used. Same as compress.var_bitmask.
 .var_block_ofs equ 2*4  ; Same as compress.var_block_ofs.
-%ifdef DEBUG
+%if DEBUG
 		pushf
 		call print_bit
 		popf
@@ -1335,7 +1386,7 @@ compress:
 		inc eax
 		push eax  ; word [ebp+.var_bitmask]: Save initial block (tag) next-write power-of-two bitmask.
 		push edx  ; word [ebp+.var_udata_end]: Save offset of the end of the uncompressed input data (udata_end). Sometimes EDI is used instead of this. Remains constant throughout the function.
-%ifdef DEBUG
+%if DEBUG
 		mov ecx, edx
 		sub ecx, esi
 		jnc short .edx_esi_ok
@@ -1349,7 +1400,7 @@ compress:
 		push edi  ; word [ebp+.var_cdata_cur]: Save offset of the end of the compressed output data (cdata_end == cdata_cur). Will be incremented throughout the function.
 		dec esi
 		push esi  ; word [ebp+.var_udata_start]: Save offset of the start of the uncompressed input data (udata_start). Remains constant throughout the function.
-%ifdef DEBUG
+%if DEBUG
 		call print_literal  ; Value: `byte [esi]'.
 %endif
 		inc esi  ; Skip over literal byte in the uncompressed input data.
@@ -1455,7 +1506,7 @@ compress:
 		jae short .match
 .literal:	clc
 		call emit_bit
-%ifdef DEBUG
+%if DEBUG
 		call print_literal
 %endif
 		movsb  ; Copies a literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
@@ -1468,7 +1519,7 @@ compress:
 		sub ecx, esi
 		; Now ECX <= 0xffff (because the uncompressed input data is always shorter than 64 KiB, i.e. of the opposite of ERROR_UDATA_MEMORY_IMAGE_TOO_LARGE), thus high word of ECX is 0, thus ECX == CX.
 		jz short .done
-%ifdef DEBUG
+%if DEBUG
 		jnc short .ecx_ok
 		int3
 .ecx_ok:
@@ -1510,7 +1561,7 @@ emit_bits:	ror ah, cl
 ; Ruins: EAX, EBX, ECX, EDX, FLAGS.
 emit_match:
 		xor ecx, ecx  ; For emit_bits.
-%ifdef DEBUG
+%if DEBUG
 		mov eax, ebx
 %else
 		xchg eax, ebx  ; EAX := distance; EBX := junk.
@@ -1555,7 +1606,7 @@ emit_match:
 		inc ecx  ; CL := 4.
 .dist_bits:	call emit_bits
 .len:
-%ifdef DEBUG
+%if DEBUG
 		mov eax, edx
 %else
 		xchg eax, edx  ; EAX := length; EDX := junk.
@@ -1580,7 +1631,7 @@ emit_match:
 		call emit_bits
 		do_emit_m1101  ; In AL.
 .after_bits:
-%ifdef DEBUG
+%if DEBUG
 		xchg eax, edx  ; AX := DX (length); DX := junk.
 		call print_length
 		xchg eax, ebx  ; AX := BX (distance); BX := junk.
@@ -1594,16 +1645,16 @@ emit_match:
 
 R_fatal_msg:	db 'pmwca: fatal: '
 .code:		db '??'
-%ifdef OS_WIN32
+%if OS_WIN32
 		db CR, LF
 %else
 		db LF
 %endif
 .end:
 
-%ifdef OS_WIN32
+%if OS_WIN32
   pe_structures  ; Put them early so that the TEXT and BSS can touch below without a gap (i.e. no ERROR_CDATA_MUST_FOLLOW_PREPARATOR_BUF_END).
-  %ifdef MINDOSMEM  ; Emit the start of the DOS .exe image after pe_structures, so that DOS won't load the Win32 code, saving DOS memory and wasting Win32 memory. This would waste the file bytes 0x130...0x200.
+  %if MINDOSMEM  ; Emit the start of the DOS .exe image after pe_structures, so that DOS won't load the Win32 code, saving DOS memory and wasting Win32 memory. This would waste the file bytes 0x130...0x200.
     include_dos_pmwca
   %endif
 %endif
@@ -1820,14 +1871,14 @@ R_jump_to_program.u_sp: equ $-2
 
 preparator_buf.end:
 
-%ifdef MINDOSMEM
+%if MINDOSMEM
   %undef PMWCA_CODE_ONLY  ; For the larger MAX_USIZE limit below.
 %endif
-%ifndef DEBUG
+%if DEBUG==0
   %undef PMWCA_CODE_ONLY  ; For the larger MAX_USIZE limit below.
 %endif
 %ifdef PMWCA_CODE_ONLY
-  MAX_USIZE equ 0x6f74  ; Smaller limit DOS in the DOS + Win32 combined target in DEBUG and FASTSORT mode, without MINDOSMEM. To get it up to 0x7000, debug code has to be 107 bytes shorter (impossible). !!! Find the exact limit.
+  MAX_USIZE equ 0x6f20  ; Smaller limit DOS in the DOS + Win32 combined target in DEBUG and FASTSORT mode, without MINDOSMEM. The exact limit is near 0x6f74. To get it up to 0x7000, debug code has to be 107 bytes shorter (impossible).
 %else
   MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE, even with -DDEBUG and without -DMINDOSMEM.
 %endif
@@ -1835,7 +1886,7 @@ MAX_CSIZE equ MAX_USIZE+((MAX_USIZE+7)>>3)  ; Worst case compressed data size: a
 MAX_CRELSIZE equ EXEHDRSIZE>>2  ; Absolue maximum which fits to EXEHDRSIZE bytes of DOS .exe header created by TLINK.
 R_cdata_in_text:
 file_end:
-%ifdef OS_WIN32
+%if OS_WIN32
   pe_bss 1
 %else
   absolute $  ; Don't emit bytes anymore, just reserve.
@@ -1858,7 +1909,7 @@ R_udata: resb MAX_USIZE
 R_uexehdr: resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
 R_creloc: equ R_uexehdr+0x1c  ; Temporary buffer for compressed relocations.
 
-%ifdef OS_WIN32
+%if OS_WIN32
   dos_stack:  ; The position is still aligned to dword boundary (4). 2 is good enough for the DOS stack.
   dos_mem_end: equ dos_stack+DOS_STACK_SIZE
   %if dos_mem_end-dos_exe_image>0xffff-0x100  ; For simplicity, we don't allow 0x10000, that would make SP 0 initially. We subtract BASE == 0x100 == PSP size.
@@ -1871,7 +1922,10 @@ R_creloc: equ R_uexehdr+0x1c  ; Temporary buffer for compressed relocations.
   %else
     MINMAXALLOC equ MINMAXALLOC0
   %endif
-  R_stderr_handle: resb 4  ; Needs zero-initialization.
+  %if DEBUG
+    R_stdout_handle: resb 4  ; Needs zero-initialization.
+  %endif
+  R_stderr_handle: resb 4  ; Must be directly atfer stdout_handle. Needs zero-initialization.
   R_file_handle: resb 4  ; Must be directly atfer stderr_handle. Needs zero-initialization.
   pe_end
 %else

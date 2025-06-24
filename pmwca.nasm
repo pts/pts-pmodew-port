@@ -19,15 +19,37 @@
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
 ;
 
-%ifndef EXIT_SUCCESS_TO_DOS  ; Defined by pmwcax.nasm.
-  %define EXIT_SUCCESS_TO_DOS ret
-%endif
+; --- Configuration.
 
 %ifndef PMWV  ; Can be specified on the command-line.
   %define PMWV 33
 %else
   %assign PMWV PMWV  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
+
+%ifndef DEBUG  ; Can be specified on the command line.
+  ;%define DEBUG 1  ; Enable debug output generation on stdout, containing various compression events.
+  %define DEBUG 0  ; Disable debug output generation on stdout, containing various compression events.
+%elifidn (DEBUG), ()
+  %define DEBUG 1
+%else
+  %assign DEBUG DEBUG  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef FASTSORT  ; Can be specified on the command line.
+  ;%define FASTSORT 1  ; Use faster but longer sort algorithm (heapsort4).
+  %define FASTSORT 0  ; Use slower but shorter sort algorithm (insertion_sort4). It's fast enough, because it only has to sort ~26 items.
+%elifidn (FASTSORT), ()
+  %define FASTSORT 1
+%else
+  %assign FASTSORT FASTSORT  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef EXIT_SUCCESS_TO_DOS  ; Defined by pmwcax.nasm.
+  %define EXIT_SUCCESS_TO_DOS ret
+%endif
+
+; ---
 
 _nasm16_xchg_bx_cx equ 0xd987  ; To make `xchg bx, cx' in `bits 16' in NASM 2.16.03 behave like in NASM 0.98.39.
 _nasm16_xchg_al_ah equ 0xc486  ; To make `xchg al, ah' in `bits 16' in NASM 2.16.03 behave like in NASM 0.98.39.
@@ -376,7 +398,7 @@ pmwca_is_reloc_less:
 ; void pmwca_sort4(void *base, size_t n);
 ; #pragma aux heapsort4 __parm [__ax] [__dx] __modify [__ax __bx __dx __si __bp]
 pmwca_sort4:
-%ifdef FASTSORT
+%if FASTSORT
   ; Based on heapsort algorithm H from Knuth TAOCP 5.2.3H. Not stable.
   ; Worst case execution time: O(n*log(n)), 3*n*log_2(n) comparisons, and
   ; fewer swaps.
@@ -573,7 +595,7 @@ pmwca_sort4:
 		ret
 %endif
 
-%ifdef DEBUG
+%if DEBUG
   pmwca_print_nibble:
 		push ax
 		add al, '0'
@@ -684,7 +706,7 @@ pmwca_sort4:
 ; Input and output: The block (tag) next-write power-of-two bitmask is in word [bp+4*2]. Will be modified.
 ; Ruins: FLAGS (incuding CF).
 pmwca_emit_bit:
-%ifdef DEBUG
+%if DEBUG
 		pushf
 		call pmwca_print_bit
 		popf
@@ -727,7 +749,7 @@ pmwca_compress:	mov ax, 1
 		push di  ; word [bp+1*2]: Save offset of the end of the compressed output data (cdata_end == cdata_cur). Will be incremented throughout the function.
 		dec si
 		push si  ; word [bp+0*2]: Save offset of the start of the uncompressed input data (udata_start). Remains constant throughout the function.
-%ifdef DEBUG
+%if DEBUG
 		call pmwca_print_literal  ; Value: `byte [si]'.
 %endif
 		inc si  ; Skip over literal byte in the uncompressed input data.
@@ -854,7 +876,7 @@ pmwca_compress:	mov ax, 1
 		jae short .match
 .literal:	clc
 		call pmwca_emit_bit
-%ifdef DEBUG
+%if DEBUG
 		call pmwca_print_literal
 %endif
 		movsb  ; Copies a literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
@@ -880,7 +902,7 @@ pmwca_emit_bits:
 ; Ruins: AX, BX, CX, DX, FLAGS.
 pmwca_emit_match:
 		mov ch, 0  ; For pmwca_emit_bits.
-%ifdef DEBUG
+%if DEBUG
 		mov ax, bx
 %else
 		xchg ax, bx  ; AX := distance; BX := junk.
@@ -925,7 +947,7 @@ pmwca_emit_match:
 		inc cx  ; CL := 4.
 .dist_bits:	call pmwca_emit_bits
 .len:
-%ifdef DEBUG
+%if DEBUG
 		mov ax, dx
 %else
 		xchg ax, dx  ; AX := length; DX := junk.
@@ -950,7 +972,7 @@ pmwca_emit_match:
 		call pmwca_emit_bits
 		pmwca_do_emit_m1101  ; In AL.
 .after_bits:
-%ifdef DEBUG
+%if DEBUG
 		xchg ax, dx  ; AX := DX (length); DX := junk.
 		call pmwca_print_length
 		xchg ax, bx  ; AX := BX (distance); BX := junk.
