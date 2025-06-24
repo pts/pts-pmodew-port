@@ -106,7 +106,7 @@
   %endif
   .message:	db 'This is a Win32 console program.', 13, 10, '$'
   .end:
-  times 0x3c-($-$$) db 0  ; Fails to compile if the message is too long.
+  times 0x3c-($-FILE_HEADER) db 0  ; Fails to compile if the message is too long.
   dd IMAGE_NT_HEADERS-FILE_HEADER  ; Windows uses this dword pointer at file offset 0x3c to find the PE header.
   %define FILE_HEADER FILE_HEADER  ; Indicate to pe_start_text that the stub has been created.
 %endm

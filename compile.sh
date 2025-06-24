@@ -57,7 +57,8 @@ for arg in "$@"; do
    --compressor[-=]asm) compressor=asm ;;  #  DOS pmwca.com compiled with TASM .
    --compressor[-=]nasm16) compressor=nasm16 ;;  # DOS pmwca.com compiled with NASM.
    --compressor[-=]nasm32) compressor=nasm32 ;;  # Linux i386 ./pmwca compiled with NASM.
-   --compressor[-=]win32 | --compressor[-=]nasmwin32) compressor=win32 ;;  # Win32 pmwca.exe compiled with NASM.
+   --compressor[-=]win32 | --compressor[-=]nasmwin32 | --compressor[-=]doswin32-win32) compressor=win32 ;;  # Win32 pmwca.exe compiled with NASM.
+   --compressor[-=]stub16 | --compressor[-=]doswin32-dos) compressor=stub16 ;;  # DOS stub of the Win32 pmwca.exe compiled with NASM.
    *) echo "fatal: unknown command-line flag: $arg" >&2; exit 1 ;;
   esac
 done
@@ -77,11 +78,11 @@ elif test "$compressor" = nasm32; then
   "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o "$compressor" pmwcax.nasm
   chmod +x "$compressor"
   set +x
-elif test "$compressor" = win32; then
-  compressor=pmwca.exe
+elif test "$compressor" = win32 || test "$compressor" = stub16; then
+  compressor=pmwca.exe."$compressor"
   set -x  # Echo all commands run.
   # !!! Specify stack and heap size, like this: wlink op q op start=_start op noext op nou op nored op d form win nt ru con=3.10 op h=4K com h=0 op st=1024K com st=4K f pmwca.obj n "pmwca.exe"
-  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -DOS_WIN32 -o "$compressor" pmwcax.nasm
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -DOS_WIN32 -o pmwca.exe pmwcax.nasm
   set +x
 elif test "$compressor" = asm; then
   :  # pmwca.com will be built by TASM + TLINK below.
@@ -286,7 +287,13 @@ elif test "$compressor" = pmwca; then
     ./pmwca pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
     ./pmwca pmodewv.exe
   fi
-elif test "$compressor" = pmwca.exe; then
+elif test "$compressor" = pmwca.exe.stub16; then
+  "$emudos" $emudosflags pmwca.exe pmodewu.exe pmodew.exe  # Compress and add pmodew_config.
+  if test "$do_consfix"; then
+    "$emudos" $emudosflags pmwca.exe pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.
+    "$emudos" $emudosflags pmwca.exe pmodewv.exe
+  fi
+elif test "$compressor" = pmwca.exe.win32; then
   dosbox.nox.static --cmd --mem-mb=2 mwperun.exe pmwca.exe pmodewu.exe pmodew.exe
   if test "$do_consfix"; then
     dosbox.nox.static --cmd --mem-mb=2 mwperun.exe pmwca.exe pmodewu.exe  # The compression (two-argument pmwc.c) below would work even without this here.

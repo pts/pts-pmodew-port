@@ -8,7 +8,7 @@
 ; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -f bin -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe && cmp pmodew133.exe pmodew.exe && echo OK
 ; End-to-end check: tools/nasm-0.98.39.upx -O0 -w+orphan-labels -f bin -DDEBUG -o pmwca.com pmwca.nasm && time ~/prg/kvikdos/kvikdos pmwca.com pmodewu.exe pmodew.exe >pmwca.log && <pmodewc.log grep '^[BLDEXY]' >pmodewc.bldexy.log && diff pmodewc.bldexy.log pmwca.log && cmp pmodew133.exe pmodew.exe && echo OK
 ;
-; There is an eqivalent NASM 0.98.39-- source of this program in pwmca.nasm.
+; There is an eqivalent NASM 0.98.39-- source of this program in pmwca.nasm.
 ;
 ; This compressor is quite slow because scans the same data may times
 ; looking for longer and longer repetition. On a real 386 CPU from 1985) it
@@ -19,13 +19,21 @@
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
 ;
 
-bits 16
-cpu 8086
-BASE equ 0x100  ; DOS .com program base `org' value, the first program byte is loaded to this offset.
-org BASE
+%ifndef PMWCA_CODE_ONLY
+  bits 16
+  cpu 8086
+  BASE equ 0x100  ; DOS .com program base `org' value, the first program byte is loaded to this offset.
+  org BASE
 
-TAB equ 9
-CR equ 13
+  TAB equ 9
+  CR equ 13
+
+  com_file_start:
+%endif
+
+%ifndef EXIT_SUCCESS_TO_DOS  ; Defined by pmwcax.nasm.
+  %define EXIT_SUCCESS_TO_DOS ret
+%endif
 
 %ifndef PMWV  ; Can be specified on the command-line.
   %define PMWV 33
@@ -33,10 +41,10 @@ CR equ 13
   %assign PMWV PMWV  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-start:  ; DOS .com program entry point.
+com_start:  ; DOS .com program entry point.
 		; Falls through.
 
-parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> [<compressed-output.exe>]
+pmwca_parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> [<compressed-output.exe>]
 		mov si, 0x81  ; Offset of DOS command-line string within the PSP segment (== CS == DS == ES == SS), terminated by CR.
 .ws1:		lodsb
 		cmp al, ' '
@@ -46,10 +54,10 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> [<compressed-ou
 		cmp al, CR
 		jne short .fn1i
 		mov bp, 'MI'  ; Missing input filename.
-		jmp short fatal
+		jmp short pmwca_fatal
 .fn1i:		mov dx, si
 		dec dx  ; DX := offset of input filename.
-		push dx  ; Save offset of input filename. `pop ax' in make_exe_headers_consistent and write_cdata will pop it.
+		push dx  ; Save offset of input filename. `pop ax' in pmwca_make_exe_headers_consistent and pmwca_write_cdata will pop it.
 .fn1:		lodsb
 		cmp al, ' '
 		je short .fn1e
@@ -63,14 +71,14 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> [<compressed-ou
 		cmp al, CR
 		jne short .ws2ncr
 		xor si, si
-		push si  ; Save (the NULL) offset of (missing) output filename. Will be popped by `pop dx' in sort_relocs and write_cdata.
+		push si  ; Save (the NULL) offset of (missing) output filename. Will be popped by `pop dx' in pmwca_sort_relocs and pmwca_write_cdata.
 		jmp short .done
 .ws2ncr:	cmp al, ' '
 		je short .ws2
 		cmp al, TAB
 		je short .ws2
 .fn2i:		dec si  ; SI := offset of output filename.
-		push si  ; Save offset of output filename. Will be popped by `pop dx' in sort_relocs and write_cdata.
+		push si  ; Save offset of output filename. Will be popped by `pop dx' in pmwca_sort_relocs and pmwca_write_cdata.
 .fn2:		lodsb
 		cmp al, ' '
 		je short .fn2e
@@ -88,168 +96,172 @@ parse_command_line:  ; Usage: pmwca.com <uncompressed-input.exe> [<compressed-ou
 		cmp al, CR
 		je short .done
 .fatal_ta:	mov bp, 'TA'  ; Too many command-line arguments.
-		; Falls through to fatal.
+		; Falls through to pmwca_fatal.
 
 ; Exits the process with a fatal error (2 bytes of error message in BP).
-fatal:		mov [fatal_msg.code], bp
+pmwca_fatal:	mov [R_fatal_msg.code], bp
 		mov ah, 0x40  ; Write to file using handle.
 		mov bx, 2  ; STDERR_FILENO.
-		mov dx, fatal_msg  ; DS:DX == pointer to start of buffer to be written.
-		mov cx, fatal_msg.end-fatal_msg  ; CX == number of bytes to write.
+		mov dx, R_fatal_msg  ; DS:DX == pointer to start of buffer to be written.
+		mov cx, R_fatal_msg.end-R_fatal_msg  ; CX == number of bytes to write.
 		int 0x21  ; DOS syscall.
 		mov ax, 0x4c01  ; Exit with exit code EXIT_FAILURE (1).
 		int 0x21  ; DOS syscall. Doesn't return.
 
 ; If CF == 1, exits the process with a fatal error (2 bytes of error message
 ; in BP), otherwise returns. Keeps all registers including FLAGS intact.
-fatal_if_c:	jc short fatal
+pmwca_fatal_if_c:
+		jc short pmwca_fatal
 		ret
 
-parse_command_line.done:
+pmwca_parse_command_line.done:
 		; Now: DX == offset of input filename (uncompressed DOS .exe); DI == offset of output filename (compressed DOS .exe).
 		; Falls through.
 
-EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK.
+%ifndef PMWCA_CODE_ONLY
+  EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK.
+%endif
 
-read_udata:	mov ax, 0x3d00  ; Open file for reading, using handle.
+pmwca_read_udata:
+		mov ax, 0x3d00  ; Open file for reading, using handle.
 		;mov dx, ...  ; DX == offset of input filename.
 		int 0x21  ; DOS syscall. Sets AX to the filehandle.
 		mov bp, 'OI'  ; Error opening input file.
-		call fatal_if_c
+		call pmwca_fatal_if_c
 		xchg bx, ax  ; BX := filehandle of input file; AX := junk.
 		mov ah, 0x3f  ; Read from file using handle.
 		;mov bx, ...  ; BX == filehandle of input file.
-		mov dx, uexehdr  ; DS:DX == pointer to start of buffer to read uexehdr to.
+		mov dx, R_uexehdr  ; DS:DX == pointer to start of buffer to read uexehdr to.
 		mov cx, EXEHDRSIZE  ; Maximum number of bytes to read.
 		int 0x21  ; DOS syscall. Sets AX to the number of bytes read.
 		mov bp, 'RH'  ; File read error reading the uncompressed DOS .exe header.
-		call fatal_if_c
+		call pmwca_fatal_if_c
 		mov bp, 'HT'  ; DOS .exe header too short.
 		cmp ax, strict word EXEHDRSIZE
 		jne short .j_fatal
 		mov si, dx  ; DS:SI := DS:DX == pointer to start of uexehdr.
 		mov bp, 'MZ'
 		cmp [si+0*2], bp  ; signature.
-		jne short fatal  ; Bad DOS .exe signature.
+		jne short pmwca_fatal  ; Bad DOS .exe signature.
 		cmp word [si+4*2], byte EXEHDRSIZE>>4  ; hdrsize.
 		mov bp, 'HS'  ; Unsupported DOS .exe header size (hdrsize).
-		jne short fatal
+		jne short pmwca_fatal
 		mov ah, 0x3f  ; Read from file using handle.
 		;mov bx, ...  ; BX == filehandle of input file.
-		mov dx, udata  ; DS:DX == pointer to start of buffer to read to.
-		mov cx, udata.bufend-udata  ; Maximum number of bytes to read.
+		mov dx, R_udata  ; DS:DX == pointer to start of buffer to read to.
+		mov cx, R_udata.bufend-R_udata  ; Maximum number of bytes to read.
 		int 0x21  ; DOS syscall. Sets AX to the number of bytes read.
 		mov bp, 'RD'  ; File read error reading the uncompressed DOS .exe image.
-		call fatal_if_c
-		add ax, strict word udata
-		cmp ax, strict word udata.bufend
+		call pmwca_fatal_if_c
+		add ax, strict word R_udata
+		cmp ax, strict word R_udata.bufend
 		jb short .usize_ok
 		mov bp, 'TL'  ; Input file too long.
-.j_fatal:	jmp short fatal
-.usize_ok:	push ax  ; Save offset of end of udata. Will be popped by `pop dx' in sort_relocs.
+.j_fatal:	jmp short pmwca_fatal
+.usize_ok:	push ax  ; Save offset of end of R_udata. Will be popped by `pop dx' in pmwca_sort_relocs.
 		mov ah, 0x3e  ; Close file using handle.
 		int 0x21  ; DOS syscall.
 		; Now: DS:SI == pointer to start of uexehdr.
 		; Falls through.
 
-sort_relocs:
+pmwca_sort_relocs:
 		mov cx, [si+3*2]  ; nreloc.
 		test cx, cx
 		mov bp, 'NR'  ; No relocations. (apply_relocs) depends on a nonzero nreloc value.
-		jz short read_udata.j_fatal
+		jz short pmwca_read_udata.j_fatal
 		cmp cx, byte (EXEHDRSIZE-0x1c)>>2
 .fatal_tr:	mov bp, 'TR'  ; Too many relocations.
-		ja short read_udata.j_fatal
+		ja short pmwca_read_udata.j_fatal
 		mov di, [si+12*2]  ; relocpos.
 		cmp di, strict word EXEHDRSIZE
 		mov bp, 'RP'  ; Relocations start too late.
-		jnb short read_udata.j_fatal
+		jnb short pmwca_read_udata.j_fatal
 		mov ax, cx
 		times 2 add ax, ax  ; AX := nreloc<<2.
 		add ax, di  ; AX += relocpos.
 		cmp ax, strict word EXEHDRSIZE
 		ja short .fatal_tr
-		lea ax, [word di+uexehdr]  ; AX := uexehdr+relocpos.
+		lea ax, [word di+R_uexehdr]  ; AX := R_uexehdr+relocpos.
 		mov dx, cx  ; nreloc.
-		call sort4  ; Sorts relocations by (segment descending, then offset ascending). Ruins AX, BX, DX, SI, BP and FLAGS. Keeps CX and DI.
-		pop dx  ; Restore DX := offset of end of udata.
+		call pmwca_sort4  ; Sorts relocations by (segment descending, then offset ascending). Ruins AX, BX, DX, SI, BP and FLAGS. Keeps CX and DI.
+		pop dx  ; Restore DX := offset of end of R_udata.
 		pop ax  ; Restore AX := offset of output filename.
 		test ax, ax
-		jnz strict short squeeze_relocs  ; Jump if output filename has been specified.
+		jnz strict short pmwca_squeeze_relocs  ; Jump if output filename has been specified.
 		; Falls through.
 
-make_exe_headers_consistent:
-		mov bx, uexehdr
+pmwca_make_exe_headers_consistent:
+		mov bx, R_uexehdr
 		mov si, word [bx+12*2]  ; relocpos.
 		;mov cx, word [bx+3*2]  ; CX still contains nreloc.
 		times 2 add cx, cx  ; CX := nreloc<<2.
 		lea di, [bx+0x3e-2]
-		add di, cx  ; DI := uexehdr+0x3e+(nreloc<<2)-2.
-		push di  ; Save uexehdr+0x3e+(nreloc<<2)-2. The -2 is also needed by the `scasw' below.
+		add di, cx  ; DI := R_uexehdr+0x3e+(nreloc<<2)-2.
+		push di  ; Save R_uexehdr+0x3e+(nreloc<<2)-2. The -2 is also needed by the `scasw' below.
 		cmp si, byte 0x3e
 		je short .relocpos_ok  ; TLINK 3.0-- generates relocpos == 0x3e, so it jumps. It doesn't jump for TLINK 2.0.
 		mov bp, 'ER'  ; Unexpected large relocpos in DOS .exe. TLINK doesn't generate relocpos > 0x3e.
-		ja short read_udata.j_fatal
+		ja short pmwca_read_udata.j_fatal
 		add si, cx  ; SI := relocpos+(nreloc<<2).
-		lea si, [si+bx-2]  ; SI := uexehdr+relocpos+(nreloc<<2)-2.
+		lea si, [si+bx-2]  ; SI := R_uexehdr+relocpos+(nreloc<<2)-2.
 		shr cx, 1  ; Speed optimization with `rep movsw' instead of `rep movsd'. Also needs -2 (instead of -2) everywhere above.
 		std
 		rep movsw  ; memmove(uexehdr + 0x3e, uexehdr + relocpos, nreloc << 2);
 		cld
 		mov word [bx+12*2], 0x3e  ; Set relocpos in uexehdr.
-.relocpos_ok:	lea di, [bx+0x1a]  ; DI := uexehdr+0x1a.
+.relocpos_ok:	lea di, [bx+0x1a]  ; DI := R_uexehdr+0x1a.
 		xor ax, ax
 		stosw  ; Set noverlay in uexehdr to 0.
 		inc ax
-		stosw  ; Set word [uexehdr+0x1c] to 1. We imitate TLINK.
-		; Thie word [uexehdr+0x1e] value seems to depend on the TLINK version number.
+		stosw  ; Set word [R_uexehdr+0x1c] to 1. We imitate TLINK.
+		; Thie word [R_uexehdr+0x1e] value seems to depend on the TLINK version number.
 		;
 		; * TLINK 2.0: dw 0x20fb, 0x6a72
 		; * TLINK 3.0--4.01 (last tlink.exe running on a 8086, we imitate this): dw 0x30fb, 0x726a
 		; * TLINK 5.0--5.1--??: (used by pmw133src/PMODEW.EXE): dw 0x50fb, 0x726a
 		; * TLINK 7.0: dw 0x61fb, 0x726a
 		mov ax, 0x30fb
-		stosw  ; Set word [uexehdr+0x1e] to 0x30fb.
+		stosw  ; Set word [R_uexehdr+0x1e] to 0x30fb.
 		mov ax, 0x726a
-		stosw  ; Set word [uexehdr+0x20] to 0x726a. We imitate TLINK 3.0--4.01--7.0. TLINK 2.0 generates 0x6a72 here.
+		stosw  ; Set word [R_uexehdr+0x20] to 0x726a. We imitate TLINK 3.0--4.01--7.0. TLINK 2.0 generates 0x6a72 here.
 		mov cl, (0x3e-0x22)>>1  ; Sets the whole CX, because higher bytes are already 0 because of the `rep' abvoe.
 		xor ax, ax
-		rep stosw  ; memset(uexehdr + 0x22, 0, 0x3e - 0x22);
-		pop di  ; Restore DI := uexehdr+0x3e+(nreloc<<2)-2.
-		scasw  ; DI += 2. DI := uexehdr+0x3e+(nreloc<<2).
-		mov cx, uexehdr+EXEHDRSIZE
+		rep stosw  ; memset(R_uexehdr + 0x22, 0, 0x3e - 0x22);
+		pop di  ; Restore DI := R_uexehdr+0x3e+(nreloc<<2)-2.
+		scasw  ; DI += 2. DI := R_uexehdr+0x3e+(nreloc<<2).
+		mov cx, R_uexehdr+EXEHDRSIZE
 		sub cx, di
 		shr cx, 1  ; For speed of `rep stosw' below. We couldn't have done `rep stosd', because the size is not divisible by 4.
 		rep stosw  ; memset(uexehdr + 0x3e + (nreloc << 2), 0, EXEHDRSIZE - 0x3e - (nreloc << 2));
 		pop ax  ; Restore AX := offset of input filename.
-		sub dx, udata
+		sub dx, R_udata
 		push dx  ; Save number of DOS .exe image bytes to write.
 		xchg dx, ax  ; DX := offset of input filename; AX := junk.
 		mov ah, 0x3c  ; Open file for writing, optionally create it, truncate it, using handle.
 		xor cx, cx  ; File attributes: none.
 		int 0x21  ; DOS syscall. Sets AX to the filehandle.
 		mov bp, 'OR'  ; Error opening input file for rewriting.
-		call fatal_if_c
+		call pmwca_fatal_if_c
 		xchg bx, ax  ; BX := filehandle of output file; AX := junk.
 		mov ah, 0x40  ; Write to file using handle.
 		;mov bx, ...  ; BX == filehandle of output file.
-		mov dx, uexehdr  ; DS:DX == pointer to start of buffer to be written.
+		mov dx, R_uexehdr  ; DS:DX == pointer to start of buffer to be written.
 		mov cx, EXEHDRSIZE  ; Number of bytes to write.
 		int 0x21  ; DOS syscall.
 		mov bp, 'WR'  ; File write error.
-		call fatal_if_c
+		call pmwca_fatal_if_c
 		;mov bx, ...  ; BX == filehandle of output file.
-		mov dx, udata  ; DS:DX == pointer to start of buffer to be written.
+		mov dx, R_udata  ; DS:DX == pointer to start of buffer to be written.
 		pop cx  ; Number of DOS .exe image bytes to write.
-		jmp strict near final_write
+		jmp strict near pmwca_final_write
 
-squeeze_relocs:  ; Converts each relocation from dword-sized (offset, segment) pair to word-sized offset+0x100.
+pmwca_squeeze_relocs:  ; Converts each relocation from dword-sized (offset, segment) pair to word-sized offset+0x100.
 		push ax  ; Again, save offset of output filename.
-		lea si, [word di+uexehdr]  ; SI := uexehdr+relocpos.  Source of (offset, segment) pairs.
-		mov di, creloc  ; DS:DI := pointer to the squeezed relocations.
+		lea si, [word di+R_uexehdr]  ; SI := R_uexehdr+relocpos.  Source of (offset, segment) pairs.
+		mov di, R_creloc  ; DS:DI := pointer to the squeezed relocations.
 		;mov cx, [si+3*2]  ; CX == nreloc. Nonzero.
 		push cx  ; Save nreloc.
-		push di  ; Save creloc.
+		push di  ; Save R_creloc.
 .next:		lodsw
 		xchg bx, ax  ; BX := offset of the relocation; AX := junk.
 		inc bh  ; BX += 0x100.
@@ -260,71 +272,73 @@ squeeze_relocs:  ; Converts each relocation from dword-sized (offset, segment) p
 		loop .next
 		; Falls through.
 
-build_preparator_buf:
-		mov si, udata
-		mov di, cdata
-		;mov dx, ...  ; DX is already correct: DX := offset of end of udata.
-		call compress  ; Append compressed data to DS:DI == ES:DI. Ruins AX, BX, CX, DX, SI, BP, FLAGS. Sets DS:DI to pointer to end of cdata.
-		pop si  ; Restore SI := creloc.
+pmwca_build_preparator_buf:
+		mov si, R_udata
+		mov di, R_cdata
+		;mov dx, ...  ; DX is already correct: DX := offset of end of R_udata.
+		call pmwca_compress  ; Append compressed data to DS:DI == ES:DI. Ruins AX, BX, CX, DX, SI, BP, FLAGS. Sets DS:DI to pointer to end of R_cdata.
+		pop si  ; Restore SI := R_creloc.
 		pop cx  ; Restore CX := nreloc.
-		lea bx, [word di-(preparator_buf-$$+BASE)]  ; BX := csize + (cdata - preparator_buf).
-		times 2 add bx, cx  ; BX := csize + (nreloc << 1) + (cdata - preparator_buf).
-		mov [apply_relocs.u_nreloc], cl  ; It fits to 1 byte, we've checked it above at 'TR'.
+		lea bx, [word di-(R_preparator_buf-com_file_start+BASE)]  ; BX := csize + (R_cdata - R_preparator_buf).
+		times 2 add bx, cx  ; BX := csize + (nreloc << 1) + (R_cdata - R_preparator_buf).
+		mov [R_apply_relocs.u_nreloc], cl  ; It fits to 1 byte, we've checked it above at 'TR'.
 		rep movsw  ; Append compressed relocationss to DS:DI == ES:DI.
-		; Now: DS:DI == pointer to the end of cdata.
+		; Now: DS:DI == pointer to the end of R_cdata.
 		mov ax, bx
 		and ax, strict word 0x1ff
-		mov [cexehdr.lastsize], ax
+		mov [R_cexehdr.lastsize], ax
 		lea ax, [bx+0x1ff]  ; Round up.
 		shr ax, 1
-		mov [cexehdr.nblocks], ah  ; Set low byte. The high byte will remain 0.
-		sub bx, byte 0x20  ; BX := csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4).
+		mov [R_cexehdr.nblocks], ah  ; Set low byte. The high byte will remain 0.
+		sub bx, byte 0x20  ; BX := csize + (nreloc << 1) + (R_cdata - R_preparator_buf) - (chdrsize << 4).
 		lea ax, [bx+1]  ; Round up.
 		shr ax, 1
-		mov [copy_code.word_count], ax  ; Number of words to copy.
-		mov si, uexehdr+7*2  ; U_SS.
+		mov [R_copy_code.word_count], ax  ; Number of words to copy.
+		mov si, R_uexehdr+7*2  ; U_SS.
 		lodsw  ; AX := U_SS; SI += 2 (to U_SP).
-		mov [cexehdr.ss], ax
-		mov [jump_to_program.u_ss], ax
+		mov [R_cexehdr.ss], ax
+		mov [R_jump_to_program.u_ss], ax
 		lea bx, [bx+0xf]  ; Round up.
 		mov cl, 4
-		shr bx, cl  ; BX := (csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4) + 0xf) >> 4.
+		shr bx, cl  ; BX := (csize + (nreloc << 1) + (R_cdata - R_preparator_buf) - (chdrsize << 4) + 0xf) >> 4.
 		add ax, strict word ((0x100+0xf)>>4)+1  ; Why the +1? Maybe it's related to the bug in the original PMODE/W compressor.
-		add ax, bx  ; AX := (U_SS + ((0x100 + 0xf) >> 4)) + ((csize + (nreloc << 1) + (cdata - preparator_buf) - (chdrsize << 4) + 0xf) >> 4) + 1.
-		mov [cexehdr.minalloc], ax  ; The value computed above is larger than needed, so this is wasting memory at runtime. This is probably a bug in the original PMODE/W compressor.
+		add ax, bx  ; AX := (U_SS + ((0x100 + 0xf) >> 4)) + ((csize + (nreloc << 1) + (R_cdata - R_preparator_buf) - (chdrsize << 4) + 0xf) >> 4) + 1.
+		mov [R_cexehdr.minalloc], ax  ; The value computed above is larger than needed, so this is wasting memory at runtime. This is probably a bug in the original PMODE/W compressor.
 		lodsw  ; AX := U_SP. SI += 2 (to U_CHECKSUM).
-		mov [jump_to_program.u_sp], ax
+		mov [R_jump_to_program.u_sp], ax
 		lodsw  ; AX := U_CHECKSUM (will be ignored). SI += 2 (to U_IP).
 		lodsw  ; AX := U_IP. SI += 2 (to U_CS).
-		mov [uncompressed_start_far_ptr.u_ip], ax
+		mov [R_uncompressed_start_far_ptr.u_ip], ax
 		lodsw  ; AX := U_CS. SI += 2 (to U_RELOCPOS, will be ignored).
-		mov [uncompressed_start_far_ptr.u_cs], ax
-		; Now: DS:DI == pointer to the end of cdata.
+		mov [R_uncompressed_start_far_ptr.u_cs], ax
+		; Now: DS:DI == pointer to the end of R_cdata.
 		; Falls through.
 
-write_cdata:	mov ah, 0x3c  ; Open file for writing, optionally create it, truncate it, using handle.
+pmwca_write_cdata:
+		mov ah, 0x3c  ; Open file for writing, optionally create it, truncate it, using handle.
 		pop dx  ; Restore DX := offset of output filename.
 		pop cx  ; Discard offset of input filename.
 		xor cx, cx  ; File attributes: none.
 		int 0x21  ; DOS syscall. Sets AX to the filehandle.
 		mov bp, 'OO'  ; Error opening output file.
-		call fatal_if_c
+		call pmwca_fatal_if_c
 		xchg bx, ax  ; BX := filehandle of output file; AX := junk.
 		;mov bx, ...  ; BX == filehandle of output file.
-		mov dx, preparator_buf  ; DS:DX == pointer to start of buffer to be written.
-		mov cx, di  ; Pointer to the end of cdata.
-		sub cx, dx  ; CX := DI - preparator_buf. CX == number of bytes to write.
+		mov dx, R_preparator_buf  ; DS:DX == pointer to start of buffer to be written.
+		mov cx, di  ; Pointer to the end of R_cdata.
+		sub cx, dx  ; CX := DI - R_preparator_buf. CX == number of bytes to write.
 		; Falls through.
 
-final_write:	mov ah, 0x40  ; Write to file using handle.
+pmwca_final_write:
+		mov ah, 0x40  ; Write to file using handle.
 		int 0x21  ; DOS syscall.
 		mov bp, 'WR'  ; File write error.
-		call fatal_if_c
+		call pmwca_fatal_if_c
 %if 0  ; No need to close the output file, DOS will close it right below, when to process exits.
 		mov ah, 0x3e  ; Close file using handle.
 		int 0x21  ; DOS syscall.
 %endif
-		ret  ; Exit successfully (EXIT_SUCCESS) from DOS .com program.
+		EXIT_SUCCESS_TO_DOS  ; ret. Exit successfully (EXIT_SUCCESS) from DOS .com program.
 
 ; Compares relocation dword [ds:si] to dword [ds:di]. It compares by
 ; (segment descending, then offset ascending). Thus first it compares the
@@ -332,7 +346,7 @@ final_write:	mov ah, 0x40  ; Write to file using handle.
 ; values. Returns CF indicating that the first is smaller than the second.
 ;
 ; Ruins: AX and FLAGS.
-is_reloc_less:
+pmwca_is_reloc_less:
 		mov ax, [si+2]  ; First segment.
 		cmp [di+2], ax  ; Compare to second segment, in reverse (descending) order.
 		jne short .done  ; CF is already correct: CF == 1 if second is less, CF == 0 otherwise.
@@ -341,7 +355,7 @@ is_reloc_less:
 		; CF is already correct: CF == 1 if first is less, CF == 0 otherwise.
 .done:		ret
 
-; Sorts an array of 4 bytes each using the comparison function is_reloc_less.
+; Sorts an array of 4 bytes each using the comparison function pmwca_is_reloc_less.
 ; May or may not be stable.
 ;
 ; Uses a constant amount of memory in addition to the input/output array.
@@ -351,13 +365,13 @@ is_reloc_less:
 ;
 ; typedef unsigned size_t;
 ; #define SIZE 4
-; extern char is_reloc_less(const void *a, const void *b);
-; #pragma aux is_reloc_less __parm [__si] [__di] __modify [__ax] __value [__cf]  /* OpenWatcom C compiler doesn't actually support __value [__cf]. */
+; extern char pmwca_is_reloc_less(const void *a, const void *b);
+; #pragma aux pmwca_is_reloc_less __parm [__si] [__di] __modify [__ax] __value [__cf]  /* OpenWatcom C compiler doesn't actually support __value [__cf]. */
 ; extern void memswap4(void *a, void *b);
 ; #pragma aux memswap4 __parm [__si] [__di] __modify [__ax]
-; void sort4(void *base, size_t n);
+; void pmwca_sort4(void *base, size_t n);
 ; #pragma aux heapsort4 __parm [__ax] [__dx] __modify [__ax __bx __dx __si __bp]
-sort4:
+pmwca_sort4:
 %ifdef FASTSORT
   ; Based on heapsort algorithm H from Knuth TAOCP 5.2.3H. Not stable.
   ; Worst case execution time: O(n*log(n)), 3*n*log_2(n) comparisons, and
@@ -366,7 +380,7 @@ sort4:
   ; Compared to Knuth's algorith, this implementation contains swaps instead
   ; of assignments to temporary variable with swaps.
   ;
-  ; void sort4(void *base, size_t n) {
+  ; void pmwca_sort4(void *base, size_t n) {
   ;   char *ap = (char*)base, *lp = ap + SIZE * (n >> 1), *rp = ap + SIZE * (n - 1), *tp, *ip, *jp;
   ;   if (n < 2) return;
   ;   for (;;) {
@@ -382,15 +396,15 @@ sort4:
   ;       ip = jp;
   ;       jp += (jp - ap) + SIZE;
   ;       if (jp > rp) break;
-  ;       if (jp < rp && is_reloc_less(jp, jp + SIZE)) jp += SIZE;
-  ;       if (!is_reloc_less(tp, jp)) break;
+  ;       if (jp < rp && pmwca_is_reloc_less(jp, jp + SIZE)) jp += SIZE;
+  ;       if (!pmwca_is_reloc_less(tp, jp)) break;
   ;       memswap4(ip, jp);
   ;       tp = jp;
   ;     }
   ;     memswap4(ip, tp);
   ;   }
   ; }
-  heapsort4:
+  pmwca_heapsort4:
 		push cx  ; Save.
 		push di  ; Save.
 		mov bp, sp
@@ -419,7 +433,7 @@ sort4:
 		jmp short .3
   .2:		mov di, bx
 		mov si, ax
-		call memswap4
+		call pmwca_memswap4
 		sub bx, byte 4
 		cmp bx, cx
 		je short .done
@@ -438,25 +452,25 @@ sort4:
 		mov word [bp-6], ax
 		mov di, ax
 		mov si, dx
-		call is_reloc_less
+		call pmwca_is_reloc_less
 		;test al, al
 		;je short .5  ; Jump if not less.
 		jnc short .5  ; Jump if not less.
 		mov dx, word [bp-6]
   .5:		mov di, dx  ; jp += SIZE.
 		mov si, word [bp-4]
-		call is_reloc_less
+		call pmwca_is_reloc_less
 		;test al, al
 		;je short .7  ; Jump if not less.
 		jnc short .7  ; Jump if not less.
 		mov di, dx
 		mov si, word [bp-8]
-		call memswap4
+		call pmwca_memswap4
 		mov word [bp-4], dx
 		jmp short .4
   .7:		mov di, word [bp-4]
 		mov si, word [bp-8]
-		call memswap4
+		call pmwca_memswap4
 		jmp short .1
   .done:	mov sp, bp
 		pop di  ; Restore.
@@ -465,7 +479,7 @@ sort4:
 
   ; Swaps dword [ds:si] with dword [ds:di].
   ; Ruins: AX and FLAGS.
-  memswap4:
+  pmwca_memswap4:
 		mov ax, [si+2]
 		xchg ax, [di+2]
 		mov [si+2], ax
@@ -483,18 +497,18 @@ sort4:
   ; It implements swapping of elements by rotating a sequence of elements to
   ; the right by 1 element. It rotates one word at a time (unlike the C code).
   ;
-  ; void sort4(void *base, size_t n) {
+  ; void pmwca_sort4(void *base, size_t n) {
   ;   char *oldcur, *end, *newcur, *mid, tmp, *cur;
   ;   if (n >= 1) {  /* Equivalent to: if (n > 1) */
   ;     for (cur = (char*)base + SIZE, end = (char*)base + (SIZE * n);
   ;          cur != end;
   ;          cur = newcur) {
   ;       newcur = cur + SIZE;
-  ;       if (is_reloc_less(cur, cur - SIZE)) {
+  ;       if (pmwca_is_reloc_less(cur, cur - SIZE)) {
   ;         oldcur = cur;
   ;         do {
   ;           cur -= SIZE;
-  ;         } while (cur != (char*)base && is_reloc_less(oldcur, cur - SIZE));
+  ;         } while (cur != (char*)base && pmwca_is_reloc_less(oldcur, cur - SIZE));
   ;         /* memrotate(cur, oldcur, SIZE); */
   ;         while (oldcur != newcur) {
   ;           mid = oldcur;
@@ -511,7 +525,7 @@ sort4:
   ;     }
   ;   }
   ; }
-  insertion_sort4:
+  pmwca_insertion_sort4:
 		push cx  ; Save.
 		push di  ; Save.
 		cmp dx, byte 1  ; Argument n.
@@ -523,14 +537,14 @@ sort4:
 		add dx, ax  ; DX (var_end) := base + SIZE * n.
   .next:	lea di, [bx-4]
 		mov si, bx  ; SI := BX *cur).
-		call is_reloc_less  ; is_reloc_less(cur, cur - SIZE).
+		call pmwca_is_reloc_less  ; pmwca_is_reloc_less(cur, cur - SIZE).
 		jnc short .continue  ; Jump if not less.
 		mov si, bx  ; SI (oldcur) := BX (cur).
   .scan_next:	mov bx, di  ; BX (cur) -= SIZE.
 		cmp bx, bp  ; while (cur != base ...)
 		je short .rotate
 		lea di, [bx-4]
-		call is_reloc_less  ; is_reloc_less(oldcur, cur - SIZE).
+		call pmwca_is_reloc_less  ; pmwca_is_reloc_less(oldcur, cur - SIZE).
 		jc short .scan_next  ; Jump if less.
   .rotate:	; Now, until .continue, we will rotate the region BX...(SI+4) right (forward) by a dword (SIZE == 4).
 		; That is, save `dword [si]' to tmp, then copy from BX...SI to (BX+4)..(SI+4), then restore `dword [bx]' from tmp.
@@ -558,7 +572,8 @@ sort4:
 %ifdef DEBUG
   LF equ 10
 
-  print_nibble:	push ax
+  pmwca_print_nibble:  ; !!! Check that pwmca.exe is small enough even if debugging is enabled.
+		push ax
 		add al, '0'
 		cmp al, '9'
 		jna short .ok
@@ -567,53 +582,57 @@ sort4:
 		pop ax
 		ret
 
-  print_al:	push ax
+  pmwca_print_al:
+		push ax
 		aam 0x10
 		xchg al, ah
-		call print_nibble
+		call pmwca_print_nibble
 		mov al, ah
-		call print_nibble
+		call pmwca_print_nibble
 		pop ax
 		ret
 
-  print_ax:	push ax
+  pmwca_print_ax:
+		push ax
 		xchg al, ah
-		call print_al
+		call pmwca_print_al
 		mov al, ah
-		call print_al
+		call pmwca_print_al
 		pop ax
 		ret
 
-  print_literal:
+  pmwca_print_literal:
 		push ax
 		mov al, 'L'
 		int 0x29
 		mov al, [si]
-		call print_al
+		call pmwca_print_al
 		mov al, LF
 		int 0x29
 		pop ax
 		ret
 
-  print_distance:
+  pmwca_print_distance:
 		push ax
 		mov al, 'D'
 		int 0x29
   .ax:		pop ax
 		push ax
-		call print_ax
+		call pmwca_print_ax
   .lf:		mov al, LF
 		int 0x29
 		pop ax
 		ret
 
-  print_length:	push ax
+  pmwca_print_length:
+		push ax
 		mov al, 'E'
 		int 0x29
-		jmp short print_distance.ax
+		jmp short pmwca_print_distance.ax
 
   ; Prints the bit in CF. Also ruins CF.
-  print_bit:	push ax
+  pmwca_print_bit:
+		push ax
 		pushf
 		mov al, 'B'
 		int 0x29
@@ -621,34 +640,36 @@ sort4:
 		popf
 		adc al, 0
 		int 0x29
-		jmp short print_distance.lf
+		jmp short pmwca_print_distance.lf
 
-  print_m1:	push ax
+  pmwca_print_m1:
+		push ax
 		mov al, 'X'
 		int 0x29
   .al:		pop ax
 		push ax
-		call print_al
-		jmp short print_distance.lf
+		call pmwca_print_al
+		jmp short pmwca_print_distance.lf
 
-  print_m1101:	push ax
+  pmwca_print_m1101:
+		push ax
 		mov al, 'Y'
 		int 0x29
-		jmp short print_m1.al
+		jmp short pmwca_print_m1.al
 
-  %macro do_emit_m1 0  ; Emits a byte in AL. Uses ES:DI.
-    call print_m1
+  %macro pmwca_do_emit_m1 0  ; Emits a byte in AL. Uses ES:DI.
+    call pmwca_print_m1
     stosb
   %endm
-  %macro do_emit_m1101 0  ; Emits a byte in AL. Uses ES:DI.
-    call print_m1101
+  %macro pmwca_do_emit_m1101 0  ; Emits a byte in AL. Uses ES:DI.
+    call pmwca_print_m1101
     stosb
   %endm
 %else
-  %macro do_emit_m1 0  ; Emits a byte in AL. Uses ES:DI.
+  %macro pmwca_do_emit_m1 0  ; Emits a byte in AL. Uses ES:DI.
     stosb
   %endm
-  %macro do_emit_m1101 0  ; Emits a byte in AL. Uses ES:DI.
+  %macro pmwca_do_emit_m1101 0  ; Emits a byte in AL. Uses ES:DI.
     stosb
   %endm
 %endif
@@ -660,17 +681,17 @@ sort4:
 ; Input and output: The offset of the current 16-bit block (tag) word value is in word [bp+2*2]. The segment is DS == ES. Will be modified.
 ; Input and output: The block (tag) next-write power-of-two bitmask is in word [bp+4*2]. Will be modified.
 ; Ruins: FLAGS (incuding CF).
-emit_bit:
+pmwca_emit_bit:
 %ifdef DEBUG
 		pushf
-		call print_bit
+		call pmwca_print_bit
 		popf
 %endif
 		push ax  ; Save.
 		push bx  ; Save.
 		mov bx, [bp+2*2]
 		mov ax, [bp+4*2]
-		jnc short .done_or  ; Uses the CF value at the beginning of emit_bit.
+		jnc short .done_or  ; Uses the CF value at the beginning of pmwca_emit_bit.
 		or [bx], ax
 .done_or:	add ax, ax
 		jnz short .done
@@ -682,9 +703,11 @@ emit_bit:
 		pop ax  ; Restore.
 		ret
 
-MAX_LENGTH equ 270
-MAX_DISTANCE_FOR_LENGTH_2 equ 0x800-1
-MAX_DISTANCE equ 0x1000-1
+%ifndef PMWCA_CODE_ONLY
+  MAX_LENGTH equ 270
+  MAX_DISTANCE_FOR_LENGTH_2 equ 0x800-1
+  MAX_DISTANCE equ 0x1000-1
+%endif
 
 ; Compresses bytes starting at DS:SI == ES:SI until DS:DX == ES:DX (DX is
 ; not a byte count, but an offset!), writing the compressed stream to DS:DI
@@ -692,7 +715,7 @@ MAX_DISTANCE equ 0x1000-1
 ;
 ; Output: DS:DI == ES:DI: offset of the end of the compressed output data.
 ; Ruins: AX, BX, CX, DX, SI, BP, FLAGS.
-compress:	mov ax, 1
+pmwca_compress:	mov ax, 1
 		push ax  ; word [bp+4*2]: Save initial block (tag) next-write power-of-two bitmask.
 		push dx  ; word [bp+3*2]: Save offset of the end of the uncompressed input data (udata_end). Sometimes DI is used instead of this. Remains constant throughout the function.
 		movsb  ; Uses DS:SI and ES:DI. Copy literal byte to compressed output data.
@@ -703,7 +726,7 @@ compress:	mov ax, 1
 		dec si
 		push si  ; word [bp+0*2]: Save offset of the start of the uncompressed input data (udata_start). Remains constant throughout the function.
 %ifdef DEBUG
-		call print_literal  ; Value: `byte [si]'.
+		call pmwca_print_literal  ; Value: `byte [si]'.
 %endif
 		inc si  ; Skip over literal byte in the uncompressed input data.
 		mov bp, sp
@@ -720,13 +743,13 @@ compress:	mov ax, 1
 		mov ax, -1  ; Current distance.
 		jmp short .next_start
 .done:		stc
-		call emit_bit  ; Emit end-of-stream (EOS) sequence.
+		call pmwca_emit_bit  ; Emit end-of-stream (EOS) sequence.
 		clc
-		call emit_bit
+		call pmwca_emit_bit
 		mov al, 0
-		do_emit_m1  ; In AL.
+		pmwca_do_emit_m1  ; In AL.
 		clc
-		call emit_bit
+		call pmwca_emit_bit
 		; Now: DI == the correct, final value for cdata_end == cdata_cur.
 		add sp, byte 5*2  ; Clean up local variables from the stack.
 		ret
@@ -828,76 +851,77 @@ compress:	mov ax, 1
 		cmp dx, byte 2
 		jae short .match
 .literal:	clc
-		call emit_bit
+		call pmwca_emit_bit
 %ifdef DEBUG
-		call print_literal
+		call pmwca_print_literal
 %endif
 		movsb  ; Copies a literal byte from DS:SI to ES:DI. Also skips over literal byte in the uncompressed input data (SI += 1).
 		jmp short .j_next_byte
 .match:		add si, dx  ; Skip over matched bytes in the uncompresed input data.
-		call emit_match  ; Ruins AX, BX, CX, DX, FLAGS. Modifies DI. Keeps SI and BP intact.
+		call pmwca_emit_match  ; Ruins AX, BX, CX, DX, FLAGS. Modifies DI. Keeps SI and BP intact.
 .j_next_byte:	jmp strict near .next_byte
 
 ; Emits CL (1 <= CL <= 7) bits from AH, highest (of the CL) bits first. Assumes CH == 0.
 ; Ruins: CL (sets it to 0), FLAGS.
-emit_bits:	ror ah, cl
+pmwca_emit_bits:
+		ror ah, cl
 .next:		rol ah, 1  ; CF := pint to print.
-		call emit_bit
+		call pmwca_emit_bit
 		loop .next
 		ret
 
 ; Emits an encoded match == (distance, length) == (BX, DX) pair. 0 <= BX <= 0xfff; 2 <= DX <= 270. If DX == 2, then also BX <= 0x7ff.
 ; Input: SS:BP points to the local variables of the compress function.
 ; Input: DS:DI == ES:DI points to the end of the compressed output data (cdata_end == cdata_cur).
-; Output: DI incremented as emit_match and its subfunctions write compressed output bytes to DS:DI == ES:DI.
+; Output: DI incremented as pmwca_emit_match and its subfunctions write compressed output bytes to DS:DI == ES:DI.
 ; Keeps SI and BP intact.
 ; Ruins: AX, BX, CX, DX, FLAGS.
-emit_match:
-		mov ch, 0  ; For emit_bits.
+pmwca_emit_match:
+		mov ch, 0  ; For pmwca_emit_bits.
 %ifdef DEBUG
 		mov ax, bx
 %else
 		xchg ax, bx  ; AX := distance; BX := junk.
 %endif
 		stc
-		call emit_bit
+		call pmwca_emit_bit
 		cmp dx, byte 3  ; Also CF := (len == 2).
 		cmc  ; CF := (len != 2).
-		call emit_bit
+		call pmwca_emit_bit
 		mov cl, 3
 		cmp dx, byte 2
 		jne short .dist_3plus
 .dist_2:	cmp ax, strict word 0xff
 		jae short .dist_2_big
 .dist_2_small:	inc ax
-		do_emit_m1  ; In AL.
+		pmwca_do_emit_m1  ; In AL.
 		clc
-		call emit_bit
+		call pmwca_emit_bit
 		jmp short .after_bits
-.dist_2_big:	do_emit_m1  ; In AL.
+.dist_2_big:	pmwca_do_emit_m1  ; In AL.
 		stc
-		call emit_bit
+		call pmwca_emit_bit
 		;mov cl, 3  ; Not needed, set above.
-		call emit_bits
+		call pmwca_emit_bits
 		jmp short .after_bits
-.dist_3plus:	do_emit_m1  ; In AL.
+.dist_3plus:	pmwca_do_emit_m1  ; In AL.
 		test ah, ah
 		jnz short .dist_3plus_mid_or_big
 .dist_3plus_small:
 		clc
-		call emit_bit
+		call pmwca_emit_bit
 		jmp short .len
 .dist_3plus_mid_or_big:
 		stc
-		call emit_bit
+		call pmwca_emit_bit
 		;mov cl, 3  ; Not needed, set above.
 		cmp ah, cl
 		jna short .dist_bits  ; Jumps CL == 3 and 0 <= AH <= 3. No need for `and ah, 3' here. Because of 0 <= AH <= 3, the next `print bit' of 3 bits will start with a 0 bit.
 .dist_3plus_big:
 		stc
-		call emit_bit
+		call pmwca_emit_bit
 		inc cx  ; CL := 4.
-.dist_bits:	call emit_bits
+.dist_bits:	call pmwca_emit_bits
 .len:
 %ifdef DEBUG
 		mov ax, dx
@@ -917,22 +941,23 @@ emit_match:
 		and al, 7
 		mov ah, al
 		mov cl, 8  ; Prints 5 0 bits and 3 length bits.
-.len_bits:	call emit_bits
+.len_bits:	call pmwca_emit_bits
 		jmp short .after_bits
 .len_big:	mov ah, 1
 		mov cl, 5   ; Prints 4 0 bits and a 1 bit.
-		call emit_bits
-		do_emit_m1101  ; In AL.
+		call pmwca_emit_bits
+		pmwca_do_emit_m1101  ; In AL.
 .after_bits:
 %ifdef DEBUG
 		xchg ax, dx  ; AX := DX (length); DX := junk.
-		call print_length
+		call pmwca_print_length
 		xchg ax, bx  ; AX := BX (distance); BX := junk.
-		call print_distance
+		call pmwca_print_distance
 %endif
 		ret
 
-fatal_msg:	db 'pmwca: fatal: '
+%ifndef PMWCA_CODE_ONLY
+R_fatal_msg:	db 'pmwca: fatal: '
 .code:		db '??', 13, 10
 .end:
 
@@ -945,18 +970,17 @@ fatal_msg:	db 'pmwca: fatal: '
 ; understand, pts has also added comments, function names, labels and
 ; variable names.
 
-preparator_buf:
+R_preparator_buf:
 
-cexehdr:  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
-; load module length = 0x2cdc
+R_cexehdr:  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
 .signature:	db 'MZ'
-.lastsize:	dw 0       ; Length of load module mod 200H. build_preparator_buf will populate it.
-.nblocks:	dw 0       ; Number of 200H pages in load module. build_preparator_buf will populate its low byte.
+.lastsize:	dw 0       ; Length of load module mod 200H. pmwca_build_preparator_buf will populate it.
+.nblocks:	dw 0       ; Number of 200H pages in load module. pmwca_build_preparator_buf will populate its low byte.
 .nreloc:	dw 0       ; Number of relocation items; no relocations.
 .hdrsize:	dw 2       ; Size of header in paragraphs.
-.minalloc:	dw 0       ; Minimum number of paragraphs required above load mod. build_preparator_buf will populate it with a value is larger than needed. This is probably a bug in the original PMODE/W compressor.
+.minalloc:	dw 0       ; Minimum number of paragraphs required above load mod. pmwca_build_preparator_buf will populate it with a value is larger than needed. This is probably a bug in the original PMODE/W compressor.
 .maxalloc:	dw -1      ; Maximum number of paragraphs required above load mod.
-.ss:		dw 0       ; Offset of stack segment in load module. Same as U_SS. build_preparator_buf will populate it.
+.ss:		dw 0       ; Offset of stack segment in load module. Same as U_SS. pmwca_build_preparator_buf will populate it.
 .sp:		dw 0x100   ; Initial value of SP. Constant.
 .checksum:	dw 0       ; Checksum.
 .ip:		dw exe_start-exe_image  ; Initial value of IP.
@@ -1004,9 +1028,9 @@ pmodew_config:
   db 1/0
 %endif
 
-uncompressed_start_far_ptr:
-.u_ip: dw 0  ; build_preparator_buf will populate it.
-.u_cs: dw 0  ; build_preparator_buf will populate it.
+R_uncompressed_start_far_ptr:
+.u_ip: dw 0  ; pmwca_build_preparator_buf will populate it.
+.u_cs: dw 0  ; pmwca_build_preparator_buf will populate it.
 
 ; Identical version of 8086 opcode encoding.
 _mov_bl_al equ 0xd88a
@@ -1026,15 +1050,15 @@ copy_code:
 		mov di, 0x100  ; The compressed SP value.
 		dw _mov_si_di
 		push di  ; 0x100.
-		mov cx, 0  ; Number of words to copy: (cdata.end-exe_image+1)>>1. build_preparator_buf will populate it.
-.word_count: equ $-2
+		mov cx, 0  ; Number of words to copy: (R_cdata.end-exe_image+1)>>1. pmwca_build_preparator_buf will populate it.
+R_copy_code.word_count: equ $-2
 		rep movsw  ; DS == orig_CS-0x10 == PSP_segment.
 		push es  ; orig_CS+0x3d7.
 		push ds  ; orig_CS-0x10.
 		pop es   ; ES := orig_CS-0x10.
 		pop ds   ; DS := orig_CS+0x3d7.
 		pop di   ; DI := 0x100.
-		mov si, cdata-exe_image+0x100  ; DS:SI now points to the start of the copy of cdata. Constant.
+		mov si, R_cdata-exe_image+0x100  ; DS:SI now points to the start of the copy of R_cdata. Constant.
 		push es  ; orig_CS-0x10. Will be popped by `pop ds' in jump_to_program.
 		push cs  ; orig_CS == PSP_segment. Will be popped by `pop dx' in jump_to_program.
 		movsb  ; Copy initial literal token.
@@ -1125,9 +1149,9 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 
 apply_relocs:
 		pop dx  ; Restore DX := orig_CS, pushed by `push cs' in setup_code.
-		add [uncompressed_start_far_ptr-exe_image+0x100+2], dx  ; Relocate segment in uncompressed_start_far_ptr.
-		mov cl, 0  ; CX := U_NRELOC == (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0. build_preparator_buf will populate it.
-.u_nreloc: equ $-1
+		add [R_uncompressed_start_far_ptr-exe_image+0x100+2], dx  ; Relocate segment in uncompressed_start_far_ptr.
+		mov cl, 0  ; CX := U_NRELOC == (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0. pmwca_build_preparator_buf will populate it.
+R_apply_relocs.u_nreloc: equ $-1
 .next:		lodsw  ; Load next offset from relocation table. Format: an array of offsets usign segment orig_CS-0x10 == PSP_segment.
 		dw _mov_bx_ax  ; `xchg bx, ax' would have been shorter.
 		add [es:bx], dx  ; Apply single relocation.
@@ -1136,30 +1160,31 @@ apply_relocs:
 jump_to_program:
 		pop ds  ; Restore DS := PSP_segment. ES is already PSP_segment.
 		cli
-		add dx, strict word 0 ; U_SS. build_preparator_buf will populate it.
-.u_ss: equ $-2
+		add dx, strict word 0 ; U_SS. pmwca_build_preparator_buf will populate it.
+R_jump_to_program.u_ss: equ $-2
 		mov ss, dx  ; SS := orig_CS+U_SS.
-		mov sp, 0  ; U_SP. build_preparator_buf will populate it.
-.u_sp: equ $-2
+		mov sp, 0  ; U_SP. pmwca_build_preparator_buf will populate it.
+R_jump_to_program.u_sp: equ $-2
 		sti
-		jmp far [cs:uncompressed_start_far_ptr-exe_image+0x100]  ; Jump to uncompressed_start_far_ptr.
+		jmp far [cs:R_uncompressed_start_far_ptr-exe_image+0x100]  ; Jump to uncompressed_start_far_ptr.
 
-preparator_buf.end:
+R_preparator_buf.end:
 
 MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
 MAX_CSIZE equ MAX_USIZE+((MAX_USIZE+7)>>3)  ; Worst case compressed data size: all tokens are literals. Matches are never longer than their corresponding literals.
 MAX_CRELSIZE equ EXEHDRSIZE>>2  ; Absolue maximum which fits to EXEHDRSIZE bytes of DOS .exe header created by TLINK.
 absolute $  ; Don't emit bytes anymore, just reserve.
-cdata:		resb MAX_CSIZE+MAX_CRELSIZE  ; Must come directly after preparator_buf.end, without alignment.
+R_cdata:	resb MAX_CSIZE+MAX_CRELSIZE  ; Must come directly after R_preparator_buf.end, without alignment.
 
-udata:		resb MAX_USIZE
+R_udata:	resb MAX_USIZE
 .bufend:
 
-		resb ($$-$)&1  ; Align to word boundary.
-uexehdr:	resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
-creloc: equ uexehdr+0x1c  ; Temporary buffer for compressed relocations.
+		resb (com_file_start-$)&1  ; Align to word boundary.
+R_uexehdr:	resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
+R_creloc: equ R_uexehdr+0x1c  ; Temporary buffer for compressed relocations.
+%endif  ; %ifndef PMWCA_CODE_ONLY
 
-%if $-$$>0xff00
+%if $-com_file_start>0xff00
   %error ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE
   db 1/0
 %endif

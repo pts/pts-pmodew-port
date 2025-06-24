@@ -50,14 +50,60 @@
 bits 32
 cpu 386
 
-CR equ 13  ; ASCII CR '\r'.
-LF equ 10  ; ASCII LF '\n'.
+CR equ 13  ; ASCII carriage return '\r'.
+LF equ 10  ; ASCII line feed '\n'.
+TAB equ 9  ; ASCII tabulator '\t'.
 NULL equ 0
 
 %ifdef OS_WIN32
   %include 'flexpe.nasm'
+  FILE_HEADER:  ; Needed by our reimplementation of pe_stub in flexpe.nasm.
+  DOS_STACK_SIZE equ 0x200  ; Must be at least 0x200 so that the exe_header.minalloc and exe_header.maxalloc are always positive.
+  HDRSIZE equ 4
+  BASE equ 0x100
+  org BASE-(HDRSIZE<<4)
+  %define EXIT_SUCCESS_TO_DOS int 0x20  ; Works in a DOS .exe (us) or .com program if CS == PSP. Used by the included pmwca.nasm.
+
+  exe_header:  ; DOS .exe header of the compressor: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
+  .signature:	db 'MZ'
+  .lastsize:	dw (file_end-exe_header)&0x1ff  ; Length of load module mod 200H.
+  .nblocks:	dw (file_end-exe_header+0x1ff)>>9  ; Number of 200H pages in load module.
+  .nreloc:	dw 0  ; Number of relocation items; no relocations.
+  .hdrsize:	dw HDRSIZE  ; Size of header in paragraphs.
+  .minalloc:	dw ((dos_mem_end-exe_image+0xf)>>4)-((file_end-exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Minimum number of paragraphs required above load mod.
+  .maxalloc:	dw ((dos_mem_end-exe_image+0xf)>>4)-((file_end-exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Maximum number of paragraphs required above load mod.
+  .ss:		dw 0xfff0  ;  Offset of stack segment in load module. Initial CS == DS == ES == PSP segment.
+  .sp:		dw dos_stack+DOS_STACK_SIZE  ; Initial value of SP.
+  .checksum:	dw 0  ; Checksum.
+  .ip:		dw com_start  ; Initial value of IP. com_start is defined.
+  .cs:		dw 0xfff0  ; Offset of code segment within load module (segment). Initial SS == DS == ES == PSP segment.
+  %if 0  ; Unused header fields.
+    .relocpos:	dw 0  ; File offset of first relocation item. Unused because of nreloc == 0.
+    .noverlay:	dw 0  ; Overlay number. Unused.
+  %endif
+  ; !! Add something useful between file offsets 0x18 and 0x3c.
+  times 0x3c-($-exe_header) db 0  ; Fails to compile if the header above is too long.
+  dd IMAGE_NT_HEADERS-FILE_HEADER  ; Windows uses this dword pointer at file offset 0x3c to find the PE header.
+  %define FILE_HEADER FILE_HEADER  ; Indicate to pe_start_text that the stub has been created.
+  exe_image:
+  com_file_start:  ; Used by pwmca.nasm.
+  %if $-exe_header!=(HDRSIZE<<4)
+    %error ERROR_BAD_DOS_HDRSIZE
+    db 1/0
+  %endif
+
+  ; !!! Put some more DOS code into the first 0x200 bytes. Put it into the alignment part after the header?
   pe_start_text _start
   text:
+
+  ; !!! Replace this with: %include 'pmwca.nasm'
+  bits 16
+  cpu 8086
+  %define PMWCA_CODE_ONLY  ; Used by the included pmwca.nasm.
+  %include 'pmwca.nasm'
+  cpu 386
+  bits 32
+
   ; These imports make the output .exe program file larger even if the functions are never called.
   pe_kimport __imp__GetStdHandle@4, 'GetStdHandle'
   pe_kimport __imp__GetCommandLineA@0, 'GetCommandLineA'
@@ -322,7 +368,7 @@ _start:
     .1:		mov bl, [edx]
 		cmp bl, ' '
 		je short .2  ; The inline assembler is not smart enough with forward references, we need these shorts.
-		cmp bl, 0x9
+		cmp bl, TAB
 		jb short .3
 		cmp bl, 0xb
 		ja short .3
@@ -374,7 +420,7 @@ _start:
 		jne short .15
 		cmp bl, ' '
 		je short .14
-		cmp bl, 0x9
+		cmp bl, TAB
 		jb short .15
 		cmp bl, 0xb
 		jna short .14
@@ -1549,7 +1595,6 @@ R_fatal_msg:	db 'pmwca: fatal: '
 R_preparator_buf:
 
 R_cexehdr:  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
-; load module length = 0x2cdc
 .signature:	db 'MZ'
 .lastsize:	dw 0       ; Length of load module mod 200H. build_preparator_buf will populate it.
 .nblocks:	dw 0       ; Number of 200H pages in load module. build_preparator_buf will populate its low byte.
@@ -1560,17 +1605,17 @@ R_cexehdr:  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archi
 .ss:		dw 0       ; Offset of stack segment in load module. Same as U_SS. build_preparator_buf will populate it.
 .sp:		dw 0x100   ; Initial value of SP. Constant.
 .checksum:	dw 0       ; Checksum.
-.ip:		dw exe_start-exe_image  ; Initial value of IP.
+.ip:		dw exe_start-cexe_image  ; Initial value of IP.
 .cs:		dw 0       ; Offset of code segment within load module (segment).
 .relocpos:	dw 0x003e  ; File offset of first relocation item. Unused because of nreloc == 0.
 .noverlay:	dw 0       ; Overlay number. Unused.
 
 padding:	dd 0       ; At file offset 0x1c. Unused.
 
-exe_image:
+cexe_image:
 
 pmodew_config:
-; * This is 0x15 == 21 bytes at compressed exe_image+0.
+; * This is 0x15 == 21 bytes at cexe_image+0.
 ; * This is 0x15 == 21 bytes at uncompressed exe_image+0x8e, it's
 ;   zero-initialized there.
 ; * Here is how pmodew_config is loaded. When DOS loads the .exe with
@@ -1630,7 +1675,7 @@ copy_code:
 		mov di, 0x100  ; The compressed SP value.
 		dw _mov_si_di
 		push di  ; 0x100.
-		mov cx, 0  ; Number of words to copy: (cdata.end-exe_image+1)>>1. build_preparator_buf will populate it.
+		mov cx, 0  ; Number of words to copy: (cdata.end-cexe_image+1)>>1. build_preparator_buf will populate it.
 R_copy_code.word_count: equ $-2
 		rep movsw  ; DS == orig_CS-0x10 == PSP_segment.
 		push es  ; orig_CS+0x3d7.
@@ -1638,7 +1683,7 @@ R_copy_code.word_count: equ $-2
 		pop es   ; ES := orig_CS-0x10.
 		pop ds   ; DS := orig_CS+0x3d7.
 		pop di   ; DI := 0x100.
-		mov si, R_cdata_in_text-exe_image+0x100  ; DS:ESI now points to the start of the copy of cdata. Constant.
+		mov si, R_cdata_in_text-cexe_image+0x100  ; DS:ESI now points to the start of the copy of cdata. Constant.
 		push es  ; orig_CS-0x10. Will be popped by `pop ds' in jump_to_program.
 		push cs  ; orig_CS == PSP_segment. Will be popped by `pop dx' in jump_to_program.
 		movsb  ; Copy initial literal token.
@@ -1646,7 +1691,7 @@ R_copy_code.word_count: equ $-2
 		dw _mov_bp_ax  ; BP will keep holding the block word throught decompression. `xchg bp, ax' would have been shorter.
 		mov dl, 0x10  ; DL will keep holding the Number of bits remaining in the block word (BP). Starting at 0x10 == 16.
 		push ds  ; Segment for the `retf' below: orig_CS+0x3d7.
-		mov ax, decompress.start-exe_image+0x100
+		mov ax, decompress.start-cexe_image+0x100
 		push ax  ; Offset for the `retf' below: 0x100+0xd9 == 0x100 + decompress.literal.
 		retf  ; Jump to (orig_CS+0x3d7):0x1d9, which is a copy of decompress.start == decompress.next_token.
 
@@ -1729,7 +1774,7 @@ decompress:  ; Entry point is decompress.start. It needs initialization, see abo
 
 apply_relocs:
 		pop dx  ; Restore DX := orig_CS, pushed by `push cs' in setup_code.
-		add [R_uncompressed_start_far_ptr-exe_image+0x100+2], dx  ; Relocate segment in uncompressed_start_far_ptr.
+		add [R_uncompressed_start_far_ptr-cexe_image+0x100+2], dx  ; Relocate segment in uncompressed_start_far_ptr.
 		mov cl, 0  ; CX := U_NRELOC == (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0. build_preparator_buf will populate it.
 R_apply_relocs.u_nreloc: equ $-1
 .next:		lodsw  ; Load next offset from relocation table. Format: an array of offsets usign segment orig_CS-0x10 == PSP_segment.
@@ -1746,11 +1791,12 @@ R_jump_to_program.u_ss: equ $-2
 		mov sp, 0  ; U_SP. build_preparator_buf will populate it.
 R_jump_to_program.u_sp: equ $-2
 		sti
-		jmp far [cs:R_uncompressed_start_far_ptr-exe_image+0x100]  ; Jump to uncompressed_start_far_ptr.
+		jmp far [cs:R_uncompressed_start_far_ptr-cexe_image+0x100]  ; Jump to uncompressed_start_far_ptr.
 
 preparator_buf.end:
 
-MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
+;MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
+MAX_USIZE equ 0x6000  ; For DOS + Win32 combo. !!!
 MAX_CSIZE equ MAX_USIZE+((MAX_USIZE+7)>>3)  ; Worst case compressed data size: all tokens are literals. Matches are never longer than their corresponding literals.
 MAX_CRELSIZE equ EXEHDRSIZE>>2  ; Absolue maximum which fits to EXEHDRSIZE bytes of DOS .exe header created by TLINK.
 R_cdata_in_text:
@@ -1779,6 +1825,12 @@ R_uexehdr: resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
 R_creloc: equ R_uexehdr+0x1c  ; Temporary buffer for compressed relocations.
 
 %ifdef OS_WIN32
+  dos_stack:  ; The position is still aligned to dword boundary (4). 2 is good enough for the DOS stack.
+  dos_mem_end: equ dos_stack+DOS_STACK_SIZE
+  %if dos_mem_end-com_start>0xff00
+    %error ERROR_DOS_EXE_MEMORY_IMAGE_TOO_LARGE
+    db 1/0
+  %endif
   R_stderr_handle: resb 4  ; Needs zero-initialization.
   R_file_handle: resb 4  ; Must be directly atfer stderr_handle. Needs zero-initialization.
   pe_end
