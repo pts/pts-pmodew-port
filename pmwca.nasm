@@ -19,6 +19,19 @@
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
 ;
 
+%ifndef EXIT_SUCCESS_TO_DOS  ; Defined by pmwcax.nasm.
+  %define EXIT_SUCCESS_TO_DOS ret
+%endif
+
+%ifndef PMWV  ; Can be specified on the command-line.
+  %define PMWV 33
+%else
+  %assign PMWV PMWV  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+_nasm16_xchg_bx_cx equ 0xd987  ; To make `xchg bx, cx' in `bits 16' in NASM 2.16.03 behave like in NASM 0.98.39.
+_nasm16_xchg_al_ah equ 0xc486  ; To make `xchg al, ah' in `bits 16' in NASM 2.16.03 behave like in NASM 0.98.39.
+
 bits 16
 %ifndef PMWCA_CODE_ONLY
   cpu 8086
@@ -30,16 +43,6 @@ bits 16
   TAB equ 9  ; ASCII tabulator '\t'.
 
   com_file_start:
-%endif
-
-%ifndef EXIT_SUCCESS_TO_DOS  ; Defined by pmwcax.nasm.
-  %define EXIT_SUCCESS_TO_DOS ret
-%endif
-
-%ifndef PMWV  ; Can be specified on the command-line.
-  %define PMWV 33
-%else
-  %assign PMWV PMWV  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
 com_start:  ; DOS .com program entry point.
@@ -584,7 +587,7 @@ pmwca_sort4:
   pmwca_print_al:
 		push ax
 		aam 0x10
-		xchg al, ah
+		dw _nasm16_xchg_al_ah
 		call pmwca_print_nibble
 		mov al, ah
 		call pmwca_print_nibble
@@ -593,7 +596,7 @@ pmwca_sort4:
 
   pmwca_print_ax:
 		push ax
-		xchg al, ah
+		dw _nasm16_xchg_al_ah
 		call pmwca_print_al
 		mov al, ah
 		call pmwca_print_al
@@ -797,7 +800,7 @@ pmwca_compress:	mov ax, 1
 		repe cmpsb  ; Uses DS:SI and ES:DI. Also reads and modifies SI, DI and CX.
 		je short .after_inc
 		inc cx
-.after_inc:	xchg bx, cx  ; CX := maximum match length starting at DS:SI.
+.after_inc:	dw _nasm16_xchg_bx_cx  ; CX := maximum match length starting at DS:SI.
 		sub bx, cx
 		neg bx  ; BX := longest common prefix length.
 		pop di  ; Restore.

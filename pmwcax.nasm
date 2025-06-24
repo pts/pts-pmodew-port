@@ -52,7 +52,10 @@
   %assign PMWV PMWV  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+_nasm32_xchg_ebx_ecx equ 0xd987  ; To make `xchg ebx, ecx' in `bits 32' in NASM 2.16.03 behave like in NASM 0.98.39.
+_nasm32_xchg_al_ah equ 0xc486  ; To make `xchg al, ah' in `bits 16' in NASM 2.16.03 behave like in NASM 0.98.39.
 ; ---
+
 
 bits 32
 cpu 386
@@ -1192,7 +1195,7 @@ sort4:
 
   print_al:	push ax
 		aam 0x10
-		xchg al, ah
+		dw _nasm32_xchg_al_ah
 		call print_nibble
 		mov al, ah
 		call print_nibble
@@ -1200,7 +1203,7 @@ sort4:
 		ret
 
   print_ax:	push ax
-		xchg al, ah
+		dw _nasm32_xchg_al_ah
 		call print_al
 		mov al, ah
 		call print_al
@@ -1395,7 +1398,7 @@ compress:
 		repe cmpsb  ; Uses DS:SI and ES:DI. Also reads and modifies SI, DI and CX.
 		je short .after_inc
 		inc ecx
-.after_inc:	dw 0xd987  ; xchg ebx, ecx  ; ECX := maximum match length starting at DS:ESI. NASM 2.16.03 produces different output. We imitate NASM 0.98.39 for consistency.
+.after_inc:	dw _nasm32_xchg_ebx_ecx  ; ECX := maximum match length starting at DS:ESI. NASM 2.16.03 produces different output. We imitate NASM 0.98.39 for consistency.
 		sub ebx, ecx
 		neg ebx  ; EBX := longest common prefix length.
 		pop edi  ; Restore.
