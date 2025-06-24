@@ -50,24 +50,24 @@
 bits 32
 cpu 386
 
-CR equ 13
-LF equ 10
-
-%ifidn __OUTPUT_FORMAT__, bin
-  BASE equ 0x600000 &~0xfff  ; Must be divisible by 0x1000 == 40096 == 4 KiB for i386 page alignment. The standard value is 0x8048000.
-  org BASE
-  %define BASE BASE
-%endif
-
+CR equ 13  ; ASCII CR '\r'.
+LF equ 10  ; ASCII LF '\n'.
 NULL equ 0
 
 %ifdef OS_WIN32
-  %undef BASE  ; Make sure we don't use this BASE address, because the loader may relocate the .exe image to another base address.
-  section _TEXT  USE32 class=CODE align=1
-  section _BSS   USE32 class=BSS  align=1 NOBITS  ; NOBITS is ignored by NASM, but class=BSS works.
-  group DGROUP _BSS
-  section _TEXT
+  %include 'flexpe.nasm'
+  pe_start_text _start
   text:
+  ; These imports make the output .exe program file larger even if the functions are never called.
+  pe_kimport __imp__GetStdHandle@4, 'GetStdHandle'
+  pe_kimport __imp__GetCommandLineA@0, 'GetCommandLineA'
+  pe_kimport __imp__ExitProcess@4, 'ExitProcess'
+  pe_kimport __imp__CloseHandle@4, 'CloseHandle'
+  pe_kimport __imp__ReadFile@20, 'ReadFile'
+  pe_kimport __imp__WriteFile@20, 'WriteFile'
+  pe_kimport __imp__CreateFileA@28, 'CreateFileA'
+
+  %undef BASE  ; Make sure we don't use this BASE address, because the loader may relocate the .exe image to another base address.
 
   ; --- Win32 API constants.
 
@@ -98,6 +98,10 @@ NULL equ 0
   FILE_SHARE_WRITE    equ 2
   FILE_SHARE_DELETE   equ 4
 %else
+  BASE equ 0x600000 &~0xfff  ; Must be divisible by 0x1000 == 40096 == 4 KiB for i386 page alignment. The standard value is 0x8048000.
+  org BASE
+  %define BASE BASE
+
   OSABI:
   .SYSV: equ 0
   .Linux: equ 3
@@ -114,40 +118,25 @@ NULL equ 0
   Elf32_Phdr:	dd 1, 0, $$, 0, file_end-$$, mem_end-$$, 7, 0x1000
 %endif
 
-%macro R0 1+  ; Indicates that there is a dword-sized relocation at the end of %1.
-  %1
-%endm
-%macro R1 1+  ; Indicates that there is a dword-sized relocation 1 byte before the end of %1.
-  %1
-%endm
-%define R(name) R_ %+ name
 %ifdef OS_WIN32
-  %define RI(name) name
+  %define R0 pe_r0  ; As an instruction prefix, it indicates that there is a dword-sized relocation at the end of %1.
+  %define R1 pe_r1  ; As an instruction prefix, it indicates that there is a dword-sized relocation 1 byte before the end of %1.
+  %define R(name) VADDR_TEXT(name)
 %else
-  ;%define RI(name) ...  ; Not defined, unused.
+  %define R0
+  %define R1
+  %define R(name) R_ %+ name
 %endif
 
 global _start
 _start:
 %if 1
   %ifdef OS_WIN32
-    %if 1  ; !! Remove this when wlink(1) is not used anymore.
-      ; The `compress' function overwrites the __imp__* function pointers in
-      ; section .idata, because section .data overlaps with cdata. We work it
-      ; around by saving and restoring the __imp__* function pointers on the
-      ; stack.
-		R0 mov eax, [RI(__imp__ExitProcess@4)]
-		R0 mov [R(__copy__ExitProcess@4)], eax
-		R0 mov eax, [RI(__imp__WriteFile@20)]
-		R0 mov [R(__copy__WriteFile@20)], eax
-		R0 mov eax, [RI(__imp__CreateFileA@28)]
-		R0 mov [R(__copy__CreateFileA@28)], eax
-    %endif
 		push byte STD_ERROR_HANDLE
-		R0 call dword [RI(__imp__GetStdHandle@4)]  ; Ruins EDX and ECX.
+		R0 call dword [R(__imp__GetStdHandle@4)]  ; Ruins EDX and ECX.
 		call check_handle
 		R0 mov [R(stderr_handle)], eax
-		R0 call dword [RI(__imp__GetCommandLineA@0)]  ; EAX := pointer to NUL-terminated command-line string.  ; Ruins EDX and ECX.
+		R0 call dword [R(__imp__GetCommandLineA@0)]  ; EAX := pointer to NUL-terminated command-line string.  ; Ruins EDX and ECX.
 		xor ecx, ecx  ; ECX := 0 (current argc).
 		push 0	; NULL marks end of argv array.
       .argv_next:
@@ -236,7 +225,7 @@ _start:
   _exit_:  ; __attribute__((noreturn)) void __watcall _exit(int exit_code);
 		push eax  ; Argument exit_code.
   %ifdef OS_WIN32
-		R0 call dword [R(__copy__ExitProcess@4)]  ; Doesn't return.
+		R0 call dword [R(__imp__ExitProcess@4)]  ; Doesn't return.
   %else
 		push eax  ; Fake return address for FreeBSD i386 syscall.
 		xchg ebx, eax  ; EBX := EAX (exit_code); EAX := junk. Linux i386 syscall needs the 1st argument in EBX. FreeBSD i386 needs it in [esp+4].
@@ -246,23 +235,6 @@ _start:
   %endif
 		; Not reached.
 %endif  ; %ifdef __NEED__exit_
-
-%ifdef OS_WIN32  ; These imports make the output .exe program file larger even if the functions are never called.
-  extern RI(__imp__GetStdHandle@4)
-  import _GetStdHandle@4 kernel32.dll GetStdHandle
-  extern RI(__imp__GetCommandLineA@0)
-  import _GetCommandLineA@0 kernel32.dll GetCommandLineA
-  extern RI(__imp__ExitProcess@4)
-  import _ExitProcess@4 kernel32.dll ExitProcess
-  extern RI(__imp__CloseHandle@4)
-  import _CloseHandle@4 kernel32.dll CloseHandle
-  extern RI(__imp__ReadFile@20)
-  import _ReadFile@20 kernel32.dll ReadFile
-  extern RI(__imp__WriteFile@20)
-  import _WriteFile@20 kernel32.dll WriteFile
-  extern RI(__imp__CreateFileA@28)
-  import _CreateFileA@28 kernel32.dll CreateFileA
-%endif
 
 %if 1
   %ifdef OS_WIN32
@@ -763,7 +735,7 @@ final_write:	call write_
   global read_
   read_:  ; ssize_t __watcall read(int fd, void *buf, size_t count);
   %ifdef OS_WIN32
-		R0 push dword [RI(__imp__ReadFile@20)]
+		R0 push dword [R(__imp__ReadFile@20)]
 		jmp short read_write_helper
   %else
 		push byte 3  ; FreeBSD i386 and Linux i386 SYS_read.
@@ -775,7 +747,7 @@ final_write:	call write_
   global write_
   write_:  ; ssize_t __watcall write(int fd, const void *buf, size_t count);
   %ifdef OS_WIN32
-		R0 push dword [R(__copy__WriteFile@20)]  ; !! push dword _WriteFile@20
+		R0 push dword [R(__imp__WriteFile@20)]
 		jmp short read_write_helper
 		; Fall through to __M_write_growany_.
   %else
@@ -818,7 +790,7 @@ O_TRUNC equ 1000o  ; Linux.
 		push byte FILE_SHARE_READ|FILE_SHARE_WRITE  ; dwShareMode. Windows 98 SE fails to open a local file if FILE_SHARE_DELETE is also specified here.
 		push dword GENERIC_READ  ; dwDesiredAccess.
       .open:	push eax  ; lpFileName. From argument pathname.
-		R0 call dword [R(__copy__CreateFileA@28)]  ; Ruins EDX and ECX.
+		R0 call dword [R(__imp__CreateFileA@28)]  ; Ruins EDX and ECX.
 		pop ecx  ; ECX := slot pointer to file_handle.
 		cmp eax, byte INVALID_HANDLE_VALUE  ; -1.
 		je short .done
@@ -852,7 +824,7 @@ O_TRUNC equ 1000o  ; Linux.
 		cmp eax, byte -1
 		je short .pop_eax_bad
 		push eax  ; fd argument of _CloseHandle@4.
-		R0 call dword [RI(__imp__CloseHandle@4)]  ; Ruins EDX and ECX. Returns nonzero in EAX on success.
+		R0 call dword [R(__imp__CloseHandle@4)]  ; Ruins EDX and ECX. Returns nonzero in EAX on success.
 		pop edx  ; Restore EDX := fd.
 		sub edx, byte 2
 		cmp edx, byte 3-2
@@ -882,7 +854,7 @@ O_TRUNC equ 1000o  ; Linux.
 		ret
     .bad_handle:
 		push byte -2  ; 254.
-		R0 call dword [RI(__imp__ExitProcess@4)]  ; Doesn't return.
+		R0 call dword [R(__imp__ExitProcess@4)]  ; Doesn't return.
 		; Not reached.
   %endif
 %endif
@@ -1552,7 +1524,7 @@ emit_match:
 %endif
 		ret
 
-R(fatal_msg):	db 'pmwca: fatal: '
+R_fatal_msg:	db 'pmwca: fatal: '
 .code:		db '??'
 %ifdef OS_WIN32
 		db CR, LF
@@ -1561,9 +1533,8 @@ R(fatal_msg):	db 'pmwca: fatal: '
 %endif
 .end:
 
-%ifdef OS_WIN32  ; !! Put it back to BSS here as soon as we stop using wlink(1), and `nasm -f' can guarantee cdata==file_end. Currently BSS doesn't guarantee zero-initialization and these variables need it.
-  R(stderr_handle): dd 0
-  R(file_handle): dd 0  ; Must be directly atfer stderr_handle.  Needs zero-initialization.
+%ifdef OS_WIN32
+  pe_structures  ; Put them early so that the TEXT and BSS can touch below without a gap (i.e. no ERROR_CDATA_MUST_FOLLOW_PREPARATOR_BUF_END).
 %endif
 
 ; --- Code below here is not executed by compressor, but it is copied near
@@ -1575,9 +1546,9 @@ R(fatal_msg):	db 'pmwca: fatal: '
 ; understand, pts has also added comments, function names, labels and
 ; variable names.
 
-R(preparator_buf):
+R_preparator_buf:
 
-R(cexehdr):  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
+R_cexehdr:  ; DOS .exe header of the compressed DOS .exe: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
 ; load module length = 0x2cdc
 .signature:	db 'MZ'
 .lastsize:	dw 0       ; Length of load module mod 200H. build_preparator_buf will populate it.
@@ -1634,7 +1605,7 @@ pmodew_config:
   db 1/0
 %endif
 
-R(uncompressed_start_far_ptr):
+R_uncompressed_start_far_ptr:
 .u_ip: dw 0  ; build_preparator_buf will populate it.
 .u_cs: dw 0  ; build_preparator_buf will populate it.
 
@@ -1660,7 +1631,7 @@ copy_code:
 		dw _mov_si_di
 		push di  ; 0x100.
 		mov cx, 0  ; Number of words to copy: (cdata.end-exe_image+1)>>1. build_preparator_buf will populate it.
-R(copy_code).word_count: equ $-2
+R_copy_code.word_count: equ $-2
 		rep movsw  ; DS == orig_CS-0x10 == PSP_segment.
 		push es  ; orig_CS+0x3d7.
 		push ds  ; orig_CS-0x10.
@@ -1760,7 +1731,7 @@ apply_relocs:
 		pop dx  ; Restore DX := orig_CS, pushed by `push cs' in setup_code.
 		add [R_uncompressed_start_far_ptr-exe_image+0x100+2], dx  ; Relocate segment in uncompressed_start_far_ptr.
 		mov cl, 0  ; CX := U_NRELOC == (relocation_locations.end-relocation_locations)>>1 == number of relocations. Calculated.  ; CH is already 0. build_preparator_buf will populate it.
-R(apply_relocs).u_nreloc: equ $-1
+R_apply_relocs.u_nreloc: equ $-1
 .next:		lodsw  ; Load next offset from relocation table. Format: an array of offsets usign segment orig_CS-0x10 == PSP_segment.
 		dw _mov_bx_ax  ; `xchg bx, ax' would have been shorter.
 		add [es:bx], dx  ; Apply single relocation.
@@ -1770,10 +1741,10 @@ jump_to_program:
 		pop ds  ; Restore DS := PSP_segment. ES is already PSP_segment.
 		cli
 		add dx, strict word 0 ; U_SS. build_preparator_buf will populate it.
-R(jump_to_program).u_ss: equ $-2
+R_jump_to_program.u_ss: equ $-2
 		mov ss, dx  ; SS := orig_CS+U_SS.
 		mov sp, 0  ; U_SP. build_preparator_buf will populate it.
-R(jump_to_program).u_sp: equ $-2
+R_jump_to_program.u_sp: equ $-2
 		sti
 		jmp far [cs:R_uncompressed_start_far_ptr-exe_image+0x100]  ; Jump to uncompressed_start_far_ptr.
 
@@ -1782,27 +1753,21 @@ preparator_buf.end:
 MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
 MAX_CSIZE equ MAX_USIZE+((MAX_USIZE+7)>>3)  ; Worst case compressed data size: all tokens are literals. Matches are never longer than their corresponding literals.
 MAX_CRELSIZE equ EXEHDRSIZE>>2  ; Absolue maximum which fits to EXEHDRSIZE bytes of DOS .exe header created by TLINK.
-R(cdata_in_text):
+R_cdata_in_text:
 file_end:
 %ifdef OS_WIN32
-  section _BSS
+  pe_bss 1
 %else
   absolute $  ; Don't emit bytes anymore, just reserve.
 %endif
 bss:
-%macro bssvar 1  ; Usage: R($name): bssvar $size
-  %00: equ file_end+($-bss)
-  resb %1
-%endm
-R(cdata): bssvar MAX_CSIZE+MAX_CRELSIZE  ; Must come directly after preparator_buf.end, without alignment.
-%ifndef OS_WIN32
-  %if R(cdata)!=preparator_buf.end
-    %error ERROR_CDATA_MUST_FOLLOW_PREPARATOR_BUF_END
-    db 1/0
-  %endif
+R_cdata: resb MAX_CSIZE+MAX_CRELSIZE  ; Must come directly after preparator_buf.end, without alignment.
+%if R_cdata!=preparator_buf.end
+  %error ERROR_CDATA_MUST_FOLLOW_PREPARATOR_BUF_END
+  db 1/0
 %endif
-R(udata): bssvar MAX_USIZE
-R(udata.bufend): bssvar 0
+R_udata: resb MAX_USIZE
+.bufend:
 %if R_udata.bufend-R_udata>0xffff
   %error ERROR_UDATA_MEMORY_IMAGE_TOO_LARGE
   db 1/0
@@ -1810,15 +1775,13 @@ R(udata.bufend): bssvar 0
 
 		resb (-(file_end-text)-($-bss))&3  ; Align to dword boundary.
 ;uexehdr_bss:	resb EXEHDRSIZE
-R(uexehdr): bssvar EXEHDRSIZE  ; Uncompressed DOS .exe header.
-R(creloc): equ R(uexehdr)+0x1c  ; Temporary buffer for compressed relocations.
+R_uexehdr: resb EXEHDRSIZE  ; Uncompressed DOS .exe header.
+R_creloc: equ R_uexehdr+0x1c  ; Temporary buffer for compressed relocations.
 
-%ifdef OS_WIN32  ; !! Put it back to BSS here.
-  ;R(stderr_handle): bssvar 4
-  ;R(file_handle): bssvar 4  ; Must be directly atfer stderr_handle.
-  R(__copy__ExitProcess@4): bssvar 4
-  R(__copy__WriteFile@20): bssvar 4
-  R(__copy__CreateFileA@28): bssvar 4
+%ifdef OS_WIN32
+  R_stderr_handle: resb 4  ; Needs zero-initialization.
+  R_file_handle: resb 4  ; Must be directly atfer stderr_handle. Needs zero-initialization.
+  pe_end
 %else
   ___M_is_freebsd_bss: resb 1  ; Are we actually running under FreeBSD (rathar than Linux)?
   ___M_is_freebsd: equ file_end+(___M_is_freebsd_bss-bss)
