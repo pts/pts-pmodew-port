@@ -67,7 +67,7 @@ EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early f
 %ifdef OS_WIN32
   %include 'flexpe.nasm'
   FILE_HEADER:  ; Needed by our reimplementation of pe_stub in flexpe.nasm.
-  DOS_STACK_SIZE equ 0x200  ; Must be at least 0x200 so that the exe_header.minalloc and exe_header.maxalloc are always positive. !!! Relax it to 0x100.
+  DOS_STACK_SIZE equ 0xa0  ; The program itself uses <0x20 bytes. See https://retrocomputing.stackexchange.com/q/30996 why 0xa0 should be enough, including interrupts and TSRs.
   %define EXIT_SUCCESS_TO_DOS int 0x20  ; Works in a DOS .exe (us) or .com program if CS == PSP. Used by the included pmwca.nasm.
 
   dos_exe_header:  ; DOS .exe header of the compressor: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
@@ -76,8 +76,8 @@ EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early f
   .nblocks:	dw (file_end-dos_exe_header+0x1ff)>>9  ; Number of 200H pages in load module.
   .nreloc:	dw 0  ; Number of relocation items; no relocations.
   .hdrsize:	dw HDRSIZE  ; Size of header in paragraphs.
-  .minalloc:	dw ((dos_mem_end-dos_exe_image+0xf)>>4)-((file_end-dos_exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Minimum number of paragraphs required above load mod.
-  .maxalloc:	dw ((dos_mem_end-dos_exe_image+0xf)>>4)-((file_end-dos_exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Maximum number of paragraphs required above load mod.
+  .minalloc:	dw MINMAXALLOC  ; Minimum number of paragraphs required above load mod.
+  .maxalloc:	dw MINMAXALLOC  ; Maximum number of paragraphs required above load mod.
   .ss:		dw 0xfff0  ;  Offset of stack segment in load module. Initial CS == DS == ES == PSP segment.
   .sp:		dw dos_stack+DOS_STACK_SIZE  ; Initial value of SP.
   .checksum:	dw 0  ; Checksum.
@@ -1817,14 +1817,13 @@ preparator_buf.end:
 %ifdef MINDOSMEM
   %undef PMWCA_CODE_ONLY  ; For the larger MAX_USIZE limit below.
 %endif
-%ifdef PMWCA_CODE_ONLY  ; !!! Simplify this: use the smallest limit of these, they are not too far from 0x7000.
-  %ifdef DEBUG
-    MAX_USIZE equ 0x6f20  ; Smaller limit DOS in the DOS + Win32 combined target in DEBUG mode. !!! Find the exact limit.
-  %else
-    MAX_USIZE equ 0x6fee  ; Smaller limit DOS in the DOS + Win32 combined target. !!! Find the exact limit.
-  %endif
+%ifndef DEBUG
+  %undef PMWCA_CODE_ONLY  ; For the larger MAX_USIZE limit below.
+%endif
+%ifdef PMWCA_CODE_ONLY
+  MAX_USIZE equ 0x6f74  ; Smaller limit DOS in the DOS + Win32 combined target in DEBUG and FASTSORT mode, without MINDOSMEM. To get it up to 0x7000, debug code has to be 107 bytes shorter (impossible). !!! Find the exact limit.
 %else
-  MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE.
+  MAX_USIZE equ 0x7000  ; Large enough to fit the uncompressd pmodewu.exe (without its .exe header). Small enough to prevent overflow in ERROR_DOS_COM_MEMORY_IMAGE_TOO_LARGE, even with -DDEBUG and without -DMINDOSMEM.
 %endif
 MAX_CSIZE equ MAX_USIZE+((MAX_USIZE+7)>>3)  ; Worst case compressed data size: all tokens are literals. Matches are never longer than their corresponding literals.
 MAX_CRELSIZE equ EXEHDRSIZE>>2  ; Absolue maximum which fits to EXEHDRSIZE bytes of DOS .exe header created by TLINK.
@@ -1859,6 +1858,12 @@ R_creloc: equ R_uexehdr+0x1c  ; Temporary buffer for compressed relocations.
   %if dos_mem_end-dos_exe_image>0xffff-0x100  ; For simplicity, we don't allow 0x10000, that would make SP 0 initially. We subtract BASE == 0x100 == PSP size.
     %error ERROR_DOS_EXE_MEMORY_IMAGE_TOO_LARGE
     db 1/0
+  %endif
+  MINMAXALLOC0 equ ((dos_mem_end-dos_exe_image+0xf)>>4)-((file_end-dos_exe_header+0x1ff)>>9<<5)+HDRSIZE
+  %if MINMAXALLOC0<1  ; The values 0 and -1 == 0xffff are special. Just use instead of them.
+    MINMAXALLOC equ 1
+  %else
+    MINMAXALLOC equ MINMAXALLOC0
   %endif
   R_stderr_handle: resb 4  ; Needs zero-initialization.
   R_file_handle: resb 4  ; Must be directly atfer stderr_handle. Needs zero-initialization.
