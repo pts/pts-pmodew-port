@@ -112,6 +112,13 @@
   %define FILE_HEADER FILE_HEADER  ; Indicate to pe_header that the DOS .exe stub has been created.
 %endm
 
+%macro pe_set 2  ; Example: pe_set SizeOfStackReserve, 64<<10
+  %ifndef __pe_%1  ; If defined, it's defined to itself.
+    __pe_%1 equ %2
+    %define __pe_%1 __pe_%1
+  %endif
+%endm
+
 %macro pe_header 1  ; %1: entry point (_start) label.
   %ifndef FILE_HEADER
     pe_stub
@@ -171,10 +178,10 @@
   CheckSum: dd 0
   Subsystem: dw 3  ; IMAGE_SUBSYSTEM_WINDOWS_CUI; gcc -mconsole
   DllCharacteristics: dw 0
-  SizeOfStackReserve: dd 0x00100000  ; !!! Configurable.
-  SizeOfStackCommit: dd 0x00001000  ; !!! Configurable.
-  SizeOfHeapReserve: dd 0x100000  ; Why not 0? !!! Configurable.
-  SizeOfHeapCommit: dd 0x1000  ; Why not 0? !!! Configurable.
+  SizeOfStackReserve: dd __pe_SizeOfStackReserve  ; Configurable with `pe_set SizeOfStackReserve, ...'.
+  SizeOfStackCommit: dd __pe_SizeOfStackCommit  ; Configurable with `pe_set SizeOfStackCommit, ...'.
+  SizeOfHeapReserve: dd __pe_SizeOfHeapReserve  ; Configurable with `pe_set SizeOfHeapReserve, ...'.
+  SizeOfHeapCommit: dd __pe_SizeOfHeapCommit  ; Configurable with `pe_set SizeOfHeapCommit, ...'.
   LoaderFlags: dd 0
   NumberOfRvaAndSizes: dd (IMAGE_DATA_DIRECTORY_end-IMAGE_DATA_DIRECTORY)/8
   IMAGE_DATA_DIRECTORY:
@@ -447,6 +454,18 @@
     pe_bss 1
   %endif
   SECTION_BSS_end:
+  %ifndef __pe_SizeOfStackReserve
+    pe_set SizeOfStackReserve, 1<<20  ; 0x00100000.
+  %endif
+  %ifndef __pe_SizeOfStackCommit
+    pe_set SizeOfStackCommit, 4<<10  ; 0x00001000.
+  %endif
+  %ifndef __pe_SizeOfHeapReserve
+    pe_set SizeOfHeapReserve, 1<<20  ; 0x100000.
+  %endif
+  %ifndef __pe_SizeOfHeapCommit
+    pe_set SizeOfHeapCommit, 4<<10  ; 0x1000.
+  %endif
   %if __reloc_count!=__reloci
     %error ERROR_RELOC_FOUND_TOO_LATE
     db 1/0
