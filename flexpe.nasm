@@ -72,7 +72,12 @@
 ;
 ; !!! Test it on Windows 11.
 ; !!! Test it on Windows 95 (both) without the extra `dd 0' in IMAGE_IMPORT_DESCRIPTOR_3.
-; !!! Test it on HX DOS extender.
+;
+; Operating system and emulator compatibility:
+;
+; * WDOSX: it works.
+; * HX DOS extender (dpmild32.exe 3.7.0 in HXRT 2.16): it works.
+; * Win32s: it doesn't work, because Win32s supports only Win32 GUI applications.
 ;
 
 %macro pe_stub 0  ; Creates a minimal (64-byte) DOS .exe stub for the PE which just fails with an error message when run from DOS.
