@@ -71,10 +71,11 @@
 ;   pe_end
 ;
 ; !!! Test it on Windows 11.
+; !!! Test it on Windows 95 (both) without the extra `dd 0' in IMAGE_IMPORT_DESCRIPTOR_3.
 ; !!! Test it on HX DOS extender.
 ;
 
-%macro pe_stub 0  ; Creates a minimal (64-byte) PE stub which just reports an error when run from DOS.
+%macro pe_stub 0  ; Creates a minimal (64-byte) DOS .exe stub for the PE which just fails with an error message when run from DOS.
   FILE_HEADER:
   IMAGE_DOS_HEADER:  ; DOS .exe header: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
   ; Based on https://github.com/pts/mininasm/blob/master/demo/hello/helloe.nasm
@@ -108,23 +109,21 @@
   .end:
   times 0x3c-($-FILE_HEADER) db 0  ; Fails to compile if the message is too long.
   dd IMAGE_NT_HEADERS-FILE_HEADER  ; Windows uses this dword pointer at file offset 0x3c to find the PE header.
-  %define FILE_HEADER FILE_HEADER  ; Indicate to pe_start_text that the stub has been created.
+  %define FILE_HEADER FILE_HEADER  ; Indicate to pe_header that the DOS .exe stub has been created.
 %endm
 
-%macro pe_start_text 1  ; %1: entry point (_start) label.
+%macro pe_header 1  ; %1: entry point (_start) label.
   %ifndef FILE_HEADER
     pe_stub
   %endif
   bits 32
-  HEADER_SIZE equ 0x200  ; Must be divisble by 0x200. !!! Check.
-  RVA_TEXT_0 equ 0x1000  ; Must be divisble by 0x1000. Must be at least HEADER_SIZE. !!! Check.
-  IMAGE_BASE equ 0x400000  ; Minimum value for efficient Windows 95: 0x400000. Must be divisible by 0x1000. !!! Check.
+  ;PE_TEXT_FOFS equ 0x200  ; Will be defined later in pe_start_text for more flexibility. Must be positive and divisble by 0x200.
+  ;PE_RVA_TEXT_0 equ 0x1000  ; Will be defined later in pe_start_text for more flexibility. Must be positive and divisble by 0x1000.
+  ;PE_IMAGE_BASE equ 0x400000  ; Will be defined later in pe_start_text for more flexibility. Minimum value for efficient Windows 95: 0x400000. Must be positive and divisible by 0x1000.
 
   ; We don't add parens to the macro body, so that VADDR_TEXT(foo).bar works.
-  %define VADDR_TEXT(name) (-SECTION_TEXT+IMAGE_BASE+RVA_TEXT_0)+R_ %+ name  ; May be called only in relocated instructions (i.e. lines starting with macros pe_r0, pe_r1 etc.).
-  %define RVA_TEXT(addr) ((addr)-SECTION_TEXT+RVA_TEXT_0)  ; Works for everything in the TEXT section.
-  ;%define RVA_TEXT_0 DO_NOT_USE_RVA_TEXT_0
-  ;%define IMAGE_BASE DO_NOT_USE_IMAGE_BASE  ; The macro RVA_TEXT uses it. Don't use it directly.
+  %define VADDR_TEXT(name) (-SECTION_TEXT+PE_IMAGE_BASE+PE_RVA_TEXT_0)+R_ %+ name  ; May be called only in relocated instructions (i.e. lines starting with macros pe_r0, pe_r1 etc.).
+  %define RVA_TEXT(addr) ((addr)-SECTION_TEXT+PE_RVA_TEXT_0)  ; Works for everything in the TEXT section.
 
   times (FILE_HEADER-$)&3 db 0  ; Align to a multiple of 4.
   IMAGE_NT_HEADERS:
@@ -155,9 +154,9 @@
   SizeOfInitializedData: dd 0x00000000
   SizeOfUninitializedData: dd 0x00000000
   AddressOfEntryPoint: dd RVA_TEXT(%1)  ; Also called starting address.
-  BaseOfCode: dd RVA_TEXT_0
-  BaseOfData: dd RVA_TEXT_0
-  ImageBase: dd IMAGE_BASE
+  BaseOfCode: dd PE_RVA_TEXT_0
+  BaseOfData: dd PE_RVA_TEXT_0
+  ImageBase: dd PE_IMAGE_BASE
   SectionAlignment: dd 0x1000  ; Single allowed value for Windows XP.
   FileAlignment: dd 0x200  ; Minimum value for Windows NT 3.1.
   MajorOperatingSystemVersion: dw 4
@@ -167,8 +166,8 @@
   MajorSubsystemVersion: dw 3   ; Windows NT 3.1.
   MinorSubsystemVersion: dw 10  ; Windows NT 3.1.
   Win32VersionValue: dd 0
-  SizeOfImage: dd RVA_TEXT_0+(SECTION_TEXT_end-SECTION_TEXT)+(SECTION_BSS_end-SECTION_BSS)
-  SizeOfHeaders: dd HEADERS_end-FILE_HEADER
+  SizeOfImage: dd PE_RVA_TEXT_0+(SECTION_TEXT_end-SECTION_TEXT)+(SECTION_BSS_end-SECTION_BSS)
+  SizeOfHeaders: dd IMAGE_NT_HEADERS_end-FILE_HEADER
   CheckSum: dd 0
   Subsystem: dw 3  ; IMAGE_SUBSYSTEM_WINDOWS_CUI; gcc -mconsole
   DllCharacteristics: dw 0
@@ -238,7 +237,7 @@
   .Name: db '.text'
   times ($$-$)&7 db 0
   .VirtualSize: dd (SECTION_TEXT_end-SECTION_TEXT)+(SECTION_BSS_end-SECTION_BSS)
-  .VirtualAddress: dd RVA_TEXT_0
+  .VirtualAddress: dd PE_RVA_TEXT_0
   .SizeOfRawData: dd SECTION_TEXT_end-SECTION_TEXT  ; Byte size in file. Windows NT 3.1 fails if this is larger than the actual file.
   .PointerToRawData: dd SECTION_TEXT-FILE_HEADER
   .PointerToRelocations: dd 0
@@ -253,14 +252,66 @@
   .Characteristics: dd IMAGE_SCN_CNT_CODE|IMAGE_SCN_MEM_EXECUTE|IMAGE_SCN_MEM_READ|IMAGE_SCN_CNT_INITIALIZED_DATA|IMAGE_SCN_MEM_WRITE
   IMAGE_SECTION_HEADER_end:
 
-  HEADERS_end:
+  IMAGE_NT_HEADERS_end:
+  %define IMAGE_NT_HEADERS IMAGE_NT_HEADERS  ; Indicate to pe_start_text that IMAGE_NT_HEADERS has been emitted.
+%endm
 
-  %if $-FILE_HEADER>HEADER_SIZE
-    %error ERROR_HEADER_TOO_LONG
+%macro pe_set_sizes 0
+  %ifndef PE_RVA_TEXT_0
+    PE_RVA_TEXT_0 equ 0x1000  ; Must be divisble by 0x1000.
+    %define PE_RVA_TEXT_0 PE_RVA_TEXT_0
+  %endif
+  %if PE_RVA_TEXT_0<=0
+    %error ERROR_PE_RVA_TEXT_0_MUST_BE_POSITIVE
     db 1/0
   %endif
-  times HEADER_SIZE-($-FILE_HEADER) db 0
-  SECTION_TEXT:
+  %if PE_RVA_TEXT_0&0xfff
+    %error ERROR_RVA_TEXT_MUST_BE_PAGE_ALIGNED
+    db 1/0
+  %endif
+  %ifndef PE_TEXT_FOFS
+    %if $-FILE_HEADER<=0
+      %error ERROR_FILE_HEADER_MUST_HAVE_BEEN_EMITTED_BY_PE_HEADER
+      db 1/0
+    %elif $-FILE_HEADER<=0x200  ; Round up.
+      PE_TEXT_FOFS equ ($-FILE_HEADER+0x1ff)&~0x1ff  ; Must be divisble by 0x200. Round up.
+    %else  ; Round down.
+      PE_TEXT_FOFS equ ($-FILE_HEADER)&~0x1ff  ; Must be divisble by 0x200. Round down.
+    %endif
+    %define PE_TEXT_FOFS PE_TEXT_FOFS
+  %endif
+  %if PE_TEXT_FOFS<=0
+    %error ERROR_PE_TEXT_FOFS_MUST_BE_POSITIVE
+    db 1/0
+  %endif
+  %if PE_TEXT_FOFS&0x1ff
+    %error ERROR_RVA_TEXT_MUST_BE_0x200_ALIGNED
+    db 1/0
+  %endif
+  %if 0 && IMAGE_NT_HEADERS_end-FILE_HEADER>=0x800  ; Maximum for Win32s is 2048 bytes. We don't enforce it since Win32s can't run console programs anyway.
+    %error ERROR_PE_HEADER_TOO_LONG_FOR_WIN32S
+    db 1/0
+  %endif
+  %if IMAGE_NT_HEADERS_end-FILE_HEADER>PE_RVA_TEXT_0  ; Windows NT 3.51 and Windows XP (and possibly others, but not Wine 5.0) require it.
+    %error ERROR_PE_HEADER_ENDS_AFTER_FIRST_SECTION_STARTS
+    db 1/0
+  %endif
+%endm
+
+%macro pe_start_text 0  ; For users who have already called pe_header.
+  pe_start_text __PE_ENTRY_DEFINED_ELSEWERE__
+%endm
+%macro pe_start_text 1  ; %1: entry point (_start) label.
+  %ifndef IMAGE_NT_HEADERS
+    pe_header %1
+  %endif
+  pe_set_sizes  ; Sets PE_TEXT_FOFS, PE_RVA_TEXT_0.
+  %if $-FILE_HEADER<PE_TEXT_FOFS
+    times PE_TEXT_FOFS-($-FILE_HEADER) db 0
+    SECTION_TEXT: equ $  ; `equ $' for symmetry with the %else branch.
+  %else
+    SECTION_TEXT: equ FILE_HEADER+PE_TEXT_FOFS
+  %endif
   %define __reloc_count 0
   %define __kimport_count 0
 %endm  ; pe_start_text.
@@ -318,6 +369,10 @@
 
 ; Must be called 0 or 1 time, between pe_start_text and pe_bss. Typically called right before pe_bss.
 %macro pe_structures 0
+  %ifdef __kimporti
+    %error ERROR_PE_STRUCTURES_CALLED_MULTIPLE_TIMES
+    db 1/0
+  %endif
   __kimport_dllname: db 'kernel32.dll', 0
   %define __kimporti 0
   %rep __kimport_count
@@ -329,7 +384,7 @@
   ; They are ignored by Wine, Windows NT, Windows 95 and Windows XP+.
   RELOC_BLOCKS:  ; https://learn.microsoft.com/en-us/windows/win32/debug/pe-format#the-reloc-section-image-only
   RELOC_BLOCK__0:  ; Each block must start on a 32-bit boundary.
-  dd RVA_TEXT_0  ; dd 0x1000  ; !! Use a larger base? What is the alignment?
+  dd PE_RVA_TEXT_0  ; dd 0x1000  ; !! Use a larger base? What is the alignment?
   dd RELOC_BLOCK__0_end-RELOC_BLOCK__0      ; dd 0x10
   .relocs:
   BASERELOC_HIGHLOW equ 0x3000  ; IMAGE_REL_BASED_HIGHLOW (== 3) << 12. The lower 12 bits contain the actual offset where to apply the relocation.
@@ -365,13 +420,11 @@
   IMAGE_IMPORT_DESCRIPTOR_1:  ; Last Import directory table, marks end-of-list.
   dd 0, 0, 0, 0, 0  ; Same fields as above, filled with 0s.
   IMAGE_IMPORT_DESCRIPTORS_end:
-  %if 0  ; !!! Enable it again for Windows 95.
   IMAGE_IMPORT_DESCRIPTOR_2:
   dd 0, 0, 0, 0, 0  ; Same fields as above, filled with 0s. For Windows 95 4.00.950 C HeapAlloc(...) compatibility.
   IMAGE_IMPORT_DESCRIPTOR_3:
   dd 0, 0, 0, 0, 0  ; Same fields as above, filled with 0s. For Windows 95 4.00.950 C after-boot compatibility.
   dd 0  ; !!! Why this extra? Does Windows 95 need it? Test it again without it.
-  %endif
   %define pe_structures pe_structures  ; Indicate to pe_bss that pe_structures has been called.
 %endm
 
@@ -396,6 +449,22 @@
   SECTION_BSS_end:
   %if __reloc_count!=__reloci
     %error ERROR_RELOC_FOUND_TOO_LATE
+    db 1/0
+  %endif
+  %if __kimport_count!=__kimporti
+    %error ERROR_KIMPORT_FOUND_TOO_LATE
+    db 1/0
+  %endif
+  %ifndef PE_IMAGE_BASE  ; No need to define any earlier. This is to discourage users from using it in an `%if'. The proper usage is only in IMAGE_OPTIONAL_HEADER32.ImageBase pe_header.
+    PE_IMAGE_BASE equ 0x400000  ; Minimum value for efficient Windows 95: 0x400000. Must be positive and divisible by 0x1000.
+    %define PE_IMAGE_BASE PE_IMAGE_BASE
+  %endif
+  %if PE_IMAGE_BASE<=0
+    %error ERROR_PE_IMAGE_BASE_MUST_BE_POSITIVE
+    db 1/0
+  %endif
+  %if PE_IMAGE_BASE&0xfff
+    %error ERROR_PE_IMAGE_BASE_MUST_BE_PAGE_ALIGNED
     db 1/0
   %endif
 %endm
