@@ -29,7 +29,7 @@ exec <"$bat_file"  # Open it as stdin. Fail quickly if it doesn't exist.
 
 # Poor man's DOS .bat executor.
 # It prints all commands, and it stops at the first failure.
-# !!! When writing files, emu2 tries to find a longer filename.
+# When writing files, emu2 tries to find a longer filename, and overwrite it (sigh). However, our pathed emu2-lc doesn't do this.
 while read line; do  # Read next line from "$bat_file".
   line="${line%$cr}"
   line="$(echo $line)"  # Perform word splitting on whitespace.
