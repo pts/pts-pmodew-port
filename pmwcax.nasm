@@ -39,6 +39,10 @@
 
 ; --- Connfiguration.
 
+; -DDEBUG can also be specified on the command line.
+; -DMINDOSMEM can also be specified on the command line.
+; -DFASTSORT can also be specified on the command line.
+
 %ifdef OS_WIN32  ; Can be specified on the command line.
 %endif
 
@@ -88,33 +92,34 @@ EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early f
   dd IMAGE_NT_HEADERS-FILE_HEADER  ; Windows uses this dword pointer at file offset 0x3c to find the PE header.
   %define FILE_HEADER FILE_HEADER  ; Indicate to pe_start_text that the stub has been created.
 
+  %macro include_dos_pmwca 0
+    HDRSIZE equ ($-dos_exe_header)>>4  ; Round down.
+    %if HDRSIZE<4
+      %error ERROR_ASSERT_HDRSIZE_TOO_SMALL
+      db 1/0
+    %endif
+    dos_exe_image: equ dos_exe_header+(HDRSIZE<<4)
+
+    bits 16
+    cpu 8086
+    %define PMWCA_CODE_ONLY  ; Don't emit R_fatal_msg or R_preparator_buf here. Used by the included pmwca.nasm.
+    BASE equ 0x100  ; Used by the included pmwca.nasm.
+    org BASE-(HDRSIZE<<4)  ; For DOS .exe. It works as late as this.
+    com_file_start: equ dos_exe_image  ; Used by the included pwmca.nasm.
+    %include 'pmwca.nasm'
+    cpu 386
+    bits 32
+    %undef BASE  ; Make sure we don't use any specific BASE address, because the loader may relocate the .exe image to another base address.
+  %endm
+
   pe_header _start
-  ; Now we are near file offset 0x130. If we haven't added anything here,
-  ; there would be padding until file offset 0x200 (SECTION_TEXT). We add
-  ; the 16-bit 8086 code from pmwca.nasm.
-  ;
-  ; !!! To make the DOS .exe image smaller, move the imported symbol names early, here.
-  ; !!! To make the DOS .exe image smaller, move the entire pe_structures early, here. Predict the number of relocations.
-  ; !!! As an alternative, move the start of the DOS .exe image after pe_structures, so that DOS won't load the Win32 code, saving memory. This would waste the file bytes 0x130...0x200.
-
-  HDRSIZE equ ($-dos_exe_header)>>4  ; Round down.
-  %if HDRSIZE<4
-    %error ERROR_ASSERT_HDRSIZE_TOO_SMALL
-    db 1/0
+  %ifndef MINDOSMEM
+    ; Now we are near file offset 0x130. If we haven't added anything here,
+    ; there would be padding until file offset 0x200 (SECTION_TEXT). We add
+    ; the 16-bit 8086 code from pmwca.nasm.
+    include_dos_pmwca
+    ; Now we are near file offset 0x50d.
   %endif
-  dos_exe_image: equ dos_exe_header+(HDRSIZE<<4)
-
-  bits 16
-  cpu 8086
-  %define PMWCA_CODE_ONLY  ; Don't emit R_fatal_msg or R_preparator_buf here. Used by the included pmwca.nasm.
-  BASE equ 0x100  ; Used by the included pmwca.nasm.
-  org BASE-(HDRSIZE<<4)  ; For DOS .exe. It works as late as this.
-  com_file_start: equ dos_exe_image  ; Used by the included pwmca.nasm.
-  %include 'pmwca.nasm'
-  cpu 386
-  bits 32
-  ; Now we are near file offset 0x50d.
-
   pe_start_text
   text: equ SECTION_TEXT
   %undef BASE  ; Make sure we don't use any specific BASE address, because the loader may relocate the .exe image to another base address.
@@ -1592,6 +1597,9 @@ R_fatal_msg:	db 'pmwca: fatal: '
 
 %ifdef OS_WIN32
   pe_structures  ; Put them early so that the TEXT and BSS can touch below without a gap (i.e. no ERROR_CDATA_MUST_FOLLOW_PREPARATOR_BUF_END).
+  %ifdef MINDOSMEM  ; Emit the start of the DOS .exe image after pe_structures, so that DOS won't load the Win32 code, saving DOS memory and wasting Win32 memory. This would waste the file bytes 0x130...0x200.
+    include_dos_pmwca
+  %endif
 %endif
 
 ; --- Code below here is not executed by compressor, but it is copied near
@@ -1806,6 +1814,9 @@ R_jump_to_program.u_sp: equ $-2
 
 preparator_buf.end:
 
+%ifdef MINDOSMEM
+  %undef PMWCA_CODE_ONLY  ; For the larger MAX_USIZE limit below.
+%endif
 %ifdef PMWCA_CODE_ONLY  ; !!! Simplify this: use the smallest limit of these, they are not too far from 0x7000.
   %ifdef DEBUG
     MAX_USIZE equ 0x6f20  ; Smaller limit DOS in the DOS + Win32 combined target in DEBUG mode. !!! Find the exact limit.

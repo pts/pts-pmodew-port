@@ -59,6 +59,8 @@ for arg in "$@"; do
    --compressor[-=]nasm32) compressor=nasm32 ;;  # Linux i386 ./pmwca compiled with NASM.
    --compressor[-=]win32 | --compressor[-=]nasmwin32 | --compressor[-=]doswin32-win32) compressor=win32 ;;  # Win32 pmwca.exe compiled with NASM.
    --compressor[-=]stub16 | --compressor[-=]doswin32-dos) compressor=stub16 ;;  # DOS stub of the Win32 pmwca.exe compiled with NASM.
+   --compressor[-=]win32-mindosmem) compressor=win32-mindosmem ;;  # Win32 pmwca.exe compiled with NASM, uses less memory on DOS.
+   --compressor[-=]stub16-mindosmem) compressor=stub16-mindosmem ;;  # DOS stub of the Win32 pmwca.exe compiled with NASM, uses less memory on DOS.
    *) echo "fatal: unknown command-line flag: $arg" >&2; exit 1 ;;
   esac
 done
@@ -78,12 +80,13 @@ elif test "$compressor" = nasm32; then
   "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -o "$compressor" pmwcax.nasm
   chmod +x "$compressor"
   set +x
-elif test "$compressor" = win32 || test "$compressor" = stub16; then
+elif test "$compressor" = win32 || test "$compressor" = stub16 || test "$compressor" = win32-mindosmem || test "$compressor" = stub16-mindosmem; then
+  case "$compressor" in *-mindosmem) compressor="${compressor%-*}"; mindosmem_flag=-DMINDOSMEM ;; *) mindosmem_flag= ;; esac
   compressor=pmwca.exe."$compressor"
   set -x  # Echo all commands run.
   # !!! Specify stack and heap size, like this: wlink op q op start=_start op noext op nou op nored op d form win nt ru con=3.10 op h=4K com h=0 op st=1024K com st=4K f pmwca.obj n "pmwca.exe"
-  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -DOS_WIN32 -o pmwca.exe pmwcax.nasm
-  "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -DOS_WIN32 -o pmwca.opt.exe pmwcax.nasm
+  "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -DOS_WIN32 $mindosmem_flag -o pmwca.exe pmwcax.nasm
+  "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -DOS_WIN32 $mindosmem_flag -o pmwca.opt.exe pmwcax.nasm
   cmp pmwca.opt.exe pmwca.exe
   rm -f pmwca.opt.exe
   set +x
