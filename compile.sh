@@ -84,7 +84,6 @@ elif test "$compressor" = win32 || test "$compressor" = stub16 || test "$compres
   case "$compressor" in *-mindosmem) compressor="${compressor%-*}"; mindosmem_flag=-DMINDOSMEM ;; *) mindosmem_flag= ;; esac
   compressor=pmwca.exe."$compressor"
   set -x  # Echo all commands run.
-  # !!! Specify stack and heap size, like this: wlink op q op start=_start op noext op nou op nored op d form win nt ru con=3.10 op h=4K com h=0 op st=1024K com st=4K f pmwca.obj n "pmwca.exe"
   "$nasm" -O0 -w+orphan-labels -DPMWV="$pmwv" -DOS_WIN32 $mindosmem_flag -o pmwca.exe pmwcax.nasm
   "$nasm" -O32700 -w+orphan-labels -DPMWV="$pmwv" -DOS_WIN32 $mindosmem_flag -o pmwca.opt.exe pmwcax.nasm
   cmp pmwca.opt.exe pmwca.exe

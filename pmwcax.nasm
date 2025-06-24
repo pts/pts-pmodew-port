@@ -114,7 +114,10 @@ EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early f
     bits 32
     %undef BASE  ; Make sure we don't use any specific BASE address, because the loader may relocate the .exe image to another base address.
   %endm
-
+  pe_set SizeOfStackReserve, 64<<10
+  pe_set SizeOfStackCommit, 4<<10
+  pe_set SizeOfHeapReserve, 4<<10  ; Setting it to 0 would Windows use 1 MiB (too much).
+  pe_set SizeOfHeapCommit, 4<<10  ; Setting it to 0 would Windows use 4 KiB.
   pe_header _start
   %ifndef MINDOSMEM
     ; Now we are near file offset 0x130. If we haven't added anything here,
