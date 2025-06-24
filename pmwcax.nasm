@@ -19,7 +19,7 @@
 ;
 ; !! Check diff with `nasm -O999999999'. It seems to be OK now.
 ; !! speed optimization: For compress, add a lookup table which finds the previous occurrence of a word (2 bytes) in O(1) time.
-; !! why segfault? Is this a NASM bug? How not to trigger it? ./nasm-2.16.03 -O0 -w+orphan-labels -DOS_WIN32 -o pmwca.exe pmwcax.nasm
+; !!! This looks like a NASM 2.16.03 compilation bug: segfault on any %include and incbin -- too many open files? ./nasm-2.16.03 -O0 -w+orphan-labels -DOS_WIN32 -o pmwca.exe pmwcax.nasm
 ;
 ; The __watcall calling convention passes the first 3 function arguments in
 ; EAX, EDX, EBX respectively, returns the result in EAX, and the callee has
