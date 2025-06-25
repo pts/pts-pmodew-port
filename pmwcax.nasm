@@ -897,8 +897,11 @@ O_TRUNC equ 1000o  ; Linux.
       .open:	push eax  ; lpFileName. From argument pathname.
 		R0 call dword [R(__imp__CreateFileA@28)]  ; Ruins EDX and ECX.
 		pop ecx  ; ECX := slot pointer to file_handle.
+		sub eax, byte 1
+		jc short .done  ; Return -1 if _CreateFileA@28 has reaturned a NULL handle. (This is unusual.)
+		inc eax
 		cmp eax, byte INVALID_HANDLE_VALUE  ; -1.
-		je short .done
+		je short .done  ; Return -1 if _CreateFileA@28 has reaturned a NULL handle. (This is typical for _CreateFileA@28 to report an error.)
 		mov [ecx], eax  ; Save handle to file_handle.
 		push byte 3
 		pop eax  ; EAX := 3 (fd).
