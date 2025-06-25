@@ -927,7 +927,7 @@ O_TRUNC equ 1000o  ; Linux.
 		push eax  ; Save fd.
 		call handle_from_fd
 		cmp eax, byte -1
-		je short .pop_eax_bad
+		je short .pop_done
 		push eax  ; fd argument of _CloseHandle@4.
 		R0 call dword [R(__imp__CloseHandle@4)]  ; Ruins EDX and ECX. Returns nonzero in EAX on success.
 		pop edx  ; Restore EDX := fd.
@@ -935,18 +935,20 @@ O_TRUNC equ 1000o  ; Linux.
 		dec edx
 		cmp edx, byte 3-1
 		ja short .closed
-		R1 and [R(stdout_handle)+edx*4], byte NULL  ; Change the stored handle value to NULL.
+		R1 and dword [R(stdout_handle)+edx*4], byte NULL  ; Change the stored handle value to NULL.
     %else
 		times 2 dec edx
 		cmp edx, byte 3-2
 		ja short .closed
-		R1 and [R(stderr_handle)+edx*4], byte NULL  ; Change the stored handle value to NULL.
+		R1 and dword [R(stderr_handle)+edx*4], byte NULL  ; Change the stored handle value to NULL.
     %endif
-    .closed:	test eax, eax  ; _CloseHandle@4 returns 0 on success.
-		jnz short .done
-    .pop_eax_bad:
-		pop eax  ; Discard fd.
-    .bad:	or eax, byte -1  ; We will return -1 on failure.
+    .closed:	xchg edx, eax  ; EDX := EAX (return value of _CloseHandle@4); EAX := junk.
+		xor eax, eax
+		test edx, edx
+		jnz short .done  ; Return 0 if _CloseHandle@4 has returned nonzero (success).
+		dec eax  ; EAX := -1 (error).
+		db 0xa8  ; Opcode of `test al, ...'. Skip the next `pop edx' instruction.
+    .pop_done:	pop edx  ; Discard fd.
     .done:	pop edx  ; Restore.
 		pop ecx  ; Restore.
 		ret
