@@ -876,7 +876,7 @@ O_TRUNC equ 1000o  ; Linux.
 		R0 mov ecx, R(file_handle)
 		cmp dword [ecx], byte 0
 		je short .found_slot
-		or ecx, byte -1
+		or eax, byte -1
 		jmp short .done  ; Too many open files. We support 1 open file in addition to stderr.
       .found_slot:
 		push ecx  ; Save.
