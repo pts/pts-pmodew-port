@@ -525,6 +525,17 @@ fatal_if_eax_lt_0:
 		js short fatal
 		ret
 
+; Calls write_, and exits with a fatal error if the number of bytes written
+; is different than desired (in EBX).
+write_or_fatal:
+		push ebx  ; Save number of bytes written.
+		call write_
+		pop ebx  ; Restore EBX := number of bytes written.
+		mov bp, 'WR'  ; File write error or short write.
+		cmp eax, ebx
+		jne short fatal
+		ret
+
 ; argc is in EAX, argv is in EDX. Returns exit code in EAX.
 main_:  ; int __watcall main(int argc, char **argv);
 		; Falls through.
@@ -679,9 +690,7 @@ make_exe_headers_consistent:
 		push eax  ; Filehandle of output file.
 		R0 mov edx, R(uexehdr)  ; DS:EDX == pointer to start of buffer to be written.
 		mov ebx, EXEHDRSIZE  ; Number of bytes to write.
-		call write_
-		mov bp, 'WR'  ; File write error.
-		call fatal_if_eax_lt_0
+		call write_or_fatal
 		pop eax  ; Restore EAX := filehandle of output file.
 		R0 mov edx, R(udata)  ; DS:EDX == pointer to start of buffer to be written.
 		pop ebx  ; Number of DOS .exe image bytes to write.
@@ -761,9 +770,7 @@ write_cdata:	pop eax  ; Restore EAX := offset of output filename.
 		sub ebx, edx  ; EBX := EDI - preparator_buf. EBX == number of bytes to write.
 		; Fall through.
 
-final_write:	call write_
-		mov bp, 'WR'  ; File write error.
-		call fatal_if_eax_lt_0
+final_write:	call write_or_fatal
 %if 0  ; No need to close the output file, DOS will close it right below, when to process exits.
 		mov eax, ...  ; Close file using handle.
 		call close_

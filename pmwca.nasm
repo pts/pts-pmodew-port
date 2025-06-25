@@ -140,6 +140,18 @@ pmwca_fatal_if_c:
 		jc short pmwca_fatal
 		ret
 
+; Calls DOS syscall AH == 0x40 (write to file using handle), and exits with
+; a fatal error if the number of bytes written is different than desired (in
+; CX).
+pmwc_write_or_fatal:
+		mov ah, 0x40  ; Write to file using handle.
+		int 0x21  ; DOS syscall.
+		mov bp, 'WR'  ; File write error.
+		jc short pmwca_fatal
+		cmp ax, cx
+		jne short pmwca_fatal
+		ret
+
 pmwca_parse_command_line.done:
 		; Now: DX == offset of input filename (uncompressed DOS .exe); DI == offset of output filename (compressed DOS .exe).
 		; Falls through.
@@ -269,13 +281,10 @@ pmwca_make_exe_headers_consistent:
 		mov bp, 'OR'  ; Error opening input file for rewriting.
 		call pmwca_fatal_if_c
 		xchg bx, ax  ; BX := filehandle of output file; AX := junk.
-		mov ah, 0x40  ; Write to file using handle.
 		;mov bx, ...  ; BX == filehandle of output file.
 		mov dx, R_uexehdr  ; DS:DX == pointer to start of buffer to be written.
 		mov cx, EXEHDRSIZE  ; Number of bytes to write.
-		int 0x21  ; DOS syscall.
-		mov bp, 'WR'  ; File write error.
-		call pmwca_fatal_if_c
+		call pmwc_write_or_fatal
 		;mov bx, ...  ; BX == filehandle of output file.
 		mov dx, R_udata  ; DS:DX == pointer to start of buffer to be written.
 		pop cx  ; Number of DOS .exe image bytes to write.
@@ -356,10 +365,7 @@ pmwca_write_cdata:
 		; Falls through.
 
 pmwca_final_write:
-		mov ah, 0x40  ; Write to file using handle.
-		int 0x21  ; DOS syscall.
-		mov bp, 'WR'  ; File write error.
-		call pmwca_fatal_if_c
+		call pmwc_write_or_fatal
 %if 0  ; No need to close the output file, DOS will close it right below, when to process exits.
 		mov ah, 0x3e  ; Close file using handle.
 		int 0x21  ; DOS syscall.
