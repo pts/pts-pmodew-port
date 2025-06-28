@@ -83,6 +83,15 @@
   %assign MINDOSMEM MINDOSMEM  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef FN83  ; Can be specified on the command line.
+  ;%define FN83 1  ; Use 8.3 filenames in %include, i.e. .nas extension.
+  %define FN83 0  ; Use long filenames in %include, i.e. .nasm extension.
+%elifidn (FN83), ()
+  %define FN83 1
+%else
+  %assign FN83 FN83  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 ; ---
 
 _nasm32_xchg_ebx_ecx equ 0xd987  ; To make `xchg ebx, ecx' in `bits 32' in NASM 2.16.03 behave like in NASM 0.98.39.
@@ -99,7 +108,11 @@ NULL equ 0
 EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early for optimizations in the included pmwca.nasm.
 
 %if OS_WIN32
-  %include 'flexpe.nasm'
+  %if FN83
+    %include 'flexpe.nas'
+  %else
+    %include 'flexpe.nasm'
+  %endif
   FILE_HEADER:  ; Needed by our reimplementation of pe_stub in flexpe.nasm.
   DOS_STACK_SIZE equ 0xa0  ; The program itself uses <0x20 bytes. See https://retrocomputing.stackexchange.com/q/30996 why 0xa0 should be enough, including interrupts and TSRs.
   %define EXIT_SUCCESS_TO_DOS int 0x20  ; Works in a DOS .exe (us) or .com program if CS == PSP. Used by the included pmwca.nasm.
@@ -140,7 +153,11 @@ EXEHDRSIZE equ 0x200  ; Size of DOS .exe header created by TLINK. Define early f
     BASE equ 0x100  ; Used by the included pmwca.nasm.
     org BASE-(HDRSIZE<<4)  ; For DOS .exe. It works as late as this.
     com_file_start: equ dos_exe_image  ; Used by the included pwmca.nasm.
-    %include 'pmwca.nasm'
+    %if FN83
+      %include 'pmwca.nas'
+    %else
+      %include 'pmwca.nasm'
+    %endif
     cpu 386
     bits 32
     %undef BASE  ; Make sure we don't use any specific BASE address, because the loader may relocate the .exe image to another base address.
