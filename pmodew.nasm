@@ -29,7 +29,7 @@
 %endif
 
 %ifndef UNC  ; Can be specified on the command line.
-  %define UNC 0  ; Generate non-working, uncompressed DOS .exe (pmodewu.exe), which will have to be compressed by pmwc to produce the working, compressed, final, release pmodew.exe.
+  %define UNC 0   ; Generate non-working, uncompressed DOS .exe (pmodewu.exe), which will have to be compressed by pmwc to produce the working, compressed, final, release pmodew.exe.
   ;%define UNC 1  ; Generate the working, remains-uncompressed DOS .exe stub (pmodewv.exe). Longer that pmodew.exe, but it is faster to create, and it is useful for testing.
 %elifidn (UNC), ()
   %define UNC 1
@@ -38,8 +38,8 @@
 %endif
 
 %ifndef DEBUG  ; Can be specified on the command line.
-  %define DEBUG 0  ; Disable debug code.
-  ;%define DEBUG 1  ; Enable debug code. Not implemented.
+  %define DEBUG 0   ; Disable debug code.
+  ;%define DEBUG 1  ; Enable  debug code. Not implemented.
 %elifidn (DEBUG), ()
   %define DEBUG 1
 %else
@@ -47,8 +47,8 @@
 %endif
 
 %ifndef PMW1UNCOMP  ; Can be specified on the command line.
-  %define PMW1UNCOMP 0  ; PMW1-format executables are compressed.
-  ;%define PMW1UNCOMP 1 ; PMW1-format executables are uncompressed.
+  %define PMW1UNCOMP 0   ; PMW1-format 32-bit payloads are compressed. Uncompressed payloads are not supported.
+  ;%define PMW1UNCOMP 1  ; PMW1-format 32-bit payloads are uncompressed. Compressed payloads are not supported.
 %elifidn (PMW1UNCOMP), ()
   %define PMW1UNCOMP 1
 %else
@@ -56,8 +56,8 @@
 %endif
 
 %ifndef LOADLE  ; Can be specified on the command line.
-  %define LOADLE 1  ; Enable loading of LE-format executables.
-  ;%define LOADLE 0  ; Disable loading of LE-format executables.
+  %define LOADLE 1   ; Enable  loading of LE-format 32-bit payloads. These are always uncompressed.
+  ;%define LOADLE 0  ; Disable loading of LE-format 32-bit payloads.
 %elifidn (LOADLE), ()
   %define LOADLE 1
 %else
@@ -65,16 +65,21 @@
 %endif
 
 %ifndef LOADPMW1  ; Can be specified on the command line.
-  %define LOADPMW1 1  ; Enable loading of PMW1-format executables.
-  ;%define LOADPMW1 0  ; Disble loading of PMW1-format executables.
+  %define LOADPMW1 1   ; Enable  loading of PMW1-format 32-bit payloads. These are either compressed or uncompressed, determined at compile time (PMW1UNCOMP), there is no autodetection.
+  ;%define LOADPMW1 0  ; Disable loading of PMW1-format 32-bit payloads.
 %elifidn (LOADPMW1), ()
   %define LOADPMW1 1
 %else
   %assign LOADPMW1 LOADPMW1  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%if LOADLE+LOADPMW1==0
+  %error ERROR_SUPPORT_FOR_ALL_PAYLOAD_FORMATS_DISABLED
+  times -1 nop
+%endif
+
 %ifndef EXCEPTIONS  ; Can be specified on the command line.
-  %define EXCEPTIONS 1  ; Enable DPMI processor exception handler API (int 31h, AX == 202h and AX == 203h).
+  %define EXCEPTIONS 1   ; Enable  DPMI processor exception handler API (int 31h, AX == 202h and AX == 203h).
   ;%define EXCEPTIONS 0  ; Disable DPMI processor exception handler API (int 31h, AX == 202h and AX == 203h).
 %elifidn (EXCEPTIONS), ()
   %define EXCEPTIONS 1
@@ -83,8 +88,8 @@
 %endif
 
 %ifndef INT3108FUNC  ; Can be specified on the command line.
-  %define INT3108FUNC 1  ; Enable DPMI physical address mapping API (int 31h, AX == 8000h and AX == 8001h).
-  ;%define INT3108FUNC 0
+  %define INT3108FUNC 1   ; Enable  DPMI physical address mapping API (int 31h, AX == 8000h and AX == 8001h).
+  ;%define INT3108FUNC 0  ; Disable DPMI physical address mapping API (int 31h, AX == 8000h and AX == 8001h).
 %elifidn (INT3108FUNC), ()
   %define INT3108FUNC 1
 %else
@@ -92,7 +97,7 @@
 %endif
 
 %ifndef INT1B  ; Can be specified on the command line.
-  %define INT1B 1  ; Enable handling of the Ctrl-Break interrupt (int 1bh).
+  %define INT1B 1   ; Enable  handling of the Ctrl-Break interrupt (int 1bh).
   ;%define INT1B 0  ; Disable handling of the Ctrl-Break interrupt (int 1bh).
 %elifidn (INT1B), ()
   %define INT1B 1
@@ -101,7 +106,7 @@
 %endif
 
 %ifndef INT33  ; Can be specified on the command line.
-  %define INT33 1  ; Enable handling of the mouse interrupt (int 33h).
+  %define INT33 1   ; Enable  handling of the mouse interrupt (int 33h).
   ;%define INT33 0  ; Disable handling of the mouse interrupt (int 33h).
 %elifidn (INT33), ()
   %define INT33 1
@@ -110,8 +115,8 @@
 %endif
 
 %ifndef OPENTYPE  ; Can be specified on the command line. Determines how PMODE/W finds the filename of the payload .exe file to open.
-  %define OPENTYPE 1  ; Open the currently running .exe file. Useful when PMODE/W is used as a stub at the beginning of the payload .exe file.
-  ;%define OPENTYPE 2  ; Open the .exe file with filename as a NUL-terminated string at 0:4c0h == 40h:c0h. At most 40h == 64 bytes can be stored there.
+  %define OPENTYPE 1   ; Open the currently running .exe file. Useful when PMODE/W is used as a stub at the beginning of the payload .exe file.
+  ;%define OPENTYPE 2  ; Open the .exe file with filename as a NUL-terminated string at 0:4c0h == 40h:0c0h. At most 40h == 64 bytes can be stored there.
   ;%define OPENTYPE 3  ; Open the .exe file specified at the beginning of the command line (space-separated), and removes that filename from the command line.
 %elifidn (OPENTYPE), ()
   %define OPENTYPE 1
@@ -120,7 +125,7 @@
 %endif
 
 %ifndef VARTYPE  ; Can be specified on the command line. Determines how PMODE/W finds the 32-bit payload (LE or PMW1) in the payload .exe file.
-  %define VARTYPE 1  ; Use the pmodew_config at the first 15h bytes of the MZ .exe image (file offset hdrsize<<4) as load-time configuration.
+  %define VARTYPE 1   ; Use the pmodew_config at the first 15h bytes of the MZ .exe image (file offset hdrsize<<4) as load-time configuration.
   ;%define VARTYPE 2  ; Use the hardcoded default values (PM_*) as load-time configuration.
 %elifidn (VARTYPE), ()
   %define VARTYPE 1
@@ -5317,7 +5322,7 @@ _relocate1_PMW1:
 	mov edx,[-pmodewe+_dtabufptr100h]          ; Read in the size of the next
 	call _readfile                  ; relocation block
 
-%if 0  ; This works in NASM.
+%if 0  ; This is commented out in TASM. If enabled, it would compile in NASM.
         fixpre_movzx_word ecx,gs,gs:102h
         cmp ecx,[-pmodewe+_fixupbufsize]           ; Make sure it will fit in our fixup
         ja _loaderror                   ; buffer
@@ -7663,7 +7668,7 @@ _openexe:
 	jmp _openexe2  ; This is a no-op, openexe2 is right after this.
 %endif
 
-%if OPENTYPE==2  ; Opens the .exe file with filename as a NUL-terminated string at 0:4c0h == 40h:c0h. At most 0x40 == 64 bytes can be stored there.
+%if OPENTYPE==2  ; Opens the .exe file with filename as a NUL-terminated string at 0:4c0h == 40h:0c0h. At most 0x40 == 64 bytes can be stored there.
 _openexe1_opentype_2:
 _openexe1:
 _openexe:
