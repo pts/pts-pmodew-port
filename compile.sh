@@ -1,5 +1,8 @@
 #! /bin/sh --
 # by pts@fazekas.hu at Thu Jun 12 11:50:15 CEST 2025
+#
+# Usage for compiling with NASM: ./compile.sh --nasm
+#
 set -e
 unset LANG LANGUAGE INC LIB LIBDIR WLINK_LNK INCLUDE
 export LC_ALL=C  # For reproducible builds.
@@ -17,7 +20,8 @@ asm_prog=tasm20.exe
 tlink_exe=tlink20.exe
 emudos=tools/kvikdos-v1
 emudosflags=
-nasm=tools/nasm-0.98.39.upx
+nasm=tools/nasm-0.98.39.upx  # -dd-nasm=... affects it.
+nasm0="$nasm"  # --dd-nasm=... doesn't affect it.
 pmwv=33
 is_dd=
 is_reproducible=1
@@ -33,10 +37,12 @@ for arg in "$@"; do
   case "$arg" in
    --asm=* | --asm-prog=*) asm_prog="${arg#*=}" ;;  # Assembler program command name. TASM or NASM.
    --tasm=*) echo "fatal: please use --asm=... instead of --tasm=..." >&2; exit 1 ;;  # To avoid confusion with --tasm20.exe.
+   --nasm=*) echo "fatal: please use --asm=... instead of --nasm=..." >&2; exit 1 ;;
+   --nasm) asm_prog="$nasm0" ;;
    --tasm* | --t32*) asm_prog="${arg#--}" ;;
    --tlink=*) tlink_exe="${arg#*=}" ;;  # Unused and ignored if NASM is used.
    --tlink*.exe) tlink_exe="${arg#--}" ;;
-   --nasm=*) nasm="${arg#*=}" ;;  # For --dd. Ignored if a NASM command is specified in --asm=... .
+   --dd-nasm=*) nasm="${arg#*=}" ;;  # For --dd. Ignored if a NASM command is specified in --asm=... .
    --kvikdos=*) emudos="${arg#*=}"; is_emu2=; is_explicit_kvikdos=1; emudosflags=; is_dnx= ;;
    --kvikdos) emudos=tools/kvikdos-v1; is_emu2=; is_explicit_kvikdos=1; emudosflags=; is_dnx= ;;
    --emu2=*) emudos="${arg#*=}"; is_emu2=1; is_explicit_kvikdos=; emudosflags=; is_dnx= ;;
