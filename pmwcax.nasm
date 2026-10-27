@@ -1719,32 +1719,41 @@ padding:	dd 0       ; At file offset 0x1c. Unused.
 
 cexe_image:
 
-pmodew_config:
-; * This is 0x15 == 21 bytes at cexe_image+0.
-; * This is 0x15 == 21 bytes at uncompressed exe_image+0x8e, it's
-;   zero-initialized there.
-; * Here is how pmodew_config is loaded. When DOS loads the .exe with
-;   the PMODE/W stub, it loads the pmodew_config here as well, but the
-;   decompressor below ignores and overwrites it.
-;   The PMODE/W function _openexe2 (with VARTYPE == 1) loads the first
-;   0x15-2 == 21-2 bytes of this from the beginning of DOS .exe image (at
-;   hdrsize<<4) to uncompressed exe_image+0x8e == _pm_pagetables. And then
-;   it loads 2 more bytes to another uncompressed exe_image+0x196 ==
-;   _lowmin. The loaded 0x13 bytes must fit to the first 0x40+0x15 bytes of
-;   the .exe file. Typically it is between 0x20..0x35, so they fit.
-.pagetables:	db 4  ; Number of page tables under VCPI.                                             _pm_pagetables:
-.selectors:	dw 0x100  ; Max selectors under VCPI/XMS/raw.                                         _pm_selectors:
-.rmstacklen:	dw 0x40  ; Real mode stack length, in para.                                           _pm_rmstacklen:
-.pmstacklen:	dw 0x80  ; Protected mode stack length, in para.                                      _pm_pmstacklen:
-.rmstacks:	db 8  ; Real mode stack nesting.                                                      _pm_rmstacks:
-.pmstacks:	db 8  ; Protected mode stack nesting.                                                 _pm_pmstacks:
-.callbacks:	db 0x20  ; Number of real mode callbacks.                                             _pm_callbacks:
-.mode:		db 1  ; Mode bits.                                                                    _pm_mode:
-.pamapping:	db 1  ; Physical address mappings pages max.                                          _pm_pampagemax:
-.crap:		dw 0  ; Unused.
-.options:	db 1  ; Option flags. 0 = hide copyright message; 1 == display copyright message.     _pm_options:
-.extmax:	dd 0x7fffffff  ; Maximum extended memory to allocate.                                 _pm_maxextmem:
-.lowmin:	dw 0  ; Amount of low memory to try and save. Loaded by _openexe2 to somewhere else.  _lowmin:
+pmodew_config:  ; Load-time configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
+; This is 0x15 == 21 bytes at compressed exe_image+0.
+;
+; This is 0x13 == 19 bytes at uncompressed exe_image+0x8e, and then 2
+; bytes for _pm16_lowmin at uncompressed_exe_image+0x196, and it's
+; zero-initialized there both, and will be overwritten by _openexe2.
+;
+; Here is how pmodew_config is loaded:
+;
+; 1. When DOS loads the .exe with the PMODE/W stub, it loads the
+;    pmodew_config here as well, but the decompressor below ignores and
+;    overwrites it.
+; 2. The function _openexe2 (with -DVARTYPE=1, default) loads the first
+;    0x15-2 == 21-2 bytes of this from the beginning of DOS .exe image (at
+;    hdrsize<<4) to uncompressed exe_image+0x8e ==
+;    _pm_config_except_for_lowmin. And then it loads 2 more bytes to
+;    another uncompressed exe_image+0x196 == _pm16_lowmin. The loaded 0x15
+;    bytes must fit to the first 0x40+0x15 bytes of the .exe file. Typically
+;    it is between 0x20...0x35, so they fit.
+; 3. The function _openexe2 (with -DVARTYPE=2, non-default) populates
+;    _pm_config_except_for_lowmin iand _pm16_lowmin from hardcoded defaults.
+.pagetables:	db 4  ; Number of page tables under VCPI. _pm_pagetables
+.selectors:	dw 100h  ; Maximum number of selectors under VCPI/XMS/raw. _pm_selectors
+.rmstacklen:	dw 40h  ; Real-mode stack length, in para (10h bytes). _pm_rmstacklen
+.pmstacklen:	dw 80h  ; Protected-mode stack length, in para (10h bytes). _pm_pmstacklen
+.rmstacks:	db 8  ; Real-mode stack nesting. _pm_rmstacks
+.pmstacks:	db 8  ; Protected-mode stack nesting. _pm_pmstacks
+.callbacks:	db 20h  ; Number of real-mode callbacks. _pm_callbacks
+.mode:		db 1  ; Mode bits. mode&1 means: detect VCPI before DPMI. _pm_mode
+.pampagemax:	db 1  ; Maximum number of physical address mapping pages. Also called as .pamapping. _pm_pampagemax
+.crap:		dw 0  ; Unused. _pm_crap
+.options:	db 1  ; Option bits. options&1 means: display copyright message. _pm_options
+.maxextmem:	dd 7fffffffh  ; Maximum extended memory to allocate, in bytes. _pm_maxextmem
+.lowmin:	dw 0  ; Amount of low (below the first 1 MiB) memory to try and save. Loaded by _openexe2 to somewhere else. _pm16_lowmin
+.end:		; @15h.
 
 %if PMWV==33
   copyright:	db 'PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.'

@@ -16,9 +16,10 @@
 ; future, look at the comments with `Diff:' in them.
 ;
 ; TODO(pts): Add manual sizes to do -O0 instead of -O999999999 (with both NASM 0.98.39 and newer).
-;
 
-; --- Configuration.
+; --- Compile-time configuration.
+;
+; See also load-time configuration later.
 
 %ifndef PMWV  ; Can be specified on the command line.
   %define PMWV 33  ; Generate PMODE/W version 1.33.
@@ -29,7 +30,7 @@
 
 %ifndef UNC  ; Can be specified on the command line.
   %define UNC 0  ; Generate non-working, uncompressed DOS .exe (pmodewu.exe), which will have to be compressed by pmwc to produce the working, compressed, final, release pmodew.exe.
-  ;%define UNC 1  ; Generate the working, remains-uncompressed DOS .exe stub (pmodewv.exe).
+  ;%define UNC 1  ; Generate the working, remains-uncompressed DOS .exe stub (pmodewv.exe). Longer that pmodew.exe, but it is faster to create, and it is useful for testing.
 %elifidn (UNC), ()
   %define UNC 1
 %else
@@ -108,19 +109,19 @@
   %assign INT33 INT33  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef OPENTYPE  ; Can be specified on the command line.
-  %define OPENTYPE 1  ; ??.
-  ;%define OPENTYPE 2  ; ??.
-  ;%define OPENTYPE 3  ; ??.
+%ifndef OPENTYPE  ; Can be specified on the command line. Determines how PMODE/W finds the filename of the payload .exe file to open.
+  %define OPENTYPE 1  ; Open the currently running .exe file. Useful when PMODE/W is used as a stub at the beginning of the payload .exe file.
+  ;%define OPENTYPE 2  ; Open the .exe file with filename as a NUL-terminated string at 0:4c0h == 40h:c0h. At most 40h == 64 bytes can be stored there.
+  ;%define OPENTYPE 3  ; Open the .exe file specified at the beginning of the command line (space-separated), and removes that filename from the command line.
 %elifidn (OPENTYPE), ()
   %define OPENTYPE 1
 %else
   %assign OPENTYPE OPENTYPE  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef VARTYPE  ; Can be specified on the command line.
-  %define VARTYPE 1  ; ??.
-  ;%define VARTYPE 2  ; ??.
+%ifndef VARTYPE  ; Can be specified on the command line. Determines how PMODE/W finds the 32-bit payload (LE or PMW1) in the payload .exe file.
+  %define VARTYPE 1  ; Use the pmodew_config at the first 15h bytes of the MZ .exe image (file offset hdrsize<<4) as load-time configuration.
+  ;%define VARTYPE 2  ; Use the hardcoded default values (PM_*) as load-time configuration.
 %elifidn (VARTYPE), ()
   %define VARTYPE 1
 %else
@@ -526,23 +527,59 @@ exe_image:
 reloc_seg pmodewk, PMODE_TEXT  ; PMODE_TEXT segment word public use16 'CODE'
 ;assume  cs:PMODE_TEXT, ds:PMODE_TEXT
 
+; --- Load-time configuration.
+;
+; PMODE/W also has load-time configuration which can be changed using e.g. a
+; hex editor after compilation. Load-time configuration defaults are stored in
+; the source code in 3 places:
+;
+; * pmodew_config in pmwca.nasm and pmwcax.nasm: used in the compressed pmodew.exe (-DUNC=0 -DVARTYPE=1).
+; * pmodew_config in pmodew.nasm: used in the uncompressed pmodewv.exe (-DUNC=1 -DVARTYPE=1).
+; * PM_... constants in pmodew.nasm: used with -DVARTYPE=2.
+;
+; These values are will be copied to _pm_config_except_for_lowmin and
+; _pm16_lowmin when the .exe payload is loaded by _openexe2, and then used
+; from there.
+
+; Load-time configuration default values.
+; Used for (-DUNC=1 -DVARRTYPE=1) via pmodew_config below.
+; Used for -DVARTYPE=2 via _openexe2_vartype_2.
+PM_PAGETABLES	equ 4
+PM_SELECTORS	equ 100h
+PM_RMSTACKLEN	equ 40h
+PM_PMSTACKLEN	equ 80h
+PM_RMSTACKS	equ 8
+PM_PMSTACKS	equ 8
+PM_CALLBACKS	equ 20h
+PM_MODE		equ 1
+PM_PAMPAGEMAX	equ 1
+PM_CRAP		equ 0
+PM_OPTIONS	equ 1
+PM_MAXEXTMEM	equ 7fffffffh
+PM_LOWMIN	equ 0
+
 %if UNC  ; By `nasm -DUNC'. Must be at te beginning of the .exe image, _openexe2 is looking for it there.
-pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the .exe image (hdrsize<<<4).
-.pagetables:	db 4  ; Number of page tables under VCPI. @00 _pm_pagetables
-.selectors:	dw 100h  ; Max selectors under VCPI/XMS/raw. @01 _pm_selectors
-.rmstacklen:	dw 40h  ; Real mode stack length, in para. @03 _pm_rmstacklen
-.pmstacklen:	dw 80h  ; Protected mode stack length, in para. @05 _pm_pmstacklen
-.rmstacks:	db 8  ; Real mode stack nesting. @07 _pm_rmstacks
-.pmstacks:	db 8  ; Protected mode stack nesting. @08 _pm_pmstacks
-.callbacks:	db 20h  ; Number of real mode callbacks. @09 _pm_callbacks
-.mode:		db 1  ; Mode bits. @0ah _pm_mode
-.pamapping:	db 1  ; Physical address mappings pages max. @0bh _pm_pampagemax
-.crap:		dw 0  ; @0ch
-.options:	db 1  ; Option flags. 0 == hide copyright message; 1 == display copyright message. @0eh _pm_options
-.extmax:	dd 7fffffffh  ; Maximum extended memory to allocate. @0fh _pm_maxextmem
-.lowmin:	dw 0  ; Amount of low memory to try and save. Loaded by _openexe2 to somewhere else. @13h _lowmin
-.end:		align 2, db 0  ; @15h
+pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
+.pagetables:	db PM_PAGETABLES	; @0:   db 4. Number of page tables under VCPI. _pm_pagetables
+.selectors:	dw PM_SELECTORS		; @1:   dw 100h. Maximum number of selectors under VCPI/XMS/raw. _pm_selectors
+.rmstacklen:	dw PM_RMSTACKLEN	; @3:   dw 40h. Real-mode stack length, in para (10h bytes). _pm_rmstacklen
+.pmstacklen:	dw PM_PMSTACKLEN	; @5:   dw 80h. Protected-mode stack length, in para (10h bytes). _pm_pmstacklen
+.rmstacks:	db PM_RMSTACKS		; @7:   db 8. Real-mode stack nesting. _pm_rmstacks
+.pmstacks:	db PM_PMSTACKS		; @8:   db 8. Protected-mode stack nesting. _pm_pmstacks
+.callbacks:	db PM_CALLBACKS		; @9:   db 20h. Number of real-mode callbacks. _pm_callbacks
+.mode:		db PM_MODE		; @0ah: db 1. Mode bits. mode&1 means: detect VCPI before DPMI. _pm_mode
+.pampagemax:	db PM_PAMPAGEMAX	; @0bh: db 1. Maximum number of physical address mapping pages. Also called as .pamapping. _pm_pampagemax
+.crap:		dw PM_CRAP		; @0ch: dw 0. Unused. _pm_crap
+.options:	db PM_OPTIONS		; @0eh: db 1. Option bits. options&1 means: display copyright message. _pm_options
+.maxextmem:	dd PM_MAXEXTMEM		; @0fh: dd 7fffffffh. Maximum extended memory to allocate, in bytes. _pm_maxextmem
+.lowmin:	dw PM_LOWMIN		; @13h: dw 0. Amount of low (below the first 1 MiB) memory to try and save. Loaded by _openexe2 to somewhere else. _pm16_lowmin
+.end:		; @15h.
+
+padding_after_config: align 2, db 0
 %endif
+pmodew_config._size equ 15h
+
+; --- Back to pmodewk.asm.
 
 ;
 ; DATA
@@ -625,18 +662,22 @@ pagetabletop    dd      ANY             ; top of page table area
 pagetablefree   dd      ANY
 pagetablepages  dd      ANY
 
-_pm_pagetables  db      ANY             ; number of page tables under VCPI
-_pm_selectors   dw      ANY             ; max selectors under VCPI/XMS/raw
-_pm_rmstacklen  dw      ANY             ; real mode stack length, in para
-_pm_pmstacklen  dw      ANY             ; protected mode stack length, para
-_pm_rmstacks    db      ANY             ; real mode stack nesting
-_pm_pmstacks    db      ANY             ; protected mode stack nesting
-_pm_callbacks   db      ANY             ; number of real mode callbacks
-_pm_mode        db      ANY             ; mode bits
-_pm_pampagemax  db      ANY             ; physical address mapping pages max
-		db      ANY, ANY
-_pm_options     db      ANY             ; PMODE/W option bits
-_pm_maxextmem   dd      ANY             ; maximum extended mem to allocate
+; These must have the same size and order as pmodew_config.
+_pm_config_except_for_lowmin:
+_pm_pagetables  db      ANY
+_pm_selectors   dw      ANY
+_pm_rmstacklen  dw      ANY
+_pm_pmstacklen  dw      ANY
+_pm_rmstacks    db      ANY
+_pm_pmstacks    db      ANY
+_pm_callbacks   db      ANY
+_pm_mode        db      ANY
+_pm_pampagemax  db      ANY
+_pm_crap        dw      ANY
+_pm_options     db      ANY
+_pm_maxextmem   dd      ANY
+;_pm16_lowmin   dw      ANY  ; _pm16_lowmin is in segment pmode16.
+_pm_config_except_for_lowmin.end:  ; == _pm_config_except_for_lowmin+13h
 
 tempd0:                                 ; temporary variables
 tempw0:
@@ -4605,19 +4646,6 @@ int310203:                              ; get processor exception vector
 PMWVER_MAJOR    equ 1
 PMWVER_MINOR    equ PMWV
 
-EXTMAX          equ 7fffffffh
-LOWMIN          equ 00000h
-PM_PMSTACKLEN   equ 80h
-PM_RMSTACKLEN   equ 40h
-PM_PMSTACKS     equ 8
-PM_RMSTACKS     equ 8
-PM_MODE         equ 1
-PM_CALLBACKS    equ 20h
-PM_SELECTORS    equ 100h
-PM_PAGETABLES   equ 4
-PM_PAMPAGEMAX   equ 1
-PM_OPTIONS      equ 1
-
 reloc_seg pmodewe, pmcode16  ; pmcode16 segment para public use16 'CODE'
 ;assume cs:pmcode16,ds:pmcode16
 
@@ -4668,7 +4696,7 @@ decode_filesize         dd ANY
 decode_handle           dw ANY
 %endif
 
-_lowmin         dw ANY
+_pm16_lowmin    dw ANY
 
 _selbuf         dw ANY
 _selcode        dw ANY
@@ -4997,11 +5025,21 @@ _noborfix1:
 	add eax,100h
 	mov [-pmodewe+_dtabufptr100h],eax
 
-	call _openexe1                  ; Open the EXE file for processing
-					; NOTE: This function changes
-					; depending on the values of OPENTYPE
-					; and VARTYPE
-
+	; * _openexe does both _openexe1 and _openexe2.
+	; * _openexe1 finds the filename of the .exe file to open.
+	; * _openexe1 implementation changes depending on OPENTYPE.
+	; * _openexe2 loads the load-time config, figures out where the
+	;   32-bit payload (LE or PMW1) is within the .exe file, and then
+	;   saves the figured-out file offset to dword
+	;   [_int21lowdtaseg:3ch].
+	; * _openexe2 implementation changes depending on VARTYPE.
+	; * All implementations of _openexe2 take file offset of the 32-bit
+	;   payload from the dword at .exe file offset 3ch.
+	; * _loadexe seeks to the file offset of the 32-bit payload
+	;   (accessed as [gs:3ch]) within the .exe file, and then loads the
+	;   32-bit payload, decompresses it if needed, and applies the
+	;   relocations.
+	call _openexe  ; Open the EXE file for processing.
 	reloc mov ax,PMODE_TEXT
 	mov gs,ax                       ; Increase required callbacks for use
 	add byte [gs:-pmodewk+_pm_callbacks],5          ; by PMODE/W
@@ -5157,9 +5195,9 @@ db 'T'^66h ,'.'^66h ,' '^66h ,'P'^66h ,'Y'^66h ,'T'^66h ,'E'^66h ,'L'^66h
 %endif
 
 _loadexe:
-	add word [-pmodewe+_lowmin],(FIXUPBUFMIN>>4)+1
+	add word [-pmodewe+_pm16_lowmin],(FIXUPBUFMIN>>4)+1
 	jnc short _l1f1
-	or word [-pmodewe+_lowmin],-1
+	or word [-pmodewe+_pm16_lowmin],-1
 _l1f1:
 
 	mov gs,[-pmodewe+_selbuf]                  ; Get LE/PMW1 location from EXE header
@@ -5548,7 +5586,7 @@ _loadobjects1:
 	call _filepos                   ; Save file position for later
 
 	fixpre_mov eax,[gs:100h]               ; Allocate some memory for this object
-	movzx edx,word [-pmodewe+_lowmin]
+	movzx edx,word [-pmodewe+_pm16_lowmin]
 	mov edi,[-pmodewe+_memtop]
 	sub edi,[-pmodewe+_membase]
 	_mov ecx,eax
@@ -5559,12 +5597,12 @@ _loadobjects1:
 	jc _loadtryhimem                ; then try extended memory
 
 	_cmp edi,edx                     ; If there is enough, make sure that
-	jae _loadtrylowmem              ; word [-pmodewe+_lowmin] is satisfied
+	jae _loadtrylowmem              ; word [-pmodewe+_pm16_lowmin] is satisfied
 
 	test byte [gs:108h+1],100000b
 	jz _loadtrylowmem               ; Load 16bit objects into low memory
 
-	call _gethimem                  ; Try extended memory if _lowmin is
+	call _gethimem                  ; Try extended memory if _pm16_lowmin is
 	jnc _loadlowmemok               ; is not satisfied
 _loadtrylowmem:
 	mov ebx,[-pmodewe+_membase]
@@ -7584,22 +7622,24 @@ _int1Bhandler:
 ;
 ; SUPPLEMENTAL REAL MODE ROUTINES
 ;
-%if OPENTYPE==1
+%if OPENTYPE==1  ; Opens the currently running .exe file. Useful when PMODE/W is used as a stub at the beginning of the .exe file.
+_openexe1_opentype_1:
 _openexe1:
+_openexe:
 	multipush ds, es
 	mov es,[-pmodewe+_envseg]
 	push word [-pmodewe+_int21lowbufseg]
 	pop ds
 	_xor di,di
 
-	or cx,-1
+	or cx,-1  ; Pratically unlimted `repne scasb' below.
 	_xor al,al
 .00l:
-	repne scasb
+	repne scasb  ; Skip a single environment variable.
 	scasb
-	jne .00l
+	jne .00l  ; If this jumps, it continues skipping the next environment variable.
 
-	add di,2
+	add di,2  ; Skip 2 more bytes. After this, ES:DI points to the full filename.
 	_mov si,di
 
 	or cx,-1
@@ -7616,43 +7656,47 @@ _openexe1:
 	pop ds
 
 	_xor dx,dx
-	mov ax,3dc0h
+	mov ax,3dc0h  ; Open file for reading: (private == not inheritable) | (full access permitted to all others) | (read access).
 	int 21h
 	multipop es, ds
 	jc _loaderror
-	jmp _openexe2
+	jmp _openexe2  ; This is a no-op, openexe2 is right after this.
 %endif
 
-%if OPENTYPE==2
+%if OPENTYPE==2  ; Opens the .exe file with filename as a NUL-terminated string at 0:4c0h == 40h:c0h. At most 0x40 == 64 bytes can be stored there.
+_openexe1_opentype_2:
 _openexe1:
+_openexe:
 	push ds
 	_xor ax,ax
 	mov ds,ax
-	mov dx,4c0h
-	mov ax,3dc0h
+	mov dx,4c0h  ; NUL-terminated filename at 0:4c0h. Who put it there? Maybe another process. Typically 0x40 == 64 bytes fit here, because 50h:0 is print-screen status in the BIOS.
+	mov ax,3dc0h  ; Open file for reading: (private == not inheritable) | (full access permitted to all others) | (read access).
 	int 21h
 	pop ds
 	jc _loaderror
-	jmp _openexe2
+	jmp _openexe2  ; This is a no-op, openexe2 is right after this.
 %endif
 
-%if OPENTYPE==3
+%if OPENTYPE==3  ; Opens the .exe file specified at the beginning of the command line (space-separated), and removes that filename from the command line.
 _filename	times 128 db ANY
+_openexe1_opentype_3:
 _openexe1:
+_openexe:
 	cld
 	multipush es, ds
 	mov ds,[cs:-pmodewe+_pspseg]
 	mov ax,cs
 	mov es,ax
 	mov di,-pmodewe+_filename
-	mov si,80h
+	mov si,80h  ; After this, DS:SI points to the 0dh-terminated, length-prefixed command-line (excluding the program name) in the PSP: PSPseg:80h.
 	lodsb
 	_or al,al
-	jz _openexe3err
+	jz _openexe3err  ; This jumps iff the command line is empty.
 _openexe3a1:
 	lodsb
 	cmp al,20h
-	jz _openexe3a1
+	jz _openexe3a1  ; Continue skipping initial spaces.
 	mov cx,-1
 	jmp _openexe3b
 _openexe3a:
@@ -7665,8 +7709,8 @@ _openexe3b:
 	stosb
 	dec cx
 	jnz _openexe3a
-	jmp _openexe3err
-_openexe3c:
+	jmp _openexe3err  ; This can't possibly happen: filename in PSP is >=~64 KiB long.
+_openexe3c:  ; Now DS:SI points to the terminating space (20h) or 0dh (end-of-string) after the program name.
 	_xor al,al
 	stosb
 	_xor bl,bl
@@ -7674,7 +7718,7 @@ _openexe3c:
 	mov ax,ds
 	mov es,ax
 	mov di,81h
-_openexe3d:
+_openexe3d:  ; Copy the rest of the command-line back to the begnning of the command line.
 	lodsb
 	_or al,al
 	cmp al,0dh
@@ -7688,7 +7732,7 @@ _openexe3e:
 	mov dx,-pmodewe+_filename
 	push cs
 	pop ds
-	mov ax,3dc0h
+	mov ax,3dc0h  ; Open file for reading: (private == not inheritable) | (full access permitted to all others) | (read access).
 	int 21h
 	multipop ds, es
 	jc _loaderror
@@ -7698,14 +7742,16 @@ _openexe3err:
 	jmp _loaderror
 %endif
 
-%if VARTYPE==1
+%if VARTYPE==1  ; Loads pmodew_config from the first 15h bytes of the MZ .exe image (file offset hdrsize<<4). Also loads the file offset of the 32-bit payload from dword at file offset 3ch.
+_openexe2_vartype_1:
 _openexe2:
+	; Input: DS == pmode16, corresponding to pmodewe.
 	mov [-pmodewe+_exehandle],ax
 	push ds
 	_mov bx,ax
 	; Read the LE/PMW1 header and pmodew_config from the .exe.
 %if UNC  ; By `tasm /dUNC'.
-	mov cx,110h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h.
+	mov cx,110h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h. !! Why not just 100h here?
 	mov ds,[-pmodewe+_int21lowdtaseg]
 	_xor dx,dx
 	mov ah,3fh  ; Read from file using handle.
@@ -7715,12 +7761,12 @@ _openexe2:
 	shl dx,4  ; Maximum .hdrsize supported: 0fffh.
 	_mov si,dx
 	test dh,dh
-	jz .copy  ; The default hdrsize created by TLINK is 20h, with SI == 200h here. But when OpenWatcom embeds it as a stub, the hdrsize becomes 0dh, thus we jump.
+	jz .copy  ; The default hdrsize created by TLINK is 20h, with SI == DX == 200h here. But when OpenWatcom embeds it as a stub, the hdrsize becomes 0dh, which is small, thus we jump.
 	_xor cx,cx  ; High word of file offset.
 	mov ax,4200h  ; Move file pointer using handle.
 	int 21h
 	jc _loaderror
-	mov cx,21  ; Must be at most 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset loaded above.
+	mov cx,pmodew_config._size  ; 15h == 21. Must be at most 3ch, _loadexe uses dword [gs:3ch] ([3ch] here) for the file offset of the 32-bit payload (LE or PMW1).
 	_xor dx,dx
 	mov ah,3fh  ; Read from file using handle.
 	int 21h
@@ -7729,41 +7775,45 @@ _openexe2:
 .copy:
 	push es
 %else
-	mov cx,40h+21  ; Must be >=21+(hdrsize>>2). Thus this supports hdrsize values 2, 3 and 4.
+	mov cx,40h+pmodew_config._size  ; pmodew_config._size == 15h == 21. Must be >=pmodew_config._size+(hdrsize>>4). Thus this supports hdrsize values 2, 3 and 4.
 	mov ds,[-pmodewe+_int21lowdtaseg]
 	_xor dx,dx
-	mov ah,3fh
+	mov ah,3fh  ; Read from file using handle.
 	int 21h
 	jc _loaderror
 	push es
-	mov si,[8]  ; Typically hdrsize == 2 (for compressed PMODE/W) or == 4 (when embedded by WLINK as stub).
+	mov si,[8]  ; hdrsize. Typical values for compress PMODE/W pmodew.exe: hdrsize == 2 (pmodew.exe) or == 4 (when pmodew.exe embedded by WLINK as stub).
 	shl si,4
 %endif
 	reloc mov ax,PMODE_TEXT
 	mov es,ax
-	mov di,-pmodewk+_pm_pagetables
-	mov cx,19
-	rep movsb  ; Copy pmodew_config.
+	mov di,-pmodewk+_pm_config_except_for_lowmin
+	mov cx,_pm_config_except_for_lowmin.end-_pm_config_except_for_lowmin  ; 13h == 19.
+	rep movsb  ; Copy from pmodew_config to _pm_config_except_for_lowmin.
 	lodsw
 	multipop es, ds
-	mov [-pmodewe+_lowmin],ax
+	mov [-pmodewe+_pm16_lowmin],ax
 	ret
 %endif
 
-%if VARTYPE==2
+%if VARTYPE==2  ; Uses the hardcoded default values (PM_*) for the _pm_config_except_for_lowmin and _pm16_lowmin. Also loads the file offset of the 32-bit payload from dword at file offset 3ch.
+_openexe2_vartype_2:
 _openexe2:
+	; Input: DS == pmode16, corresponding to pmodewe.
 	mov [-pmodewe+_exehandle],ax
-	mov word [-pmodewe+_lowmin],LOWMIN
+	mov word [-pmodewe+_pm16_lowmin],PM_LOWMIN
 	push ds
 	_mov bx,ax
-	mov cx,40h
+	mov cx,3ch+4  ; _loadexe uses dword [gs:3ch] (loaded to dword [3ch] here) for the file offset of the 32-bit payload (LE or PMW1).
 	mov ds,[-pmodewe+_int21lowdtaseg]
 	_xor dx,dx
 	mov ah,3fh
 	int 21h
 	jc _loaderror
-	reloc mov ax,PMODE_TEXT
+	reloc mov ax,PMODE_TEXT  ; PMODE_TEXT corresponds to pmodewk.
 	mov ds,ax
+	; TODO(pts): With -DUNC, copy from pmodew_config, also PM_LOWMIN above. This would break `./compile.sh --reproducible' (default) pmodewv.exe.
+	; Populates _pm_config_except_for_lowmin using hardcoded default values.
 	mov word [-pmodewk+_pm_pmstacklen],PM_PMSTACKLEN
 	mov word [-pmodewk+_pm_rmstacklen],PM_RMSTACKLEN
 	mov byte [-pmodewk+_pm_pmstacks],PM_PMSTACKS
@@ -7772,7 +7822,7 @@ _openexe2:
 	mov word [-pmodewk+_pm_selectors],PM_SELECTORS
 	mov byte [-pmodewk+_pm_callbacks],PM_CALLBACKS
 	mov byte [-pmodewk+_pm_pagetables],PM_PAGETABLES
-	mov dword [-pmodewk+_pm_maxextmem],EXTMAX
+	mov dword [-pmodewk+_pm_maxextmem],PM_MAXEXTMEM
 	mov byte [-pmodewk+_pm_pampagemax],PM_PAMPAGEMAX
 	mov byte [-pmodewk+_pm_options],PM_OPTIONS
 	pop ds
