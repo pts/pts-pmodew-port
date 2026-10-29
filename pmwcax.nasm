@@ -62,6 +62,15 @@
   %assign LOGO LOGO  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef CONFIGINEXEIMAGE  ; Can be specified on the command line.
+  %define CONFIGINEXEIMAGE 1   ; Include the pmodew_config at the beginning of the MZ .exe image. This is required by VARTYPE==1 (-DVARTYPE=1 pmodew.nasm).
+  ;%define CONFIGINEXEIMAGE 0  ; Exclude the pmodew_config.
+%elifidn (CONFIGINEXEIMAGE), ()
+  %define CONFIGINEXEIMAGE 1
+%else
+  %assign CONFIGINEXEIMAGE CONFIGINEXEIMAGE  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %ifndef FASTSORT  ; Can be specified on the command line.
   ;%define FASTSORT 1  ; Use faster but longer sort algorithm (heapsort4).
   %define FASTSORT 0  ; Use slower but shorter sort algorithm (insertion_sort4). It's fast enough, because it only has to sort ~26 items.
@@ -1728,6 +1737,7 @@ padding:	dd 0       ; At file offset 0x1c. Unused.
 
 cexe_image:
 
+%if CONFIGINEXEIMAGE  ; Can be specified on the command line.
 pmodew_config:  ; Load-time configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
 ; This is 0x15 == 21 bytes at compressed exe_image+0.
 ;
@@ -1763,6 +1773,7 @@ pmodew_config:  ; Load-time configuration for PMODE/W. Read manually from the be
 .maxextmem:	dd 7fffffffh  ; Maximum extended memory to allocate, in bytes. _pm_maxextmem
 .lowmin:	dw 0  ; Amount of low (below the first 1 MiB) memory to try and save. Loaded by _openexe2 to somewhere else. _pm16_lowmin
 .end:		; @15h.
+%endif
 
 %if PMWV==33
   %if LOGO

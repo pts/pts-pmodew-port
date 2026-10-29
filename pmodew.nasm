@@ -79,6 +79,15 @@
   %assign LOGO LOGO  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef CONFIGINEXEIMAGE  ; Can be specified on the command line.
+  %define CONFIGINEXEIMAGE 1   ; Include the pmodew_config at the beginning of the MZ .exe image. This is required by VARTYPE==1 (-DVARTYPE=1 pmodew.nasm).
+  ;%define CONFIGINEXEIMAGE 0  ; Exclude the pmodew_config.
+%elifidn (CONFIGINEXEIMAGE), ()
+  %define CONFIGINEXEIMAGE 1
+%else
+  %assign CONFIGINEXEIMAGE CONFIGINEXEIMAGE  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %ifndef PMW1UNCOMP  ; Can be specified on the command line.
   %define PMW1UNCOMP 0   ; PMW1-format 32-bit payloads are compressed. Uncompressed payloads are not supported.
   ;%define PMW1UNCOMP 1  ; PMW1-format 32-bit payloads are uncompressed. Compressed payloads are not supported.
@@ -7792,6 +7801,10 @@ _openexe3err:
 %endif
 
 %if VARTYPE==1  ; Loads pmodew_config from the first 15h bytes of the MZ .exe image (file offset hdrsize<<4). Also loads the file offset of the 32-bit payload from dword at file offset 3ch.
+%if CONFIGINEXEIMAGE==0
+  %error ERROR_VARTYPE_1_NEEDS_CONFIGINEXEIMAGE
+  times -1 nop
+%endif
 _openexe2_vartype_1:
 _openexe2:
 	; Input: DS == pmode16, corresponding to pmodewe.
