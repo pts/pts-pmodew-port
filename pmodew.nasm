@@ -4713,16 +4713,16 @@ errmsgtbl       dw -pmodewe+errmsg0,-pmodewe+errmsg1,-pmodewe+errmsg2,-pmodewe+e
 		dw -pmodewe+errmsg8,-pmodewe+errmsg9
 
 pmodemsg        db '[PMODE/W]: $'
-errmsg0         db 'Not Enough Memory Available!',36
-errmsg1         db '80386+ Not Detected!',36
-errmsg2         db 'System Already In Protected Mode And No VCPI or DPMI found!',36
-errmsg3         db 'DPMI Host Is Not 32bit!',36
-errmsg4         db 'A20 Error!',36
-errmsg5         db 'DPMI Error!',36
-errmsg6         db 'Unable To Allocate Needed DPMI Selectors!',36
-errmsg7         db 'Error Loading EXE!',36
-errmsg8         db 'Unrecognized Fixup Data!',36
-errmsg9         db '16bit Fixup Overflow!',36
+errmsg0         db 'Not Enough Memory Available!',36  ; _memoryerr.
+errmsg1         db '80386+ Not Detected!',36  ; Returned as AX=1 CF=1 by _pm_info.
+errmsg2         db 'System Already In Protected Mode And No VCPI or DPMI found!',36  ; Returned as AX=2 CF=1 by _pm_info.
+errmsg3         db 'DPMI Host Is Not 32bit!',36  ; Returned as AX=3 CF=1 by _pm_info.
+errmsg4         db 'A20 Error!',36  ; Returned as AX=4 CF=1 by _pm_init.
+errmsg5         db 'DPMI Error!',36  ; _exiterror.  Also returned as AX=5 CF=1 by _pm_init.
+errmsg6         db 'Unable To Allocate Needed DPMI Selectors!',36  ; _descriptorerr. Also returned as AX=6 CF=1 by _pm_init.
+errmsg7         db 'Error Loading EXE!',36  ; _loaderror.
+errmsg8         db 'Unrecognized Fixup Data!',36  ; _unknownerror.
+errmsg9         db '16bit Fixup Overflow!',36  ; _16biterror.
 
 %if PMWV==34
 %if LOGO
