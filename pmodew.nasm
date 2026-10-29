@@ -39,6 +39,10 @@
 ;
 ; ---
 ;
+; PMODE/W hooks the following int 21h calls (in AH): 09h 1ah 1bh 1ch 1fh 25h
+; 2fh 32h 34h 35h 39h 3ah 3bh 3ch 3dh 3fh 40h 41h 43h 47h 48h 49h 4ah 4bh
+; 4ch 4eh 4fh 51h 56h 5bh 62h 0ffh.
+;
 ; TODO(pts): Add manual sizes to do -O0 instead of -O999999999 (with both NASM 0.98.39 and newer).
 
 ; --- Compile-time configuration.
@@ -4751,7 +4755,7 @@ decode_handle           dw ANY
 
 _pm16_lowmin    dw ANY
 
-_selbuf         dw ANY
+_selbuf         dw ANY  ; Points to _dtabufptr. Size: 100h.
 _selcode        dw ANY
 _selzero        dw ANY
 _selpsp         dw ANY
@@ -4771,8 +4775,8 @@ _fixupbufptr    dd ANY           ; a wart on the ass of some big fat dude.
 _fixupbufsize   dd ANY
 
 DTABUFSIZE       equ 200h          ; Must remain at 200h or above
-_dtabufptr      dd ANY
-_dtabufptr100h  dd ANY
+_dtabufptr      dd ANY  ; Size: 200h. Points to linear address (_int21lowdtaseg<<4).
+_dtabufptr100h  dd ANY  ; Size: 100h. Points to linear address (_int21lowdtaseg<<4)+100h.
 
 _exebaseoffset  dd ANY
 
@@ -4801,8 +4805,8 @@ _init_ssobj     dd ANY
 _init_ssoff     dd ANY
 
 _pmode_process  db ANY
-_pmode_systype  db ANY
-_inpmode        db 0
+_pmode_systype  db ANY  ; Must come directly after _pmode_process.
+_inpmode        db 0  ; Possible values: 0 (false), 0xff (true).
 
 borfixgdt       dd 00000000h,00000000h
 		dd 0000ffffh,00009200h
@@ -5904,6 +5908,9 @@ _readfile:
 	int 21h
 	multipop ds, bx, eax
 	jc _loaderror
+	; BUG: `cmp eax, ecx' ++ `jne _loaderror' is missing. We should
+	; check that all the bytes we need have been read. However, that would
+	; change pmodew.exe, so it wouldn't be bytewise identicaly anymore.
 	ret
 
 ;
@@ -5954,7 +5961,7 @@ _filepos:
 ; Out:
 ;   EAX - SEG:OFF Pointer (Offset Always 0)
 ;   CF=0 Success
-;   CF=1 Error
+;   CF=1 Error. Ruins EAX.
 ;
 _getmem:
 	add eax,15
@@ -5974,7 +5981,7 @@ _getmemerr:
 ; In:
 ;    EAX - Number Of Bytes To Get
 ; Out:
-;   EAX - Absolute Address Of Block
+;   EAX - Absolute Address Of Block, will be page-aligned (multiple of 4096)
 ;   CF=0 Success
 ;   CF=1 Error
 ;
@@ -7615,6 +7622,7 @@ _realmodeint33:
 	jmp short _realmodeintq
 %endif
 _realmodeint21:
+; Ruins EAX, BX, CX.
 	mov bx,21h
 _realmodeintq:
 	push es
