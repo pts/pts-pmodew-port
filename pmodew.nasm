@@ -70,6 +70,15 @@
   %assign DEBUG DEBUG  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef LOGO  ; Can be specified on the command line.
+  %define LOGO 1   ; Display the logo and the copyright message upon startup, if instructed by the runtime config.
+  ;%define LOGO 0  ; Never display the logo and the copyright message upon startup, don't even include them in the .exe.
+%elifidn (LOGO), ()
+  %define LOGO 1
+%else
+  %assign LOGO LOGO  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %ifndef PMW1UNCOMP  ; Can be specified on the command line.
   %define PMW1UNCOMP 0   ; PMW1-format 32-bit payloads are compressed. Uncompressed payloads are not supported.
   ;%define PMW1UNCOMP 1  ; PMW1-format 32-bit payloads are uncompressed. Compressed payloads are not supported.
@@ -4703,16 +4712,22 @@ errmsg8         db 'Unrecognized Fixup Data!',36
 errmsg9         db '16bit Fixup Overflow!',36
 
 %if PMWV==34
+%if LOGO
 _copyrightmsg   db 'PMODE/W DOS Extender v1.34',10,13
 		db 'Copyright (C) 1994-2000, Charles Scheffold and Thomas Pytel'
+%endif
 %elif PMWV==33
+%if LOGO
 _copyrightmsg   db 'PMODE/W DOS Extender v1.33',10,13
 		db 'Copyright (C) 1994-1997, Charles Scheffold and Thomas Pytel'
+%endif
 %else
   %error ERROR_UNSUPPORTED_PMWV PMWV
   times -1 nop
 %endif
+%if LOGO
 		db 0,10,13,'$'
+%endif
 
 align 4, db 0
 
@@ -4833,6 +4848,9 @@ _int1Bflag              db 0
 
 _int21lowbufsize        dd 1000h ; MUST Be A Multiple Of 4 Or You Will Suffer!
 				 ; (1000h Bytes Is The Minimum)
+%if LOGO==0
+_copyrightmsg: equ $-1  ; Points to a NUL byte.
+%endif
 
 _edi                   equ 0
 _esi                   equ 4
@@ -5073,11 +5091,13 @@ _noborfix1:
 	mov gs,ax                       ; Increase required callbacks for use
 	add byte [gs:-pmodewk+_pm_callbacks],5          ; by PMODE/W
 
+%if LOGO
 	test byte [gs:-pmodewk+_pm_options],1
 	jz short _nostartmsg
 	mov dx,-pmodewe+_copyrightmsg
 	call _pmsg                      ; Display startup message
 _nostartmsg:
+%endif
 
 	reloc call PMODE_TEXT:-pmodewk+_pm_info                   ; Get Protected Mode Info again in
 	jc _pmstartuperr                ; order to save the proper amount of

@@ -14,11 +14,11 @@ test "$0" = "${0%/*}" || cd "${0%/*}"
 
 nasm=tools/nasm-0.98.39.upx
 # -DLOADPMW1=1 produces smaller code than -DLOADLE=1.
-smallest_defs="-DPMW1UNCOMP=1 -DLOADLE=0 -DLOADPMW1=1 -DEXCEPTIONS=0 -DINT3108FUNC=0 -DINT1B=0 -DINT33=0"
+smallest_defs="-DLOGO=0 -DPMW1UNCOMP=1 -DLOADLE=0 -DLOADPMW1=1 -DEXCEPTIONS=0 -DINT3108FUNC=0 -DINT1B=0 -DINT33=0"
 
 set -ex
 
-"$nasm" -O0 -w+orphan-labels -DPMWV=33 -o pmwca pmwcax.nasm
+"$nasm" -O0 -w+orphan-labels -DPMWV=33 -DLOGO=0 -o pmwca pmwcax.nasm
 chmod +x pmwca
 
 "$nasm" -O32700 -w+orphan-labels -DPMWV=33 -o pmodewu.exe pmodew.nasm
@@ -31,4 +31,4 @@ chmod +x pmwca
 
 ls -ld pmodew.exe pmodsw.exe  # 11484 vs 8978 bytes. wdosx.dx is 9720 bytes.
 
-: "$OK"
+: "$0" OK.

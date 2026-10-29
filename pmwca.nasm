@@ -36,6 +36,15 @@
   %assign DEBUG DEBUG  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef LOGO  ; Can be specified on the command line.
+  %define LOGO 1   ; Display the logo and the copyright message upon startup, if instructed by the runtime config.
+  ;%define LOGO 0  ; Never display the logo and the copyright message upon startup, don't even include them in the .exe.
+%elifidn (LOGO), ()
+  %define LOGO 1
+%else
+  %assign LOGO LOGO  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %ifndef FASTSORT  ; Can be specified on the command line.
   ;%define FASTSORT 1  ; Use faster but longer sort algorithm (heapsort4).
   %define FASTSORT 0  ; Use slower but shorter sort algorithm (insertion_sort4). It's fast enough, because it only has to sort ~26 items.
@@ -1059,9 +1068,13 @@ pmodew_config:  ; Load-time configuration for PMODE/W. Read manually from the be
 .end:		; @15h.
 
 %if PMWV==33
-  copyright:	db 'PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.'
+  %if LOGO
+    copyright:	db 'PMODE/W v1.33 DOS extender - Copyright 1994-1997, Daredevil and Tran.'
+  %endif
 %elif PMWV==34
-  copyright:	db 'PMODE/W v1.34 DOS extender - Copyright 1994-2000, Daredevil and Tran.'
+  %if LOGO
+    copyright:	db 'PMODE/W v1.34 DOS extender - Copyright 1994-2000, Daredevil and Tran.'
+  %endif
 %else
   %error ERROR_UNSUPPORTED_PMWV PMWV
   db 1/0
