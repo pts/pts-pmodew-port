@@ -132,6 +132,7 @@
   %define LOADSPE 0   ; Disable loading of simple PE-format 32-bit payloads.
   ;%define LOADSPE 1  ; Enable  loading of simple PE-format 32-bit payloads. PMODE/W is compressed, the payload is uncompressed.
   ;%define LOADSPE 2  ; Enable  loading of simple PE-format 32-bit payloads, with some features removed or shortened. PMODE/W is compressed, the payload is uncompressed.
+  ;%define LOADSPE 3  ; Enable  loading of simple PE-format 32-bit payloads, shorten PMODE/W initialization error messages. PMODE/W is compressed, the payload is uncompressed.
 %elifidn (LOADSPE), ()
   %define LOADSPE 1
 %else
@@ -4814,6 +4815,17 @@ errmsgtbl       dw -pmodewe+errmsg0,-pmodewe+errmsg1,-pmodewe+errmsg2,-pmodewe+e
 		dw -pmodewe+errmsg8,-pmodewe+errmsg9
 %endif
 
+%if LOADSPE==3
+pmodemsg        db '[PM]: ',36
+errmsg0         db 'out of memory!',13,10,36  ; _memoryerr.
+errmsg1         db 'no 386+ CPU!',13,10,36  ; Returned as AX=1 CF=1 by _pm_info.
+errmsg2         db 'already in PM without DMPI or VCPI!',13,10,36  ; Returned as AX=2 CF=1 by _pm_info.
+errmsg3         db 'DPMI host not 32-bit!',13,10,36  ; Returned as AX=3 CF=1 by _pm_info.
+errmsg4         db 'A20 error!',13,10,36  ; Returned as AX=4 CF=1 by _pm_init.
+errmsg5         db 'DPMI error!',13,10,36  ; _exiterror.  Also returned as AX=5 CF=1 by _pm_init.
+errmsg6         db 'selector error!',13,10,36  ; _descriptorerr. Also returned as AX=6 CF=1 by _pm_init.
+errmsg7         db 'bad EXE!',13,10,36  ; _loaderror.
+%else
 pmodemsg        db '[PMODE/W]: $'
 errmsg0         db 'Not Enough Memory Available!',36  ; _memoryerr.
 errmsg1         db '80386+ Not Detected!',36  ; Returned as AX=1 CF=1 by _pm_info.
@@ -4823,6 +4835,7 @@ errmsg4         db 'A20 Error!',36  ; Returned as AX=4 CF=1 by _pm_init.
 errmsg5         db 'DPMI Error!',36  ; _exiterror.  Also returned as AX=5 CF=1 by _pm_init.
 errmsg6         db 'Unable To Allocate Needed DPMI Selectors!',36  ; _descriptorerr. Also returned as AX=6 CF=1 by _pm_init.
 errmsg7         db 'Error Loading EXE!',36  ; _loaderror.
+%endif
 %if LOADSPE==0
 errmsg8         db 'Unrecognized Fixup Data!',36  ; _unknownerror.
 errmsg9         db '16bit Fixup Overflow!',36  ; _16biterror.
@@ -6442,6 +6455,7 @@ _pmstartuperr:
 	call _pmsg
 	mov dx,[word -pmodewe+errmsgtbl+si]  ; `Diff: effective address `word' is because of missed TASM optimization. In NASM, there is no displacement (0).
 	call _pmsg
+%if LOADSPE!=3
 	mov ah,2
 	mov dl,10  ; LF == '\n'.
 	int 21h
@@ -6451,6 +6465,7 @@ _pmstartuperr:
 	add dl,3
 %endif
 	int 21h
+%endif
 	mov ax,4cffh
 	int 21h
 
