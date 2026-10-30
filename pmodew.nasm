@@ -119,7 +119,87 @@
   %assign LOADPMW1 LOADPMW1  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%if LOADLE+LOADPMW1==0
+%ifndef LOADSPE  ; Can be specified on the command line.
+  %define LOADSPE 0   ; Disable loading of simple PE-format 32-bit payloads.
+  ;%define LOADSPE 1  ; Enable  loading of simple PE-format 32-bit payloads. PMODE/W is compressed, the payload is uncompressed.
+%elifidn (LOADSPE), ()
+  %define LOADSPE 1
+%else
+  %assign LOADSPE LOADSPE  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+; The simple PE loader (with signature simPloEd) is not part of PMODE/W,
+; it's an extension written by pts. It can load Win32 PE i386 .exe program
+; files, with the following restrictions:
+;
+; * The load-time configuration is loaded from file offset 20h.
+; * The PE header must start at file offset 40h. This is checked.
+; * Only the compressed PMODE/W stub works, because there must be no MZ .exe
+;   relocations (nreloc == 0). This is checked.
+; * The PMODE/W stub with the simple PE loader is not able to load any other
+;   file formats, i.e. LOADLE and LOADPMW1 must be 0. This is checked at
+;   compile time.
+; * (The PMODE/W stub MZ .exe image must start at file offset 200h. This is
+;   checked.)
+; * The data directory must have 16 entries, i.e. NumberOfRvaAndSizes must
+;   be 16. This is checked.
+; * The PE section header must end at file offset 200h, i.e. SizeOfHeaders
+;   must be 200h. This is checked.
+; * The number of PE sections must be between 1 and 5 inclusive, i.e.
+;   NumberOfSections must be at least 1 and ant most 5. This is checked.
+; * The simple PE loader allocates a static buffer of SizeOfStackCommit
+;   bytes (rounded up to a multiple of 4) for the stack. The stack will not
+;   grow.
+; * The simple PE loader loads all PE sections to an arbitrary, page aligned
+;   (linear address is a multiple of 1000h) memory location, not to
+;   ImageBase.
+; * Before loading any section data, the simple PE loader loads the first
+;   0x200 bytes of the the .exe file to the memory location above. (This is
+;   compatible with how Win32 loads a PE .exe program file.)
+; * The simple PE loader doesn't apply the PE relocations (in
+;   IMAGE_DIRECTORY_ENTRY_BASERELOC). The payload should do it if needed.
+; * The simple PE loader doesn't load any DLLs (in
+;   IMAGE_DIRECTORY_ENTRY_IMPORT), not even kernel32.dll. The payload should
+;   keep using int 21h (DOS-extended) and int 31h (DPMI) services provided
+;   by the PMODE/W stub for memory allocation and I/O.
+; * The simple PE loader ignores the PE entry point (AddressOfEntryPoint),
+;   and it uses the last 2 bytes (SizeOfRawData-2) of the first section as
+;   the entry point. This is to avoid API and ABI conflicts with Win32,
+;   which uses AddressOfEntryPoint. This way the same PE .exe program file,
+;   with the same PE sections can be used as separate Win32 and DOS-extended
+;   programs sharing some code and data.
+; * Minimum CPU requirement: 80386.
+;
+; Because of the restrictions above, the simple PE loader isn't suitable for
+; running existing Win32 programs on DOS. For that, use the HX DOS extender
+; or WDOSX (after doing some conversion of the .exe file).
+;
+; The simple PE loader initializes the CPU registers like this:
+;
+; * CS:EIP points to the simple PE DOS-extended entry point (see above),
+;   which is 2 bytes before the end of the firt section (SizeOfRawData-2).
+; * SS:ESP points to the end (top) of the allocated stack space allocated
+;   (see above). Most of it, but not the top 200h bytes are zero-initialized
+;   (i.e. filled with NUL bytes).
+; * DS:EAX points to the PSP segment. The command-line string is at
+;   DS:EAX+80h as a Pascal string (first byte contains the length of the
+;   rest), and then terminated by byte CR == 13.
+; * CS is a zero-based, read-execute, linear code segment selector.
+; * DS == ES == SS == FS == GS are zero-based, read-write, linear data
+;   segment selectors with the same value.
+; * EBX == ECX == EDX == ESI == EDI == EBP == 0.
+; * DF=0 (cld).
+; * EFLAGS set using `sub ebx, ebx': OF=0, SF=0, ZF=1, AF=0, PF=1 and CF=0.
+;
+; Here is how to get access to the environment in the 32-bit PE payload:
+;
+;   mov bx, [eax+2ch]  ; BX := environment selector got from the PSP.
+;   mov ax, 6  ; DPMI Get Segment Base Address.
+;   int 31h  ; DPMI call.
+;   shl ecx, 16
+;   movzx edx, dx
+;   add edx, ecx  ; EDX := linear base address of the first env var.
+
+%if (LOADLE|LOADPMW1|LOADSPE)==0
   %error ERROR_SUPPORT_FOR_ALL_PAYLOAD_FORMATS_DISABLED
   times -1 nop
 %endif
@@ -177,6 +257,15 @@
   %define VARTYPE 1
 %else
   %assign VARTYPE VARTYPE  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%if LOADSPE && LOADLE
+  %error ERROR_LOADSPE_CONFLICTS_WITH_LOADLE
+  times -1 nop
+%endif
+%if LOADSPE && LOADPMW1
+  %error ERROR_LOADSPE_CONFLICTS_WITH_LOADPMW1
+  times -1 nop
 %endif
 
 ; --- Macros.
@@ -609,7 +698,7 @@ PM_OPTIONS	equ 1
 PM_MAXEXTMEM	equ 7fffffffh
 PM_LOWMIN	equ 0
 
-%if UNC  ; By `nasm -DUNC'. Must be at te beginning of the .exe image, _openexe2 is looking for it there.
+%if UNC && CONFIGINEXEIMAGE && LOADSPE==0  ; By `nasm -DUNC'. Must be at te beginning of the .exe image, _openexe2 is looking for it there.
 pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
 .pagetables:	db PM_PAGETABLES	; @0:   db 4. Number of page tables under VCPI. Each page table makes 4 MiB of memory available. _pm_pagetables
 .selectors:	dw PM_SELECTORS		; @1:   dw 100h. Maximum number of selectors under VCPI/XMS/raw. _pm_selectors
@@ -4713,6 +4802,7 @@ errmsgtbl       dw -pmodewe+errmsg0,-pmodewe+errmsg1,-pmodewe+errmsg2,-pmodewe+e
 		dw -pmodewe+errmsg8,-pmodewe+errmsg9
 
 pmodemsg        db '[PMODE/W]: $'
+; !! Remove some of those which are impossble with LOADSPE.
 errmsg0         db 'Not Enough Memory Available!',36  ; _memoryerr.
 errmsg1         db '80386+ Not Detected!',36  ; Returned as AX=1 CF=1 by _pm_info.
 errmsg2         db 'System Already In Protected Mode And No VCPI or DPMI found!',36  ; Returned as AX=2 CF=1 by _pm_info.
@@ -4744,7 +4834,7 @@ _copyrightmsg   db 'PMODE/W DOS Extender v1.33',10,13
 
 align 4, db 0
 
-%if PMW1UNCOMP==0
+%if LOADPMW1 && PMW1UNCOMP==0
 decode_bufsize          equ 4096
 decode_bufbase          dd ANY   ;decode_buf
 decode_bufthreshold     dd ANY   ;decode_buf + decode_bufsize - 16
@@ -4770,9 +4860,11 @@ _cr0valuerm     dd ANY
 _membase        dd ANY
 _memtop         dd ANY
 
+%if LOADLE || LOADPMW1
 FIXUPBUFMIN     equ 4000h         ; Must be a multiple of 16 or you will become
 _fixupbufptr    dd ANY           ; a wart on the ass of some big fat dude.
 _fixupbufsize   dd ANY
+%endif
 
 DTABUFSIZE       equ 200h          ; Must remain at 200h or above
 _dtabufptr      dd ANY  ; Size: 200h. Points to linear address (_int21lowdtaseg<<4).
@@ -4780,6 +4872,7 @@ _dtabufptr100h  dd ANY  ; Size: 100h. Points to linear address (_int21lowdtaseg<
 
 _exebaseoffset  dd ANY
 
+%if LOADLE || LOADPMW1
 MAXOBJECTS       equ 16
 _objectlocs     times MAXOBJECTS dd ANY
 _objectrtoff:
@@ -4795,14 +4888,20 @@ _currentobject  dd ANY
 
 _oldfilepos1    dd ANY
 _datapagesloc   dd ANY
+%endif
 
 _oldint31off    dd ANY
 _oldint31sel    dw ANY
 
+%if LOADSPE
+_init_eip       dd ANY  ; EIP of the payload entry point. CS will be 0-based 32-bit data selector.
+_init_esp       dd ANY  ; ESP of the payload entry point. DS and SS will be 0-based 32-bit data selector. ES will be the PSP selector.
+%else
 _init_csobj     dd ANY
 _init_csoff     dd ANY
 _init_ssobj     dd ANY
 _init_ssoff     dd ANY
+%endif
 
 _pmode_process  db ANY
 _pmode_systype  db ANY  ; Must come directly after _pmode_process.
@@ -4886,7 +4985,7 @@ _ss                    equ 30h
 ; EXE DECOMPRESSION CODE
 ;
 
-%if PMW1UNCOMP==0
+%if LOADPMW1 && PMW1UNCOMP==0
 ;include decode.asm
 
 ;
@@ -5205,24 +5304,38 @@ _nomeminit1:
 
 	push gs
 	pop es                          ; ES = 32bit data selector
-
+%if LOADSPE
+	push es
+	pop fs                          ; FS = 32bit data selector
+	mov gs, [-pmodewe+_selbuf]
+	call _loadSPE  ; !! Inline it, this is the only caller.
+%else
 	call _loadexe                   ; Load LE/PMW1 EXE Into Memory
+%endif
 
 	mov ah,3eh                      ; Close EXE file
 	mov bx,[-pmodewe+_exehandle]
 	int 21h
 
+%if LOADSPE
+	mov edx,[-pmodewe+_init_esp]
+%else
 	mov edx,[-pmodewe+_init_ssobj]
 	mov edx,[-pmodewe+_objectlocs+edx*4-4]
 	add edx,[-pmodewe+_init_ssoff]             ; Get initial SS:ESP
+%endif
 
 	mov ax,es
 	mov ss,ax                       ; Setup stack selector
 	_mov esp,edx                     ; and ESP
 
+%if LOADSPE
+	mov edx,[-pmodewe+_init_eip]
+%else
 	mov edx,[-pmodewe+_init_csobj]
 	mov edx,[-pmodewe+_objectlocs+edx*4-4]
 	add edx,[-pmodewe+_init_csoff]             ; Get initial CS:EIP
+%endif
 
 	push dword [-pmodewe+_selcode]         ; 4G 32bit CS
 	push edx                        ; 32bit EIP for program start
@@ -5238,9 +5351,47 @@ _nomeminit1:
 	call _realmodeint21             ; using real mode INT 21h Function 4Ah
 	add esp,32h
 
+%if LOADSPE
+%if 0  ; Also correct but longer.
+	mov ax, 6  ; DPMI Get Segment Base Address.
+	mov bx, [-pmodewe+_selpsp]
+	int 31h  ; DPMI call.
+	xchg ax, cx  ; AX := high dword of the linear base address of PSP; CX := junk.
+	shl eax, 16
+	xchg ax, dx  ; AX := low  dword of the linear base address of PSP; DX := junk.
+%else
+	movzx eax, word [-pmodewe+_pspseg]
+	shl eax, 4
+%endif
+	;push ss
+	;pop es  ; ES := 32bit data selector. Not needed, it's already set.
+	push es
+	pop gs  ; GS := 32bit data selector.
+	; Set the EBX := ECX := EDX := ESI := EDI := EBP := 0, and set some flags for reproducibility.
+	sub ebp, ebp
+	sub edi, edi
+	sub esi, esi
+	sub edx, edx
+	sub ecx, ecx
+	sub ebx, ebx  ; In EFLAGS, set OF=0, SF=0, ZF=1, AF=0, PF=1 and CF=0 according to the result.
+%else
 	mov es,[-pmodewe+_selpsp]                  ; ES = PSP selector
+%endif
+
 	push ss
 	pop ds                          ; DS = 32bit data selector
+%if 0  ; For debugging.
+	jmp _16biterror
+%endif
+%if 0  ; For debugging.
+	mov ah, 40h  ; Write to file.
+	mov bx, 1  ; stdout.
+	pop edx
+	mov ecx, 0x1000
+	int 21h  ; DOS-extended syscall.
+	mov ax, 4cfdh  ; exit(253);
+	int 21h  ; DOS-extended syscall.
+%endif
 	db 66h
 	retf                            ; 32bit RETF to new CS:EIP
 
@@ -5256,11 +5407,177 @@ db 'C'^66h ,'.'^66h ,' '^66h ,'S'^66h ,'C'^66h ,'H'^66h ,'E'^66h ,'F'^66h ,'F'^6
 db 'T'^66h ,'.'^66h ,' '^66h ,'P'^66h ,'Y'^66h ,'T'^66h ,'E'^66h ,'L'^66h
 %endif
 
+;
+; Load A simple PE Executable - Must ONLY Be Called From _loadexe
+;
+%if LOADSPE
+spefofs:
+.mzhdr.signature: equ 0  ; dw.
+.mzhdr.nreloc: equ 6  ; dw.
+.mzhdr.hdrsize: equ 8  ; dw.
+.pmodew_config: equ 20h  ; times 15h db.
+.pehdr_fofs_ptr: equ 3ch  ; dd.
+.pehdr.Signature: equ 40h  ; dd.
+.pehdr.NumberOfSections: equ 46h  ; dw.
+.pehdr.AddressOfEntryPoint: equ 0x68  ; dd RVA. Ignored.
+.pehdr.ImageBase: equ 74h  ; dd. Ignored iff SPERELOC==0.
+.pehdr.SizeOfImage: equ 90h  ; dd.
+.pehdr.SizeOfHeaders: equ 94h  ; dd.
+.pehdr.SizeOfStackCommit: equ 0a4h  ; dd.
+.pehdr.NumberOfRvaAndSizes: equ 0b4h  ; dd.
+.pehdr.IMAGE_DATA_DIRECTORY: equ 0b8h  ; times 16 dd ?, ?. Ignored.
+.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT: equ 0c0h  ; dd ? ?. Ignored.
+.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC: equ 0e0h  ; dd ? ?. Ignored.
+.pehdr.IMAGE_SECTION_HEADER: equ 138h  ; 28h bytes each.
+
+pesechdr:  ; IMAGE_DATA_SECTION_HEADER.
+.Name: equ 0*4 ; times 8 db. NUL-padded. Ignored.
+.VirtualSize: equ 2*4  ; dd.
+.VirtualAddress: equ 3*4  ; dd RVA. Divisible by 1000h. Not checked.
+.SizeOfRawData: equ 4*4  ; dd.
+.PointerToRawData: equ 5*4  ; dd file_offset.
+.PointerToRelocations: equ 6*4  ; dd. Ignored.
+.PointerToLineNumbers: equ 7*4  ; dd. Ignored.
+.NumberOfRelocations: equ 8*4  ; dw. Ignored.
+.NumberOfLineNumbers: equ 8*4+2  ; dw. Ignored.
+.Characteristics: equ 9*4  ; dd. Ignored.
+._size: equ 10*4
+
+peidd:  ; IMAGE_DATA_DIRECTORY.
+.VirtualAddress: equ 0*4  ; dd.
+.Size: equ 1*4  ; dd.
+._size: equ 2*4
+
+_loadSPE:
+; Allocates memory allocation for the PE image, loads the PE sections to the allocated memory, sets dword [-pmodewe+_init_eip], sets dword [-pmodewe+_init_esp].
+; Input: GS == _selbuf == _dtabufptr containing the first 200h bytes of the .exe file; DS == pmodewe (== pmcode16) data selector; ES == FS == _selzero == zero-based data selector.
+; Output: (no register value).
+; Ruins: EAX, EBX, ECX, EDX, ESI, EDI, EBP, ES.
+; !! Can we make the compressed stub 5eh == 94 bytes shorter (probably not)? If yes, the output PE .exe becomes 0x200 bytes shorter.
+;    * Maybe improve MZ relocation processing.
+;    * Maybe compress with aPACK or UPX instead.
+;    * Maybe move some code (such as PSP into EAX) to the payload.
+;    * Inline 2 functions.
+;    * Remove unused variables (doesn't help much, compression is good for them).
+;    * Optimize other parts of PMODE/W, such as `add dl,3'.
+	mov cx, [gs:spefofs.pehdr.NumberOfSections]  ; dw.
+	push cx  ; Save NumberOfSections.
+	xor edx, edx  ; Largest RVA so far.
+	mov si, spefofs.pehdr.IMAGE_SECTION_HEADER
+.section_size_loop:
+	mov eax, [gs:si+pesechdr.VirtualAddress]
+	add eax, [gs:si+pesechdr.VirtualSize]
+	cmp edx, eax
+	jae .largest_rva_updated
+	mov edx, eax
+.largest_rva_updated:
+	add si, pesechdr._size
+	loop .section_size_loop
+	; Now: EDX == max(IMAGE_SECTION_HEADER[i].VirtualAddress+IMAGE_SECTION_HEADER[i].VirtualSize for i in xrange(NumberOfSections)).
+	mov eax, [gs:spefofs.pehdr.SizeOfStackCommit]
+	add eax, 3
+	and eax, ~3
+	xchg eax, edx  ; EAX := EDX; EDX := junk.
+	add eax, 3
+	and eax, ~3
+	add eax, edx
+.allocate_base:
+	; Now: EAX == image_and_stack_size. (number of bytes to allocate).
+	push eax  ; Save image_and_stack_size.
+	call _malloc_aligned_SPE  ; This is the only allocation done from _loadSPE. If it fails, it makes the process exit with a fatal error. !! Inline it, this is the only caller.
+	pop ecx  ; Restore ECX := image_and_stack_size.
+	mov ebx, eax  ; EBX := linear address of the actual image_ptr (instead of ImageBase).
+	add eax, ecx  ; ECX := linear address of the end of the image.
+	mov [-pmodewe+_init_esp], eax
+.fill_base:
+	; Now: EBX == image_ptr; ECX == number of bytes allocated at the image_ptr, always divisible by 4.
+	mov edi, ebx
+	shr ecx, 2
+	;mov es, [-pmodewe+_selzero]  ; Not needed, it's already set.
+	xor eax, eax
+	rep a32 stosd  ; Fill the entire image (including the stack (ECX dwords starting at ES:EDI) with NUL bytes. Also sets ECX := 0.
+.copy_hdr_to_base:
+	push ds  ; Save.
+	push gs
+	pop ds  ; DS := _selbuf == _dtabufptr containing the first 200h bytes of the .exe file.
+	xor esi, esi
+	mov edi, ebx
+	mov cl, 200h>>2  ; ECX := 200h>>2. This implementatios is shorter, and it works because ECX was 0.
+	;mov es, [-pmodewe+_selzero]  ; Not needed, it's already set.
+	rep a32 movsd  ; Copy the first 200h bytes of the .exe file to the image base. Win32 does the same.
+	pop ds  ; Restore.
+.load_sections:
+	pop di  ; Restore DI := NumberOfSections.
+	lea esi, [ebx+spefofs.pehdr.IMAGE_SECTION_HEADER]
+	mov eax, [es:esi+pesechdr.VirtualAddress]
+	add eax, [es:esi+pesechdr.VirtualSize]
+	lea eax, [eax+ebx-2]  ; EAX := image_ptr+IMAGE_SECTION_HEADER[0].VirtualAddress+IMAGE_SECTION_HEADER[0].SizeOfRawData-2.
+	mov [-pmodewe+_init_eip], eax
+.load_sections_loop:
+	mov edx, [es:esi+pesechdr.PointerToRawData]  ; It's too late to use [gs:si+pesechdr.PointerToRawData], because _readfile has overwritten the first 200h bytes at GS:0.
+	call _seekfile  ; Seeks to file offset EDX in the .exe file. On error, it fails with a fatal error.
+	mov edx, [es:esi+pesechdr.VirtualAddress]
+	add edx, ebx  ; EDX := section VirtualAddress (EDX) + image_ptr (EBX).
+	mov ecx, [es:esi+pesechdr.SizeOfRawData]
+	call _readfile  ; Reads ECX bytes to linear address EDX from the .exe file. On error, it fails with a fatal error.
+	add esi, pesechdr._size
+	dec di
+	jnz .load_sections_loop
+.done:
+	ret
+
+_malloc_aligned_SPE:
+; Allocates memory. Failes with a fatal error (_memoryerr) if allocation fails.
+; Input: EAX: number of bytes to allocate.
+; Output: EAX: linear address of the allocated block, will be page-aligned (multiple of 4096).
+; Ruins: EFLAGS.
+; Based on _loadobjects1.
+	push ebx  ; Save.
+	push eax  ; Save size (EAX).
+	mov ebx,[-pmodewe+_memtop]
+	sub ebx,[-pmodewe+_membase]
+	add eax,15
+	shr eax,4
+	_sub ebx,eax                     ; If there is not enough low memory, then try extended memory
+	jb .tryhimem
+	movzx eax,word [-pmodewe+_pm16_lowmin]
+	_cmp ebx,eax                     ; If there is enough, make sure that _pm16_lowmin is satisfied
+	jae .trylowmem
+	pop eax  ; Restore EAX := size.
+	push eax
+	call _gethimem                   ; Try extended memory if _pm16_lowmin is not satisfied
+	jnc short .ok
+.trylowmem:
+	pop eax  ; Restore EAX := size.
+	push eax
+	mov ebx,[-pmodewe+_membase]
+	and ebx,0ffh                    ; Make sure memory is 4096 byte aligned
+	jz .lowmemok1
+	dec bx
+	xor bl,0ffh
+	shl bx,4
+	_add eax,ebx
+.lowmemok1:
+	call _getmem                    ; Allocate low memory for this object
+	jc short .tryhimem  ; Ruins EAX on error.
+	shl eax,4  ; Convert SEGMENT:0 in EAX to linear address.
+	_add eax,ebx                     ; Align block on 4096 bytes
+	jmp short .ok
+.tryhimem:  ; Now: EAX == size.
+	pop eax  ; Restore EAX := size.
+	push eax
+	call _gethimem                  ; Allocate EAX bytes of extended memory
+	jc _memoryerr
+.ok:
+	pop ebx  ; Discard size.
+	pop ebx  ; Restore.
+	ret
+%else
 _loadexe:
 	add word [-pmodewe+_pm16_lowmin],(FIXUPBUFMIN>>4)+1
-	jnc short _l1f1
+	jnc short .l1f1
 	or word [-pmodewe+_pm16_lowmin],-1
-_l1f1:
+.l1f1:
 
 	mov gs,[-pmodewe+_selbuf]                  ; Get LE/PMW1 location from EXE header
 	fixpre_mov edx,[gs:3ch]                ; and seek to it
@@ -5276,10 +5593,11 @@ _l1f1:
 	jz _loadLE
 %endif
 %if LOADPMW1
-	lastdd 0x66, 0x65, 0x81, 0x3e, 0, 0, 'PMW1'  ; cmp dword [gs:0],'PMW1'     ; Is it a PMW1?  Its reverse is '1WMP' for TASM.  ; Diff: TASM encodes the 0x66 prefix, then the segment prefix, NASM does it the other way round.
+	lastdd 0x66, 0x65, 0x81, 0x3e, 0, 0, 'PMW1'  ; cmp dword [gs:0],'PMW1'     ; Its reverse is '1WMP' for TASM.  ; Diff: TASM encodes the 0x66 prefix, then the segment prefix, NASM does it the other way round.
 	jz _loadPMW1
 %endif
 	jmp _loaderror                  ; If none of the above, quit
+%endif
 
 ;
 ; Load A PMW1 Executable - Must ONLY Be Called From _loadexe
@@ -5637,6 +5955,7 @@ _norelocate2:
 ;
 ; SHARED LOADER ROUTINES USED BY _loadLE AND _loadPMW1
 ;
+%if LOADLE || LOADPMW1
 
 ;
 ; Allocate Memory For An Object And Seek To The Object Data
@@ -5847,6 +6166,7 @@ _r_wordsegment2:
 	jnz _16biterror
 _r_wordsegment3:
 	ret
+%endif  ; LOADLE || LOADPMW1
 
 ;
 ; Setup A New Descriptor
@@ -5904,7 +6224,12 @@ _readfile:
 	multipush eax, bx, ds
 	mov ah,3fh
 	mov bx,[-pmodewe+_exehandle]
+%if LOADSPE  ; Shorter.
+	push es
+	pop ds
+%else
 	mov ds,[-pmodewe+_selzero]
+%endif
 	int 21h
 	multipop ds, bx, eax
 	jc _loaderror
@@ -5932,6 +6257,7 @@ _seekfile:
 	jc _loaderror
 	ret
 
+%if LOADLE || LOADPMW1
 ;
 ; Get Current File Position
 ; In:
@@ -5953,6 +6279,7 @@ _filepos:
 	mov [-pmodewe+_oldfilepos1+2],dx
 	pop bx
 	ret
+%endif
 
 ;
 ; Get Some Low Memory
@@ -6024,18 +6351,22 @@ _gethimemerr:
 	multipop eax, edx, di, si, cx, bx
 	ret
 
+%if LOADSPE==0  ; Unused with LOADSPE.
 _16biterror:
 	mov ax,9
 	jmp short _pmstartuperr
+%endif
 _descriptorerr:
 	mov ax,6
 	jmp short _pmstartuperr
 _exiterror:
 	mov ax,5
 	jmp short _pmstartuperr
+%if LOADSPE==0  ; Unused with LOADSPE.
 _unknownerror:
 	mov ax,8
 	jmp short _pmstartuperr
+%endif
 _memoryerr:
 	_xor ax,ax
 	jmp short _pmstartuperr
@@ -7809,10 +8140,16 @@ _openexe3err:
 %endif
 
 %if VARTYPE==1  ; Loads pmodew_config from the first 15h bytes of the MZ .exe image (file offset hdrsize<<4). Also loads the file offset of the 32-bit payload from dword at file offset 3ch.
-%if CONFIGINEXEIMAGE==0
+
+%if LOADSPE
+_openexe2.j_loaderror:
+	jmp _loaderror
+  ; Recommendation for -DLOADSPE: set -DCONFIGINEXEIMAGE=0, because it will be ignored anyway.
+%elif CONFIGINEXEIMAGE==0
   %error ERROR_VARTYPE_1_NEEDS_CONFIGINEXEIMAGE
   times -1 nop
 %endif
+
 _openexe2_vartype_1:
 _openexe2:
 	; Input: DS == pmode16, corresponding to pmodewe.
@@ -7820,7 +8157,7 @@ _openexe2:
 	push ds
 	_mov bx,ax
 	; Read the LE/PMW1 header and pmodew_config from the .exe.
-%if UNC  ; By `tasm /dUNC'.
+%if UNC && LOADSPE==0  ; By `tasm /dUNC'.
 	mov cx,110h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h. !! Why not just 100h here?
 	mov ds,[-pmodewe+_int21lowdtaseg]
 	_xor dx,dx
@@ -7843,6 +8180,35 @@ _openexe2:
 	jc _loaderror
 	_xor si,si
 .copy:
+	push es
+%elif LOADSPE
+	mov cx, 200h  ; Must be at most DTABUFSIZE == 200h.
+	mov ds, [-pmodewe+_int21lowdtaseg]
+	_xor dx, dx
+	mov ah, 3fh  ; Read from file using handle.
+	int 21h
+	jc short .j_loaderror
+	cmp ax, cx
+	jne short .j_loaderror
+	mov si, spefofs.pmodew_config  ; Used by the `rep movsb' below.
+	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.signature], 'MZ'
+	jne short .j_loaderror
+	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.nreloc], 0
+	jne short .j_loaderror
+	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.hdrsize], 200h>>4
+	jne short .j_loaderror
+	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 40h
+	jne short .j_loaderror
+	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.Signature], 'PE'
+	jne short .j_loaderror
+	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.SizeOfHeaders], 200h
+	jne short .j_loaderror
+	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.NumberOfRvaAndSizes], 16
+	jne short .j_loaderror
+	mov cx,   [si-spefofs.pmodew_config+spefofs.pehdr.NumberOfSections]  ; dw.
+	jcxz .j_loaderror
+	cmp cx, 5
+	ja short .j_loaderror
 	push es
 %else
 	mov cx,40h+pmodew_config._size  ; pmodew_config._size == 15h == 21. Must be >=pmodew_config._size+(hdrsize>>4). Thus this supports hdrsize values 2, 3 and 4.
