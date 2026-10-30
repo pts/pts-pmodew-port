@@ -3163,11 +3163,22 @@ abort_start:                            ; abort, stabilize system
 
 	call restoreRMints              ; restore real mode INT environment
 
-	mov ax,3                        ; set text mode
+	mov ax,3                        ; set 80x25 text mode
 	int 10h
 
-	mov ebp,0b8000h                 ; EBP -> current TTY row start
-	_mov edi,ebp                     ; EDI -> current TTY column
+	; Displays a hex register dump on the screen (video memory). This is
+	; only enabled %if EXCEPTIONS. Example dump on instruction int3:
+	;
+	; [PMODE/W]: Abort: 00
+	; Exception: 03
+	; EAX: 00004CFE  EBX: 00000001  ECX: 00000000  EDX: 00035025
+	; ESI: 00000000  EDI: 00000000  EBP: 00000000  ESP: 00000000
+	; DS: 0080  ES: 0080  FS: 0080  GS: 0080 SS: 0080  CS: 0088
+	; EIP: 00035023
+	; ELAGS: 00003212
+	; CR0: 00000011  CR2: 00000000
+	mov ebp,0b8000h                 ; EBP -> current TTY row start. 0b8000:0 is sthe start of the 80x25 text screen
+	_mov edi,ebp                    ; EDI -> current TTY column
 	mov ah,7                        ; AH = text color
 
 	mov si,-pmodewk+aborts_pmwabort      ; put first string of abort
