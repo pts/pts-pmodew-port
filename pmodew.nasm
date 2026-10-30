@@ -43,7 +43,7 @@
 ; 2fh 32h 34h 35h 39h 3ah 3bh 3ch 3dh 3fh 40h 41h 43h 47h 48h 49h 4ah 4bh
 ; 4ch 4eh 4fh 51h 56h 5bh 62h 0ffh.
 ;
-; TODO(pts): Add manual sizes to do -O0 instead of -O999999999 (with both NASM 0.98.39 and newer).
+; TODO(pts): Add manual sizes to do -O0 instead of -O32700 (with both NASM 0.98.39 and newer).
 
 ; --- Compile-time configuration.
 ;
@@ -92,6 +92,15 @@
   %assign CONFIGINEXEIMAGE CONFIGINEXEIMAGE  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef SIZEOPT  ; Can be specified on the command line.
+  %define SIZEOPT 0   ; Disable size optimizations. This is to reproduce a bitwise identical pmodewu.exe and pmodew.exe output.
+  ;%define SIZEOPT 1  ; Enable  size optimizations to make pmodew.exe a few bytes (up to 10 bytes) shorter. It doesn't make it slower.
+%elifidn (SIZEOPT), ()
+  %define SIZEOPT 1
+%else
+  %assign SIZEOPT SIZEOPT  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %ifndef PMW1UNCOMP  ; Can be specified on the command line.
   %define PMW1UNCOMP 0   ; PMW1-format 32-bit payloads are compressed. Uncompressed payloads are not supported.
   ;%define PMW1UNCOMP 1  ; PMW1-format 32-bit payloads are uncompressed. Compressed payloads are not supported.
@@ -122,6 +131,7 @@
 %ifndef LOADSPE  ; Can be specified on the command line.
   %define LOADSPE 0   ; Disable loading of simple PE-format 32-bit payloads.
   ;%define LOADSPE 1  ; Enable  loading of simple PE-format 32-bit payloads. PMODE/W is compressed, the payload is uncompressed.
+  ;%define LOADSPE 2  ; Enable  loading of simple PE-format 32-bit payloads, with some features removed or shortened. PMODE/W is compressed, the payload is uncompressed.
 %elifidn (LOADSPE), ()
   %define LOADSPE 1
 %else
@@ -4130,6 +4140,7 @@ int3105ff:                              ; initialize protected mode system
 	_mov edi,esp
 
 	_xor ebx,ebx
+	; The size optimization of using EDI instead of ESP here wouldn't make the compressed pmodew.exe shorter.
 	mov [esp+20h],bx
 	mov [esp+2eh],ebx
 	fixpre_mov eax,[cs:-pmodewk+xms_callip]
@@ -4799,10 +4810,11 @@ reloc_seg pmodewe, pmcode16  ; pmcode16 segment para public use16 'CODE'
 ;
 errmsgtbl       dw -pmodewe+errmsg0,-pmodewe+errmsg1,-pmodewe+errmsg2,-pmodewe+errmsg3
 		dw -pmodewe+errmsg4,-pmodewe+errmsg5,-pmodewe+errmsg6,-pmodewe+errmsg7
+%if LOADSPE==0
 		dw -pmodewe+errmsg8,-pmodewe+errmsg9
+%endif
 
 pmodemsg        db '[PMODE/W]: $'
-; !! Remove some of those which are impossble with LOADSPE.
 errmsg0         db 'Not Enough Memory Available!',36  ; _memoryerr.
 errmsg1         db '80386+ Not Detected!',36  ; Returned as AX=1 CF=1 by _pm_info.
 errmsg2         db 'System Already In Protected Mode And No VCPI or DPMI found!',36  ; Returned as AX=2 CF=1 by _pm_info.
@@ -4811,8 +4823,10 @@ errmsg4         db 'A20 Error!',36  ; Returned as AX=4 CF=1 by _pm_init.
 errmsg5         db 'DPMI Error!',36  ; _exiterror.  Also returned as AX=5 CF=1 by _pm_init.
 errmsg6         db 'Unable To Allocate Needed DPMI Selectors!',36  ; _descriptorerr. Also returned as AX=6 CF=1 by _pm_init.
 errmsg7         db 'Error Loading EXE!',36  ; _loaderror.
+%if LOADSPE==0
 errmsg8         db 'Unrecognized Fixup Data!',36  ; _unknownerror.
 errmsg9         db '16bit Fixup Overflow!',36  ; _16biterror.
+%endif
 
 %if PMWV==34
 %if LOGO
@@ -5223,23 +5237,33 @@ _nostartmsg:
 	fixpre_mov eax,[es:0ah]
 	mov [-pmodewe+_termrmvect],eax
 
+%if SIZEOPT
+	mov [-pmodewe+_pmode_process],cx  ; Also updates _pmode_systype.
+%else
 	mov [-pmodewe+_pmode_process],cl
 	mov [-pmodewe+_pmode_systype],ch
+%endif
 
 	db 66h,26h,0c7h,6,0ah,0         ; mov dword [es:0xa],-pmodewe+_termhandler+(pmcode16<<16)  ; Install the termination handler  ; Diff: TASM encodes the 0x66 prefix, then the segment prefix, NASM does it the other way round.
 	reloc dw -pmodewe+_termhandler,pmcode16
 
 ;       MOV DWORD PTR ES:[0Ah], pmcode16:_termhandler
 
+%if SIZEOPT==0
 	_xor ax,ax                       ; EDX = PMODEWK's memory requirements
+%endif
 	mov ebx,[-pmodewe+_memtop]                 ;       in paragraphs
 	sub ebx,[-pmodewe+_membase]
 	_cmp bx,dx
+%if SIZEOPT
+	jb _memoryerr                   ; Exit if there is not enough memory
+%else
 	jb _pmstartuperr                ; Exit if there is not enough memory
-	mov es,[-pmodewe+_membase]      ; otherwise set ES to the block of
-	add [-pmodewe+_membase],edx                ; memory
+%endif
+	mov es,[-pmodewe+_membase]      ; otherwise set ES to the block of memory
+	add [-pmodewe+_membase],edx
 
-	reloc call 0:-pmodewk+_pm_init                   ; Initialize and enter Protected Mode
+	reloc call 0:-pmodewk+_pm_init  ; Initialize and enter Protected Mode
 	jc _pmstartuperr
 
 ;
@@ -5308,7 +5332,7 @@ _nomeminit1:
 	push es
 	pop fs                          ; FS = 32bit data selector
 	mov gs, [-pmodewe+_selbuf]
-	call _loadSPE  ; !! Inline it, this is the only caller.
+	call _loadSPE  ; Inlining it would make it longer.
 %else
 	call _loadexe                   ; Load LE/PMW1 EXE Into Memory
 %endif
@@ -5342,12 +5366,17 @@ _nomeminit1:
 
 	sub esp,32h
 	_mov ebp,esp
+%if SIZEOPT  ; Make it better compressible by moving the `sub esp,32h' and `mov byte [ebp+_eax+1],...' instructions together.
+	mov byte [ebp+_eax+1],4ah   ; Resize PMODE/W's DOS memory block
+%endif
 	mov ebx,[-pmodewe+_membase]
 	mov ax,[-pmodewe+_pspseg]
 	_sub bx,ax
 	mov [ebp+_ebx],bx
 	mov [ebp+_es],ax
+%if SIZEOPT==0
 	mov byte [ebp+_eax+1],4ah   ; Resize PMODE/W's DOS memory block
+%endif
 	call _realmodeint21             ; using real mode INT 21h Function 4Ah
 	add esp,32h
 
@@ -5453,13 +5482,6 @@ _loadSPE:
 ; Input: GS == _selbuf == _dtabufptr containing the first 200h bytes of the .exe file; DS == pmodewe (== pmcode16) data selector; ES == FS == _selzero == zero-based data selector.
 ; Output: (no register value).
 ; Ruins: EAX, EBX, ECX, EDX, ESI, EDI, EBP, ES.
-; !! Can we make the compressed stub 5eh == 94 bytes shorter (probably not)? If yes, the output PE .exe becomes 0x200 bytes shorter.
-;    * Maybe improve MZ relocation processing.
-;    * Maybe compress with aPACK or UPX instead.
-;    * Maybe move some code (such as PSP into EAX) to the payload.
-;    * Inline 2 functions.
-;    * Remove unused variables (doesn't help much, compression is good for them).
-;    * Optimize other parts of PMODE/W, such as `add dl,3'.
 	mov cx, [gs:spefofs.pehdr.NumberOfSections]  ; dw.
 	push cx  ; Save NumberOfSections.
 	xor edx, edx  ; Largest RVA so far.
@@ -5484,7 +5506,7 @@ _loadSPE:
 .allocate_base:
 	; Now: EAX == image_and_stack_size. (number of bytes to allocate).
 	push eax  ; Save image_and_stack_size.
-	call _malloc_aligned_SPE  ; This is the only allocation done from _loadSPE. If it fails, it makes the process exit with a fatal error. !! Inline it, this is the only caller.
+	call _malloc_aligned_SPE  ; This is the only allocation done from _loadSPE. If it fails, it makes the process exit with a fatal error. Inlining would make it longer.
 	pop ecx  ; Restore ECX := image_and_stack_size.
 	mov ebx, eax  ; EBX := linear address of the actual image_ptr (instead of ImageBase).
 	add eax, ecx  ; ECX := linear address of the end of the image.
@@ -6221,21 +6243,29 @@ _initdescerr:
 ;   CF=1 Error
 ;
 _readfile:
-	multipush eax, bx, ds
+	multipush eax, bx
+%if SIZEOPT  ; Make it more compressible, reusing repetition in _seekfile.
+	mov bx,[-pmodewe+_exehandle]
+	push ds
+	mov ah,3fh
+%else
+	push ds
 	mov ah,3fh
 	mov bx,[-pmodewe+_exehandle]
+%endif
 %if LOADSPE  ; Shorter.
 	push es
 	pop ds
 %else
 	mov ds,[-pmodewe+_selzero]
 %endif
-	int 21h
-	multipop ds, bx, eax
-	jc _loaderror
+	int 21h  ; This DOS-extended call changes EAX.
+	pop ds
 	; BUG: `cmp eax, ecx' ++ `jne _loaderror' is missing. We should
 	; check that all the bytes we need have been read. However, that would
 	; change pmodew.exe, so it wouldn't be bytewise identicaly anymore.
+	multipop bx, eax
+	jc _loaderror
 	ret
 
 ;
@@ -6247,13 +6277,26 @@ _readfile:
 ;   CF=1 Error
 ;
 _seekfile:
-	multipush ax, bx, ecx, dx
+%if SIZEOPT  ; Make it more compressible, reusing repetition in _readfile.
+	multipush eax, bx
+	mov bx,[-pmodewe+_exehandle]
+%else
+	multipush ax, bx
+%endif
+	multipush ecx, dx
 	_mov ecx,edx
 	shr ecx,16
 	mov ax,4200h
+%if SIZEOPT==0 ; Make it more compressible, reusing repetition in _readfile.
 	mov bx,[-pmodewe+_exehandle]
+%endif
 	int 21h
-	multipop dx, ecx, bx, ax
+	multipop dx, ecx
+%if SIZEOPT  ; Make it more compressible, reusing repetition in _readfile.
+	multipop bx, eax
+%else
+	multipop bx, ax
+%endif
 	jc _loaderror
 	ret
 
@@ -6353,7 +6396,7 @@ _gethimemerr:
 
 %if LOADSPE==0  ; Unused with LOADSPE.
 _16biterror:
-	mov ax,9
+	mov ax,9  ; The size optimization of doing `mov al,...' here would make the compressed pmodew.exe longer.
 	jmp short _pmstartuperr
 %endif
 _descriptorerr:
@@ -6382,9 +6425,13 @@ _pmstartuperr:
 	mov dx,[word -pmodewe+errmsgtbl+si]  ; `Diff: effective address `word' is because of missed TASM optimization. In NASM, there is no displacement (0).
 	call _pmsg
 	mov ah,2
-	mov dl,10
+	mov dl,10  ; LF == '\n'.
 	int 21h
+%if SIZEOPT
+	mov dl,13  ; CR == '\r'. TODO(pts): Add patch which makes it CR-LF instead of LF-CR.
+%else
 	add dl,3
+%endif
 	int 21h
 	mov ax,4cffh
 	int 21h
@@ -6424,12 +6471,19 @@ _initdosext:
 	cld
 	sub esp,32h
 	_mov ebp,esp
+%if SIZEOPT  ; Make it better compressible by moving the `sub esp,32h' and `mov byte [ebp+_eax+1],...' instructions together.
+	mov byte [ebp+_eax+1],1ah
+	mov word [ebp+_edx],0       ; Set the real mode DTA segment to
+	mov dx,[-pmodewe+_int21lowdtaseg]
+	mov [ebp+_ds],dx
 	mov [-pmodewe+_int21datasel64],ds          ; Store the 16bit data selector
-
+%else
+	mov [-pmodewe+_int21datasel64],ds          ; Store the 16bit data selector
 	mov dx,[-pmodewe+_int21lowdtaseg]
 	mov [ebp+_ds],dx
 	mov byte [ebp+_eax+1],1ah
 	mov word [ebp+_edx],0       ; Set the real mode DTA segment to
+%endif
 	call _realmodeint21             ; our DTA buffer
 
 	mov ax,204h
@@ -6560,10 +6614,18 @@ _int31not0A00:
 	reloc mov bx,pmcode16
 	shl ebx,4
 	add ebx,strict dword -pmodewe+_copyrightmsg
+%if SIZEOPT
+	mov cx,[cs:-pmodewe+_pmode_process]  ; Also sets CH := _pmode_systype.
+%else
 	mov ch,[cs:-pmodewe+_pmode_systype]
 	mov cl,[cs:-pmodewe+_pmode_process]
+%endif
+%if SIZEOPT
+	mov dx,(PMWVER_MAJOR<<8 | PMWVER_MINOR)
+%else
 	mov dh,PMWVER_MAJOR
 	mov dl,PMWVER_MINOR
+%endif
 	and byte [esp+8],~1
 	iretd
 _int31not0EEFF:
@@ -6978,10 +7040,16 @@ _int211A:
 	fixpre2_mov [es:-pmodewe+_int21dtaoff],edx
 	sub esp,32h
 	_mov ebp,esp
-	mov dx,[cs:-pmodewe+_int21lowdtaseg]
-	mov [ebp+_ds],dx
+%if SIZEOPT  ; Make it better compressible by moving the `sub esp,32h' and `mov byte [ebp+_eax+1],...' instructions together.
 	mov byte [ebp+_eax+1],1ah
 	mov word [ebp+_edx],0
+%endif
+	mov dx,[cs:-pmodewe+_int21lowdtaseg]
+	mov [ebp+_ds],dx
+%if SIZEOPT==0
+	mov byte [ebp+_eax+1],1ah
+	mov word [ebp+_edx],0
+%endif
 	call _realmodeint21
 	add esp,32h
 	jmp _endint21handler
@@ -7736,8 +7804,13 @@ _int214C_no1B:
 _int214E:
 	sub esp,32h
 	_mov ebp,esp
+%if SIZEOPT  ; Make it better compressible by moving the `_mov_ebp,esp' and `mov [ebp+_eax+1],ah' instructions together.
+	mov [ebp+_eax+1],ah
+	mov [ebp+_ecx],cx
+%else
 	mov [ebp+_ecx],cx
 	mov [ebp+_eax+1],ah
+%endif
 
 	call _int21bufferpath
 
@@ -8191,6 +8264,8 @@ _openexe2:
 	cmp ax, cx
 	jne short .j_loaderror
 	mov si, spefofs.pmodew_config  ; Used by the `rep movsb' below.
+%if LOADSPE==2  ; Omit the check below to mae pmodewu.exe and pmodew.exe shorter.
+%else
 	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.signature], 'MZ'
 	jne short .j_loaderror
 	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.nreloc], 0
@@ -8209,6 +8284,7 @@ _openexe2:
 	jcxz .j_loaderror
 	cmp cx, 5
 	ja short .j_loaderror
+%endif
 	push es
 %else
 	mov cx,40h+pmodew_config._size  ; pmodew_config._size == 15h == 21. Must be >=pmodew_config._size+(hdrsize>>4). Thus this supports hdrsize values 2, 3 and 4.
