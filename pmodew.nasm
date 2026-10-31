@@ -6455,9 +6455,15 @@ _pmstartuperr:
 	int 21h
 
 _pmsg:
+%if SIZEOPT
+	mov ah,9
+	cmp byte [-pmodewe+_inpmode],ah
+	ja _pmerr1  ; This jumps if _inpmode == 0xff (true).
+%else
 	cmp byte [-pmodewe+_inpmode],0ffh
 	jz _pmerr1
 	mov ah,9
+%endif
 	int 21h
 	ret
 _pmerr1:
