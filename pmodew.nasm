@@ -176,12 +176,16 @@
 ;   IMAGE_DIRECTORY_ENTRY_IMPORT), not even kernel32.dll. The payload should
 ;   keep using int 21h (DOS-extended) and int 31h (DPMI) services provided
 ;   by the PMODE/W stub for memory allocation and I/O.
-; * The simple PE loader ignores the PE entry point (AddressOfEntryPoint),
-;   and it uses the last 2 bytes (SizeOfRawData-2) of the first section as
-;   the entry point. This is to avoid API and ABI conflicts with Win32,
-;   which uses AddressOfEntryPoint. This way the same PE .exe program file,
-;   with the same PE sections can be used as separate Win32 and DOS-extended
-;   programs sharing some code and data.
+; * The simple PE loader uses the PE entry point (AddressOfEntryPoint) by
+;   default, but with -SSPECUSTOMENTRY=1, it uses the last 2 bytes
+;   (SizeOfRawData-2) of the first section as the entry point. This is to
+;   avoid API and ABI conflicts with Win32, which uses AddressOfEntryPoint.
+;   This way the same PE .exe program file, with the same PE sections can be
+;   used as separate Win32 and DOS-extended programs sharing some code and
+;   data. Native Win32 can still be detected even with the default
+;   (AddressOfEntryPoint), by checking e.g. that dword [__imp_ExitProcess]
+;   hasn't been modified. (The original value is a nonzero RVA value
+;   pointing to db 0, 0, 'ExitProcess', 0; this is a bit hard to extract.)
 ; * Minimum CPU requirement: 80386.
 ;
 ; Because of the restrictions above, the simple PE loader isn't suitable for
@@ -221,6 +225,15 @@
   %define SPERELOC 1
 %else
   %assign SPERELOC SPERELOC  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef SPECUSTOMENTRY  ; Can be specified on the command line.
+  %define SPECUSTOMENTRY 0   ; Use AddressOfEntryPoint in the PE header as the entry point.
+  ;%define SPECUSTOMENTRY 1  ; Use the last 2 bytes (SizeOfRawData-2) of the first section as the entry point.
+%elifidn (SPECUSTOMENTRY), ()
+  %define SPECUSTOMENTRY 1
+%else
+  %assign SPECUSTOMENTRY SPECUSTOMENTRY  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
 %if (LOADLE|LOADPMW1|LOADSPE)==0
@@ -5503,7 +5516,7 @@ spefofs:
 .pehdr_fofs_ptr: equ 3ch  ; dd.
 .pehdr.Signature: equ 40h  ; dd.
 .pehdr.NumberOfSections: equ 46h  ; dw.
-.pehdr.AddressOfEntryPoint: equ 0x68  ; dd RVA. Ignored.
+.pehdr.AddressOfEntryPoint: equ 68h  ; dd RVA. Ignored iff SPECUSTOMENTRY.
 .pehdr.ImageBase: equ 74h  ; dd. Ignored iff SPERELOC==0.
 .pehdr.SizeOfImage: equ 90h  ; dd.
 .pehdr.SizeOfHeaders: equ 94h  ; dd.
@@ -5589,9 +5602,14 @@ _loadSPE:
 	push es
 	pop ds  ; DS := zero-based data selector.
 	lea esi, [eax+spefofs.pehdr.IMAGE_SECTION_HEADER]
+%if SPECUSTOMENTRY
 	mov edx, [esi+pesechdr.VirtualAddress]
 	add edx, [esi+pesechdr.VirtualSize]
 	lea edx, [edx+eax-2]  ; dos_entry_point (EDX) := image_ptr+IMAGE_SECTION_HEADER[0].VirtualAddress+IMAGE_SECTION_HEADER[0].SizeOfRawData-2.
+%else
+	mov edx, [eax+spefofs.pehdr.AddressOfEntryPoint]
+	add edx, eax  ; dos_entry_point (EDX) := image_ptr+AddressOfEntryPoint.
+%endif
 	push edx  ; Save dos_entry_point (EDX). It will be put to [-pmodewe+_init_eip].
 %if SPERELOC  ; We push 3 dwords here, which will be popped at the beginning of .apply_relocations below.
 	mov edx, [eax+spefofs.pehdr.ImageBase]
