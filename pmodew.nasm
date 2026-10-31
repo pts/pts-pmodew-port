@@ -5548,7 +5548,7 @@ _loadSPE:
 .allocate_base:
 	; Now: EAX == image_and_stack_size. (number of bytes to allocate).
 	push eax  ; Save image_and_stack_size.
-	call _malloc_aligned_SPE  ; This is the only allocation done from _loadSPE. If it fails, it makes the process exit with a fatal error. Inlining would make it longer.
+	call _malloc_aligned_SPE  ; Also ruins EBX. This is the only allocation done from _loadSPE. If it fails, it makes the process exit with a fatal error. Inlining would make it longer.
 	pop ecx  ; Restore ECX := image_and_stack_size.
 	mov ebx, eax  ; EBX := linear address of the actual image_ptr (instead of ImageBase).
 	add eax, ecx  ; ECX := linear address of the end of the image.
@@ -5594,9 +5594,8 @@ _malloc_aligned_SPE:
 ; Allocates memory. Failes with a fatal error (_memoryerr) if allocation fails.
 ; Input: EAX: number of bytes to allocate.
 ; Output: EAX: linear address of the allocated block, will be page-aligned (multiple of 4096).
-; Ruins: EFLAGS.
+; Ruins: EBX, EFLAGS.
 ; Based on _loadobjects1.
-	push ebx  ; Save.
 	push eax  ; Save size (EAX).
 	mov ebx,[-pmodewe+_memtop]
 	sub ebx,[-pmodewe+_membase]
@@ -5614,18 +5613,14 @@ _malloc_aligned_SPE:
 .trylowmem:
 	pop eax  ; Restore EAX := size.
 	push eax
-	mov ebx,[-pmodewe+_membase]
-	and ebx,0ffh                    ; Make sure memory is 4096 byte aligned
-	jz .lowmemok1
-	dec bx
-	xor bl,0ffh
-	shl bx,4
+	movzx ebx, byte [-pmodewe+_membase]
+	neg bl
+	shl bx,4  ; EBX := number of bytes to skip after _membase so that the returned EAX will be aligned to 1000h bytes.
 	_add eax,ebx
-.lowmemok1:
-	call _getmem                    ; Allocate low memory for this object
+	call _getmem  ; Allocate EAX bytes of low memory for this object. Also ruins EAX on error.
 	jc short .tryhimem  ; Ruins EAX on error.
 	shl eax,4  ; Convert SEGMENT:0 in EAX to linear address.
-	_add eax,ebx                     ; Align block on 4096 bytes
+	_add eax,ebx                     ; Align block on 1000h bytes.
 	jmp short .ok
 .tryhimem:  ; Now: EAX == size.
 	pop eax  ; Restore EAX := size.
@@ -5634,7 +5629,6 @@ _malloc_aligned_SPE:
 	jc _memoryerr
 .ok:
 	pop ebx  ; Discard size.
-	pop ebx  ; Restore.
 	ret
 %else
 _loadexe:
