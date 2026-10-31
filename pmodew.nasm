@@ -5132,7 +5132,11 @@ _pm16start:
 	cld
 
 	reloc call PMODE_TEXT:-pmodewk+_pm_info        ; Get Protected Mode Info/Detect CPU
+%if SIZEOPT
+	jc _pmstartuperr
+%else
 	jmp_cond_near c, _pmstartuperr  ; jc strict near _pmstartuperr  ; Diff: TASM doesn't generate the 4-byte 386 `jc near' instruction, but generates a 5-byte `jnc ...' ++ `jmp near ...' combo.
+%endif
 
 	cmp ch,1                        ; Borland DPMI Fix For FS/GS
 	ja _noborfix1
