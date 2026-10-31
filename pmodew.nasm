@@ -166,8 +166,12 @@
 ; * Before loading any section data, the simple PE loader loads the first
 ;   0x200 bytes of the the .exe file to the memory location above. (This is
 ;   compatible with how Win32 loads a PE .exe program file.)
-; * The simple PE loader doesn't apply the PE relocations (in
-;   IMAGE_DIRECTORY_ENTRY_BASERELOC). The payload should do it if needed.
+; * The simple PE loader applies the PE relocations (in
+;   IMAGE_DIRECTORY_ENTRY_BASERELOC) unless disabled with -DSPERELOC=0 at
+;   compile time. The simple PE loader supports only the HIGHLOW and
+;   ABSOLUTE (no-op) relocation types (unchecked), each relocation block
+;   must be nonempty (unchecked), and each relocation must point to a valid
+;   dword location within a loaded PE section (unchecked).
 ; * The simple PE loader doesn't load any DLLs (in
 ;   IMAGE_DIRECTORY_ENTRY_IMPORT), not even kernel32.dll. The payload should
 ;   keep using int 21h (DOS-extended) and int 31h (DPMI) services provided
@@ -209,6 +213,15 @@
 ;   shl ecx, 16
 ;   movzx edx, dx
 ;   add edx, ecx  ; EDX := linear base address of the first env var.
+
+%ifndef SPERELOC  ; Can be specified on the command line.
+  %define SPERELOC 1   ; Enable  applying of relocations (in IMAGE_DIRECTORY_ENTRY_BASERELOC) in the simple PE payload.
+  ;%define SPERELOC 0  ; Disable applying of relocations (in IMAGE_DIRECTORY_ENTRY_BASERELOC) in the simple PE payload.
+%elifidn (SPERELOC), ()
+  %define SPERELOC 1
+%else
+  %assign SPERELOC SPERELOC  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
 
 %if (LOADLE|LOADPMW1|LOADSPE)==0
   %error ERROR_SUPPORT_FOR_ALL_PAYLOAD_FORMATS_DISABLED
@@ -5498,7 +5511,7 @@ spefofs:
 .pehdr.NumberOfRvaAndSizes: equ 0b4h  ; dd.
 .pehdr.IMAGE_DATA_DIRECTORY: equ 0b8h  ; times 16 dd ?, ?. Ignored.
 .pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT: equ 0c0h  ; dd ? ?. Ignored.
-.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC: equ 0e0h  ; dd ? ?. Ignored.
+.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC: equ 0e0h  ; dd ? ?. Ignored iff SPERELOC==0.
 .pehdr.IMAGE_SECTION_HEADER: equ 138h  ; 28h bytes each.
 
 pesechdr:  ; IMAGE_DATA_SECTION_HEADER.
@@ -5580,6 +5593,16 @@ _loadSPE:
 	add edx, [esi+pesechdr.VirtualSize]
 	lea edx, [edx+eax-2]  ; dos_entry_point (EDX) := image_ptr+IMAGE_SECTION_HEADER[0].VirtualAddress+IMAGE_SECTION_HEADER[0].SizeOfRawData-2.
 	push edx  ; Save dos_entry_point (EDX). It will be put to [-pmodewe+_init_eip].
+%if SPERELOC  ; We push 3 dwords here, which will be popped at the beginning of .apply_relocations below.
+	mov edx, [eax+spefofs.pehdr.ImageBase]
+	sub edx, eax
+	push edx  ; Save relocation delta.
+	mov edx, [esi-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC+peidd.VirtualAddress]
+	add edx, eax
+	push edx   ; Save linear address of relocation blocks.
+	add edx, [esi-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC+peidd.Size]
+	push edx  ; Save linear address of end of relocation blocks.
+%endif
 	push eax  ; Save image_ptr (EAX). It's used by .load_sections_loop.
 .load_sections_loop:
 	mov edx, [esi+pesechdr.PointerToRawData]  ; It's too late to use [gs:si+pesechdr.PointerToRawData], because _readfile has overwritten the first 200h bytes at GS:0.
@@ -5604,7 +5627,36 @@ _loadSPE:
 	add esi, pesechdr._size
 	dec di
 	jnz .load_sections_loop
+%if SPERELOC
+.apply_relocations:
+	pop ebx  ; Restore EBX := image_ptr.
+	pop ebp  ; Restore EBP := linear address of end of relocation blocks.
+	pop esi  ; Restore ESI := linear address of relocation blocks.
+	pop edi  ; Restore EDI := relocation delta.
+	jmp short .maybe_next_relocation_block  ; We must jump here, in case there are no relocations at all, i.e. IMAGE_DIRECTORY_ENTRY_BASERELOC.Size == 0, thus ESI == EBP here.
+.relocation_block_loop:
+	mov edx, [esi]  ; EDX := PageRVA (EAX).
+	add edx, ebx
+	mov ecx, [esi+4]  ; ECX := BlockSize (EAX).
+	; We assume that the block is not empty, i.e. ECX >= 12 here. This is documented in the LOADSPE comment.
+	add ecx, esi  ; ECX := linear address of end of the relocation block.
+	add esi, byte 8
+.relocation_entry_loop:
+	xor eax, eax  ; We set EAX := 0 because we need to set the high word of EAX := 0.
+	a32 lodsw  ; AX := next relocation entry. We assume that either it's of type ABSOLUTE (== 0) or HIGHLOW (== 3). This is document in the LOADSPE comment.
+	sub ah, 0x30  ; Same size as the equivalent: sub ax, strict word 0x3000
+	jb short .relocation_entry_done
+	sub [eax+edx], edi  ; Apply relocation by adding relocation delta to the dword address to be relocated.
+.relocation_entry_done:
+	cmp esi, ecx
+	jne short .relocation_entry_loop
+.maybe_next_relocation_block:
+	cmp esi, ebp
+	jne short .relocation_block_loop
+.after_relocation_block_loop:
+%else
 	pop eax  ; Discard image_ptr.
+%endif
 .done:
 	pop eax  ; Restore EAX := dos_entry_point.
 	pop ds  ; Restore.
