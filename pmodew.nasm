@@ -5173,12 +5173,20 @@ _noborfix1:
 	mov ax,[es:2ch]
 	mov [-pmodewe+_envseg],ax
 
+%if SIZEOPT
+	mov ax,[es:2]
+	mov [-pmodewe+_memtop],ax  ; High word of _memtop is already zero-initialized.
+	mov ax,ss
+	add ax,strict word (STACKSIZE+0xf)>>4
+	mov [-pmodewe+_membase],ax  ; High word of _membase is already zero-initialized.
+%else
 	_xor eax,eax                     ; Get the Base and Top of Low Memory
 	mov ax,[es:2]
 	mov [-pmodewe+_memtop],eax
 	mov ax,ss
 	add ax,strict word (STACKSIZE+0xf)>>4
 	mov [-pmodewe+_membase],eax
+%endif
 
 %if INT33 || INT1B
 					; INT 33h Function 9 inherits the old
