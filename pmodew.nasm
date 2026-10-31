@@ -5524,6 +5524,7 @@ _loadSPE:
 ; Input: GS == _selbuf == _dtabufptr containing the first 200h bytes of the .exe file; DS == pmodewe (== pmcode16) data selector; ES == FS == _selzero == zero-based data selector.
 ; Output: (no register value).
 ; Ruins: EAX, EBX, ECX, EDX, ESI, EDI, EBP, ES.
+	push ds  ; Save.
 	mov cx, [gs:spefofs.pehdr.NumberOfSections]  ; dw.
 	push cx  ; Save NumberOfSections.
 	xor edx, edx  ; Largest RVA so far.
@@ -5550,44 +5551,64 @@ _loadSPE:
 	push eax  ; Save image_and_stack_size.
 	call _malloc_aligned_SPE  ; Also ruins EBX. This is the only allocation done from _loadSPE. If it fails, it makes the process exit with a fatal error. Inlining would make it longer.
 	pop ecx  ; Restore ECX := image_and_stack_size.
-	mov ebx, eax  ; EBX := linear address of the actual image_ptr (instead of ImageBase).
+	mov edi, eax  ; EDI := linear address of the actual image_ptr (instead of ImageBase).
 	add eax, ecx  ; ECX := linear address of the end of the image.
 	mov [-pmodewe+_init_esp], eax
+	mov bx, [-pmodewe+_exehandle]  ; This is the last instruction which needs DS == pmodewe data selector.
 .fill_base:
-	; Now: EBX == image_ptr; ECX == number of bytes allocated at the image_ptr, always divisible by 4.
-	mov edi, ebx
+	; Now: EDI == image_ptr; ECX == number of bytes allocated at the image_ptr, always divisible by 4.
 	shr ecx, 2
 	;mov es, [-pmodewe+_selzero]  ; Not needed, it's already set.
 	xor eax, eax
+	push edi  ; Save.
 	rep a32 stosd  ; Fill the entire image (including the stack (ECX dwords starting at ES:EDI) with NUL bytes. Also sets ECX := 0.
 .copy_hdr_to_base:
-	push ds  ; Save.
 	push gs
 	pop ds  ; DS := _selbuf == _dtabufptr containing the first 200h bytes of the .exe file.
 	xor esi, esi
-	mov edi, ebx
+	pop eax  ; Restore EAX := image_ptr.
+	mov edi, eax  ; EDI := image_ptr (EAX).
 	mov cl, 200h>>2  ; ECX := 200h>>2. This implementatios is shorter, and it works because ECX was 0.
 	;mov es, [-pmodewe+_selzero]  ; Not needed, it's already set.
 	rep a32 movsd  ; Copy the first 200h bytes of the .exe file to the image base. Win32 does the same.
-	pop ds  ; Restore.
 .load_sections:
 	pop di  ; Restore DI := NumberOfSections.
-	lea esi, [ebx+spefofs.pehdr.IMAGE_SECTION_HEADER]
-	mov eax, [es:esi+pesechdr.VirtualAddress]
-	add eax, [es:esi+pesechdr.VirtualSize]
-	lea eax, [eax+ebx-2]  ; EAX := image_ptr+IMAGE_SECTION_HEADER[0].VirtualAddress+IMAGE_SECTION_HEADER[0].SizeOfRawData-2.
-	mov [-pmodewe+_init_eip], eax
+	push es
+	pop ds  ; DS := zero-based data selector.
+	lea esi, [eax+spefofs.pehdr.IMAGE_SECTION_HEADER]
+	mov edx, [esi+pesechdr.VirtualAddress]
+	add edx, [esi+pesechdr.VirtualSize]
+	lea edx, [edx+eax-2]  ; dos_entry_point (EDX) := image_ptr+IMAGE_SECTION_HEADER[0].VirtualAddress+IMAGE_SECTION_HEADER[0].SizeOfRawData-2.
+	push edx  ; Save dos_entry_point (EDX). It will be put to [-pmodewe+_init_eip].
+	push eax  ; Save image_ptr (EAX). It's used by .load_sections_loop.
 .load_sections_loop:
-	mov edx, [es:esi+pesechdr.PointerToRawData]  ; It's too late to use [gs:si+pesechdr.PointerToRawData], because _readfile has overwritten the first 200h bytes at GS:0.
-	call _seekfile  ; Seeks to file offset EDX in the .exe file. On error, it fails with a fatal error.
-	mov edx, [es:esi+pesechdr.VirtualAddress]
-	add edx, ebx  ; EDX := section VirtualAddress (EDX) + image_ptr (EBX).
-	mov ecx, [es:esi+pesechdr.SizeOfRawData]
-	call _readfile  ; Reads ECX bytes to linear address EDX from the .exe file. On error, it fails with a fatal error.
+	mov edx, [esi+pesechdr.PointerToRawData]  ; It's too late to use [gs:si+pesechdr.PointerToRawData], because _readfile has overwritten the first 200h bytes at GS:0.
+	;call _seekfile  ; Seeks to file offset EDX in the .exe file. On error, it fails with a fatal error.
+	_mov ecx, edx
+	shr ecx, 16
+	mov ax, 4200h ; Seek to file offset CX:DX in the .exe file.
+	int 21h  ; DOS-extended syscall.
+.jc_loaderror:  ; A full `.j_loaderror: jmp _loaderror' trampoline makes this code 2 bytes longer.
+	jc _loaderror
+	; Now: EAX, EDX and ECX are junk.
+	pop edx  ; Restore EDX := image_ptr.
+	push edx  ; Save image_ptr (EDX).
+	add edx, [esi+pesechdr.VirtualAddress]  ; EDX := image_ptr (EDX) + section VirtualAddress.
+	mov ecx, [esi+pesechdr.SizeOfRawData]
+	;call _readfile  ; Reads ECX bytes to linear address EDX from the .exe file. On error, it fails with a fatal error.
+	mov ah, 3fh  ; Read ECX bytes to DS:EDX from the .exe file.
+	int 21h  ; DOS-extended syscall.
+	jc short .jc_loaderror
+	cmp eax, ecx
+	jne _loaderror  ; If this jumps, then then not all ECX bytes have been read.
 	add esi, pesechdr._size
 	dec di
 	jnz .load_sections_loop
+	pop eax  ; Discard image_ptr.
 .done:
+	pop eax  ; Restore EAX := dos_entry_point.
+	pop ds  ; Restore.
+	mov [-pmodewe+_init_eip], eax
 	ret
 
 _malloc_aligned_SPE:
@@ -6269,6 +6290,7 @@ _initdescerr:
 	jc _descriptorerr
 	ret
 
+%if LOADLE || LOADPMW1
 ;
 ; Quickie Read To Buffer
 ; In:
@@ -6289,12 +6311,7 @@ _readfile:
 	mov ah,3fh
 	mov bx,[-pmodewe+_exehandle]
 %endif
-%if LOADSPE  ; Shorter.
-	push es
-	pop ds
-%else
 	mov ds,[-pmodewe+_selzero]
-%endif
 	int 21h  ; This DOS-extended call changes EAX.
 	pop ds
 	; BUG: `cmp eax, ecx' ++ `jne _loaderror' is missing. We should
@@ -6303,7 +6320,9 @@ _readfile:
 	multipop bx, eax
 	jc _loaderror
 	ret
+%endif
 
+%if LOADLE || LOADPMW1
 ;
 ; Seek To File Position
 ; In:
@@ -6335,6 +6354,7 @@ _seekfile:
 %endif
 	jc _loaderror
 	ret
+%endif
 
 %if LOADLE || LOADPMW1
 ;
