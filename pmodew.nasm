@@ -5273,7 +5273,11 @@ _nostartmsg:
 	jb _pmstartuperr                ; Exit if there is not enough memory
 %endif
 	mov es,[-pmodewe+_membase]      ; otherwise set ES to the block of memory
+%if SIZEOPT
+	add [-pmodewe+_membase],dx
+%else
 	add [-pmodewe+_membase],edx
+%endif
 
 	reloc call 0:-pmodewk+_pm_init  ; Initialize and enter Protected Mode
 	jc _pmstartuperr
@@ -5380,8 +5384,10 @@ _nomeminit1:
 	_mov ebp,esp
 %if SIZEOPT  ; Make it better compressible by moving the `sub esp,32h' and `mov byte [ebp+_eax+1],...' instructions together.
 	mov byte [ebp+_eax+1],4ah   ; Resize PMODE/W's DOS memory block
+	mov bx,[-pmodewe+_membase]
+%else
+	mov ebx,[-pmodewe+_membase]  ; We keep this longer version with EBX just for bitwise identical pmodew.exe output.
 %endif
-	mov ebx,[-pmodewe+_membase]
 	mov ax,[-pmodewe+_pspseg]
 	_sub bx,ax
 	mov [ebp+_ebx],bx
