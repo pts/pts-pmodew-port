@@ -611,7 +611,7 @@ PM_LOWMIN	equ 0
 
 %if UNC  ; By `nasm -DUNC'. Must be at te beginning of the .exe image, _openexe2 is looking for it there.
 pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
-.pagetables:	db PM_PAGETABLES	; @0:   db 4. Number of page tables under VCPI. _pm_pagetables
+.pagetables:	db PM_PAGETABLES	; @0:   db 4. Number of page tables under VCPI. Each page table makes 4 MiB of memory available. _pm_pagetables
 .selectors:	dw PM_SELECTORS		; @1:   dw 100h. Maximum number of selectors under VCPI/XMS/raw. _pm_selectors
 .rmstacklen:	dw PM_RMSTACKLEN	; @3:   dw 40h. Real-mode stack length, in para (10h bytes). _pm_rmstacklen
 .pmstacklen:	dw PM_PMSTACKLEN	; @5:   dw 80h. Protected-mode stack length, in para (10h bytes). _pm_pmstacklen
@@ -758,7 +758,7 @@ pampagemask     dw      ANY
 xms_callip      dw      ANY             ; XMS driver offset
 xms_callcs      dw      ANY             ; XMS driver segment
 xms_handle      dw      ANY
-xms_mem         dw      0
+xms_mem         dw      0  ; Amount of memory in KiB available for allocation using XMS.
 
 irqhookmap      dw      0
 
@@ -958,9 +958,9 @@ _pm_info:
 	mov ah,30h                      ; crap fix for Win95 HIMEM.SYS
 	int 21h
 
-	mov ah,8
-	call far [-pmodewk+xms_callip]
-	mov [-pmodewk+xms_mem],ax
+	mov ah,8  ; XMS query free extended memory.
+	call far [-pmodewk+xms_callip]  ; AX := size of largest free XMS block in KiB; DX := total size of free XMS memory in KiB.
+	mov [-pmodewk+xms_mem],ax  ; xms_mem := size of largest free XMS block in KiB.
 
 	pop es                          ; restore ES (buffer segment)
 
@@ -1072,7 +1072,7 @@ _pm_info:
 
 	jcxz .02
 
-	mov ah,9
+	mov ah,9  ; Allocate DX KiB of memory using XMS.
 	call far [-pmodewk+xms_callip]
 	_mov di,dx
 
@@ -1102,7 +1102,7 @@ rmirqvector equ $                            ; backed up real mode IRQ vectors
 	jcxz .03
 
 	_mov dx,di
-	mov ah,0ah
+	mov ah,0ah  ; XMS free extended memory block.
 	call far [-pmodewk+xms_callip]
 
 .03:
@@ -1485,7 +1485,7 @@ getrmirqvectors:
 
 r_init:                                 ; raw protected mode init
 	mov ah,88h                      ; how much extended memory free
-	int 15h
+	int 15h  ; AX = number of contiguous 1k blocks of memory starting at linear address 100000h (1 MiB).
 
 	_or ax,ax                        ; if none, done with raw init
 	jz xr_init
@@ -1553,7 +1553,7 @@ r_init:                                 ; raw protected mode init
 	jmp short xr_init2              ; go to XMS/raw continue init
 
 x_init:                                 ; XMS protected mode init
-	mov ah,3                        ; enable A20
+	mov ah,3  ; XMS enable A20.
 	call far [-pmodewk+xms_callip]
 
 	mov bx,4                        ; error code 0004h in case of error
@@ -1569,7 +1569,7 @@ x_init:                                 ; XMS protected mode init
 
 	_mov edx,esi
 	shr edx,10
-	mov ah,9
+	mov ah,9  ; Allocate DX KiB of memory using XMS.
 	call far [-pmodewk+xms_callip]
 
 	_or ax,ax
@@ -1577,7 +1577,7 @@ x_init:                                 ; XMS protected mode init
 
 	mov [-pmodewk+xms_handle],dx
 
-	mov ah,0ch
+	mov ah,0ch  ; XMS lock extended memory block, so that the XMS manager won't move it in physical memory.
 	call far [-pmodewk+xms_callip]
 
 	_or ax,ax
@@ -2047,10 +2047,10 @@ cleanup3:
 
 cleanup1:
 	mov dx,[-pmodewk+xms_handle]
-	mov ah,0dh
+	mov ah,0dh  ; XMS unlock extended memory block.
 	call far [-pmodewk+xms_callip]
 
-	mov ah,0ah
+	mov ah,0ah  ; XMS free extended memory block.
 	call far [-pmodewk+xms_callip]
 
 	ret

@@ -1062,7 +1062,7 @@ pmodew_config:  ; Load-time configuration for PMODE/W. Read manually from the be
 ;    it is between 0x20...0x35, so they fit.
 ; 3. The function _openexe2 (with -DVARTYPE=2, non-default) populates
 ;    _pm_config_except_for_lowmin and _pm16_lowmin from hardcoded defaults.
-.pagetables:	db 4  ; Number of page tables under VCPI. _pm_pagetables
+.pagetables:	db 4  ; Number of page tables under VCPI. Each page table makes 4 MiB of memory available. _pm_pagetables
 .selectors:	dw 100h  ; Maximum number of selectors under VCPI/XMS/raw. _pm_selectors
 .rmstacklen:	dw 40h  ; Real-mode stack length, in para (10h bytes). _pm_rmstacklen
 .pmstacklen:	dw 80h  ; Protected-mode stack length, in para (10h bytes). _pm_pmstacklen
