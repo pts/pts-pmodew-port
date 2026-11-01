@@ -4412,8 +4412,8 @@ _pma_alloc:                             ; allocate a block
 	push ebx
 	push edi
 
-	add eax,3
-	and al,0fch
+	add eax, 3
+	and al, ~3
 
 	fixpre_mov ebp,[cs:-pmodewk+extmemlast]
 	fixpre_mov edi,[cs:-pmodewk+extmembase]
@@ -5541,10 +5541,10 @@ _loadSPE:
 	; Now: EDX == max(IMAGE_SECTION_HEADER[i].VirtualAddress+IMAGE_SECTION_HEADER[i].VirtualSize for i in xrange(NumberOfSections)).
 	mov eax, [gs:spefofs.pehdr.SizeOfStackCommit]
 	add eax, 3
-	and eax, ~3
+	and al, ~3
 	xchg eax, edx  ; EAX := EDX; EDX := junk.
 	add eax, 3
-	and eax, ~3
+	and al, ~3
 	add eax, edx
 .allocate_base:
 	; Now: EAX == image_and_stack_size. (number of bytes to allocate).
