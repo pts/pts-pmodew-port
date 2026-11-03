@@ -73,7 +73,7 @@
 ; * 0304h Free Real Mode Call-Back Address
 ; * 0305h Get State Save/Restore Addresses
 ; * 0306h Get Raw Mode Switch Addresses
-; * 0400h Get Version
+; * 0400h (-DGETVERSION=1) Get Version
 ; * 0500h (-DFREEMEMINFO=1) Get Free Memory Information
 ; * 0501h Allocate Memory Block
 ; * 0502h Free Memory Block
@@ -305,6 +305,15 @@
   %define FREEMEMINFO 1
 %else
   %assign FREEMEMINFO FREEMEMINFO  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef GETVERSION  ; Can be specified on the command line.
+  %define GETVERSION 1   ; Enable  DPMI get version API (int 31h, AX == 400h).
+  ;%define GETVERSION 0  ; Disable DPMI get version API (int 31h, AX == 400h).
+%elifidn (GETVERSION), ()
+  %define GETVERSION 1
+%else
+  %assign GETVERSION GETVERSION  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
 %ifndef INT3108FUNC  ; Can be specified on the command line.
@@ -964,7 +973,10 @@ cleanuptbl      dw      -pmodewk+cleanup0,-pmodewk+cleanup1,-pmodewk+cleanup2,-p
 int31functbl    dw      0900h,0901h,0902h
 		dw      0000h,0001h,0002h,0003h,0006h,0007h,0008h,0009h
 		dw      0200h,0201h,0204h,0205h
-		dw      0305h,0306h,0400h
+		dw      0305h,0306h
+%if GETVERSION
+		dw	0400h
+%endif
 		dw      000ah,000bh,000ch
 		dw      0100h,0101h,0102h
 		dw      0300h,0301h,0302h
@@ -991,7 +1003,10 @@ int31routtbl    dw      -pmodewk+int310900,-pmodewk+int310901,-pmodewk+int310902
 		dw      -pmodewk+int310000,-pmodewk+int310001,-pmodewk+int310002,-pmodewk+int310003
 		dw      -pmodewk+int310006,-pmodewk+int310007,-pmodewk+int310008,-pmodewk+int310009
 		dw      -pmodewk+int310200,-pmodewk+int310201,-pmodewk+int310204,-pmodewk+int310205
-		dw      -pmodewk+int310305,-pmodewk+int310306,-pmodewk+int310400
+		dw      -pmodewk+int310305,-pmodewk+int310306
+%if GETVERSION
+		dw	-pmodewk+int310400
+%endif
 		dw      -pmodewk+int31000a,-pmodewk+int31000b,-pmodewk+int31000c
 		dw      -pmodewk+int310100,-pmodewk+int310101,-pmodewk+int310102
 		dw      -pmodewk+int310300,-pmodewk+int310301,-pmodewk+int310302
@@ -4151,6 +4166,7 @@ int310306:                              ; get raw mode switch addresses
 
 	jmp int310305f0
 
+%if GETVERSION
 int310400:                              ; get version
 	mov ax,5ah                      ; return version 0.9
 	mov bx,3                        ; capabilities
@@ -4158,6 +4174,7 @@ int310400:                              ; get version
 	mov dx,[cs:-pmodewk+picslave]   ; master and slave PIC values
 
 	jmp int310900f1
+%endif
 
 ;
 ; EXTENDED MEMORY FUNCTIONS
