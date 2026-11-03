@@ -43,6 +43,54 @@
 ; 2fh 32h 34h 35h 39h 3ah 3bh 3ch 3dh 3fh 40h 41h 43h 47h 48h 49h 4ah 4bh
 ; 4ch 4eh 4fh 51h 56h 5bh 62h 0ffh.
 ;
+; PMODE/W supports the following int 31h (DPMI) calls (in AX, full list in
+; int31functbl), which is a subset of DPMI 0.9:
+;
+; * 0000h Allocate LDT descriptors
+; * 0001h Free LDT Descriptor
+; * 0002h Segment to Descriptor
+; * 0003h Get Next Selector Increment Value
+; * 0006h Get Segment Base Address
+; * 0007h Set Segment Base Address
+; * 0008h Set Segment Limit
+; * 0009h Set Descriptor Access Rights
+; * 000ah Create Code Segment Alias Descriptor
+; * 000bh Get Descriptor
+; * 000ch Set Descriptor
+; * 0100h Allocate DOS Memory Block
+; * 0101h Free DOS Memory Block
+; * 0102h Resize DOS Memory Block
+; * 0200h Get Real Mode Interrupt Vector
+; * 0201h Set Real Mode Interrupt Vector
+; * 0202h (-DEXCEPTIONS=1) Get Processor Exception Handler Vector
+; * 0203h (-DEXCEPTIONS=1) Set Processor Exception Handler Vector
+; * 0204h Get Protected Mode Interrupt Vector
+; * 0205h Set Protected Mode Interrupt Vector
+; * 0300h Simulate Real Mode Interrupt
+; * 0301h Call Real Mode Procedure With Far Return Frame
+; * 0302h Call Real Mode Procedure With Iret Frame
+; * 0303h Allocate Real Mode Call-Back Address
+; * 0304h Free Real Mode Call-Back Address
+; * 0305h Get State Save/Restore Addresses
+; * 0306h Get Raw Mode Switch Addresses
+; * 0400h Get Version
+; * 0500h Get Free Memory Information
+; * 0501h Allocate Memory Block
+; * 0502h Free Memory Block
+; * 0503h Resize Memory Block
+; * 05ffh (PMODE/W internal, do not call) Initialize Protected Mode System
+; * 0600h (fake, always returns CF=0 success) Lock Linear Region
+; * 0601h (fake, always returns CF=0 success) Unlock Linear Region
+; * 0702h (fake, always returns CF=0 success) Mark Page as Demand Paging Candidate
+; * 0703h (fake, always returns CF=0 success) Discard Page Contents
+; * 0800h (-DINT3108FUNC=1) Physical Address Mapping
+; * 0801h (-DINT3108FUNC=1, DPMI 1.0) Free Physical Address Mapping
+; * 0900h Get and Disable Virtual Interrupt State
+; * 0901h Get and Enable Virtual Interrupt State
+; * 0902h Get Virtual Interrupt State
+;
+; DPMI 0.9 specification formatted as nice HTML: https://web.archive.org/web/20240915000218/https://www.phatcode.net/res/262/files/dpmi09.html
+;
 ; TODO(pts): Add manual sizes to do -O0 instead of -O32700 (with both NASM 0.98.39 and newer).
 
 ; --- Compile-time configuration.
