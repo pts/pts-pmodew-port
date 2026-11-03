@@ -3184,7 +3184,18 @@ exception_def:                          ; default exception handler (aborts)
 
 	; Printing as finishes. This moves the cursor, and exits.
 	; !! Move abort_exit here.
+%if SIZEOPT
+abort_exit:                             ; exit after abnormal termination
+	mov ah,2                        ; position cursor at bottom of screen
+	_xor bh,bh
+	mov dx,0800h
+	int 10h
+
+	mov ah,4ch                      ; DOS terminate
+	int 21h
+%else
 	jmp abort_exit                  ; finish abort
+%endif
 
 abort_callback:                         ; ran out of PM stacks in callback
 	mov bp,1                        ; abort string 1
@@ -3320,6 +3331,7 @@ abort_start:                            ; abort, stabilize system
 	jmp abort_putstr                ; put abort string and return
 	; Printing continues in exception_def, below `call abort_start'.
 
+%if SIZEOPT==0
 abort_exit:                             ; exit after abnormal termination
 	mov ah,2                        ; position cursor at bottom of screen
 	_xor bh,bh
@@ -3328,6 +3340,7 @@ abort_exit:                             ; exit after abnormal termination
 
 	mov ah,4ch                      ; DOS terminate
 	int 21h
+%endif
 
 %else
 abort_callback:                         ; ran out of PM stacks in callback
