@@ -74,7 +74,7 @@
 ; * 0305h Get State Save/Restore Addresses
 ; * 0306h Get Raw Mode Switch Addresses
 ; * 0400h Get Version
-; * 0500h Get Free Memory Information
+; * 0500h (-DFREEMEMINFO=1) Get Free Memory Information
 ; * 0501h Allocate Memory Block
 ; * 0502h Free Memory Block
 ; * 0503h Resize Memory Block
@@ -296,6 +296,15 @@
   %define EXCEPTIONS 1
 %else
   %assign EXCEPTIONS EXCEPTIONS  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef FREEMEMINFO  ; Can be specified on the command line.
+  %define FREEMEMINFO 1   ; Enable  DPMI get free memory information API (int 31h, AX == 500h).
+  ;%define FREEMEMINFO 0  ; Disable DPMI get free memory information API (int 31h, AX == 500h).
+%elifidn (FREEMEMINFO), ()
+  %define FREEMEMINFO 1
+%else
+  %assign FREEMEMINFO FREEMEMINFO  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
 %ifndef INT3108FUNC  ; Can be specified on the command line.
@@ -960,7 +969,10 @@ int31functbl    dw      0900h,0901h,0902h
 		dw      0100h,0101h,0102h
 		dw      0300h,0301h,0302h
 		dw      0303h,0304h
-		dw      0500h,0501h,0502h,0503h
+%if FREEMEMINFO
+		dw      0500h
+%endif
+		dw	0501h,0502h,0503h
 		dw      0600h,0601h,0702h,0703h
 
 %if INT3108FUNC
@@ -984,7 +996,13 @@ int31routtbl    dw      -pmodewk+int310900,-pmodewk+int310901,-pmodewk+int310902
 		dw      -pmodewk+int310100,-pmodewk+int310101,-pmodewk+int310102
 		dw      -pmodewk+int310300,-pmodewk+int310301,-pmodewk+int310302
 		dw      -pmodewk+int310303,-pmodewk+int310304
-int3105routtbl  dw      -pmodewk+int310500nomem,-pmodewk+int31fail,-pmodewk+int31fail,-pmodewk+int31fail
+%if FREEMEMINFO
+int3105routtbl:
+		dw      -pmodewk+int310500nomem
+%else
+int3105routtbl: equ $-2
+%endif
+		dw	-pmodewk+int31fail,-pmodewk+int31fail,-pmodewk+int31fail
 		dw      -pmodewk+int31ok,-pmodewk+int31ok,-pmodewk+int31ok,-pmodewk+int31ok
 
 %if INT3108FUNC
@@ -4388,13 +4406,16 @@ int3105ff:                              ; initialize protected mode system
 	mov [edx+4],esi
 	mov [ebx],eax
 
+%if FREEMEMINFO
 	mov word [fs:-pmodewk+int3105routtbl+0],-pmodewk+int310500
+%endif
 	mov word [fs:-pmodewk+int3105routtbl+2],-pmodewk+int310501
 	mov word [fs:-pmodewk+int3105routtbl+4],-pmodewk+int310502
 	mov word [fs:-pmodewk+int3105routtbl+6],-pmodewk+int310503
 
 	jmp int31ok
 
+%if FREEMEMINFO
 int310500:                              ; get free memory information
 	fixpre_mov ebp,[cs:-pmodewk+extmemlast]
 	fixpre_mov esi,[cs:-pmodewk+extmembase]
@@ -4429,6 +4450,7 @@ int310500mem:
 	fixstr rep, a32, stosd
 
 	jmp int31ok
+%endif
 
 int310501:                              ; allocate a block of memory
 	call int3105blocksize
