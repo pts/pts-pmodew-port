@@ -3023,6 +3023,9 @@ exception_done:                         ; end of exception entry point
 
 	iretd
 
+; Displays a hex register dump on the screen (video memory). This is only
+; enabled %if EXCEPTIONS. For instruction int3, it will be `Exception: 03'.
+; Example dump:
 ;
 ; [PMODE/W]: Abort: 00
 ; Exception: 0C
@@ -3033,18 +3036,19 @@ exception_done:                         ; end of exception entry point
 ; EIP: 04571346
 ; EFLAGS: 10538692
 ; CR0: 86425789  CR2: 01362334
-
 exception_def:                          ; default exception handler (aborts)
 	multipush es, ds                ; preserve selectors for dump
 
+	; [PMODE/W]: Abort: 00
+	; Exception:
 	_xor bp,bp                       ; start abort sequence
 	call abort_start
 
 	mov dx,[esp+2*2+4*8+32+2]       ; DX = exception number
 	push dx                         ; preserve exception number
 
+	; 0C
 	call abort_puthexnum2           ; put exception number
-
 	call abort_nextline
 
 	pop bx                          ; BX = exception number
@@ -3052,29 +3056,33 @@ exception_def:                          ; default exception handler (aborts)
 	cmp byte [cs:-pmodewk+exceptionecsize+bx],0  ; error code present?
 	je short .00                   ; if no, skip error code put
 
+	; Error code: 73127443
 	mov si,-pmodewk+aborts_xerrcode   ; put error code
 	call abort_putstr
 	mov edx,[esp+2*2+2*4]
 	call abort_puthexnum8
-
 	call abort_nextline
 
 .00:
+	; EAX: 00001234
 	mov si,-pmodewk+aborts_xeax       ; put EAX
 	call abort_putstr
 	mov edx,[esp+2*2+4*8+28]
 	call abort_puthexnum8
 
+	; EBX: 12345678
 	mov si,-pmodewk+aborts_xebx       ; put EBX
 	call abort_putstr
 	mov edx,[esp+2*2+4*8+16]
 	call abort_puthexnum8
 
+	; ECX: 00001234
 	mov si,-pmodewk+aborts_xecx       ; put ECX
 	call abort_putstr
 	mov edx,[esp+2*2+4*8+24]
 	call abort_puthexnum8
 
+	; EDX: 12345678
 	mov si,-pmodewk+aborts_xedx       ; put EDX
 	call abort_putstr
 	mov edx,[esp+2*2+4*8+20]
@@ -3082,21 +3090,25 @@ exception_def:                          ; default exception handler (aborts)
 
 	call abort_nextline
 
+	; ESI: 00001234
 	mov si,-pmodewk+aborts_xesi       ; put ESI
 	call abort_putstr
 	mov edx,[esp+2*2+4*8+4]
 	call abort_puthexnum8
 
+	; EDI: 12345678
 	mov si,-pmodewk+aborts_xedi       ; put EDI
 	call abort_putstr
 	mov edx,[esp+2*2+4*8+0]
 	call abort_puthexnum8
 
+	; EBP: 03657245
 	mov si,-pmodewk+aborts_xebp       ; put EBP
 	call abort_putstr
 	mov edx,[esp+2*2+4*8+8]
 	call abort_puthexnum8
 
+	; ESP: 12345678
 	mov si,-pmodewk+aborts_xesp       ; put ESP
 	call abort_putstr
 	mov edx,[esp+2*2+18h]
@@ -3104,31 +3116,37 @@ exception_def:                          ; default exception handler (aborts)
 
 	call abort_nextline
 
+	; DS: 1234
 	mov si,-pmodewk+aborts_xds        ; put DS
 	call abort_putstr
 	pop dx
 	call abort_puthexnum4
 
+	; ES: 2345
 	mov si,-pmodewk+aborts_xes        ; put ES
 	call abort_putstr
 	pop dx
 	call abort_puthexnum4
 
+	; FS: 8583
 	mov si,-pmodewk+aborts_xfs        ; put FS
 	call abort_putstr
 	mov dx,fs
 	call abort_puthexnum4
 
+	; GS: 1295
 	mov si,-pmodewk+aborts_xgs        ; put GS
 	call abort_putstr
 	mov dx,gs
 	call abort_puthexnum4
 
+	; SS: 2587
 	mov si,-pmodewk+aborts_xss        ; put SS
 	call abort_putstr
 	mov dx,ss
 	call abort_puthexnum4
 
+	; CS: 1746
 	mov si,-pmodewk+aborts_xcs        ; put CS
 	call abort_putstr
 	mov dx,[esp+10h]
@@ -3136,6 +3154,7 @@ exception_def:                          ; default exception handler (aborts)
 
 	call abort_nextline
 
+	; EIP: 04571346
 	mov si,-pmodewk+aborts_xeip       ; put EIP
 	call abort_putstr
 	mov edx,[esp+0ch]
@@ -3143,6 +3162,7 @@ exception_def:                          ; default exception handler (aborts)
 
 	call abort_nextline
 
+	; EFLAGS: 10538692
 	mov si,-pmodewk+aborts_xeflags    ; put EFLAGS
 	call abort_putstr
 	mov edx,[esp+14h]
@@ -3150,16 +3170,20 @@ exception_def:                          ; default exception handler (aborts)
 
 	call abort_nextline
 
+	; CR0: 86425789
 	mov si,-pmodewk+aborts_xcr0       ; put CR0
 	call abort_putstr
 	mov edx,cr0
 	call abort_puthexnum8
 
+	; CR2: 01362334
 	mov si,-pmodewk+aborts_xcr2       ; put CR2
 	call abort_putstr
 	mov edx,cr2
 	call abort_puthexnum8
 
+	; Printing as finishes. This moves the cursor, and exits.
+	; !! Move abort_exit here.
 	jmp abort_exit                  ; finish abort
 
 abort_callback:                         ; ran out of PM stacks in callback
@@ -3249,6 +3273,10 @@ abort_puthexnum8:
 
 	jmp short abort_puthexnum
 
+; In addition to some initalization, this prints:
+;
+; [PMODE/W]: Abort: 00
+; Exception: (with space at the end)
 abort_start:                            ; abort, stabilize system
 	cli
 	cld
@@ -3273,35 +3301,24 @@ abort_start:                            ; abort, stabilize system
 	mov ax,3                        ; set 80x25 text mode
 	int 10h
 
-	; Displays a hex register dump on the screen (video memory). This is
-	; only enabled %if EXCEPTIONS. Example dump on instruction int3:
-	;
-	; [PMODE/W]: Abort: 00
-	; Exception: 03
-	; EAX: 00004CFE  EBX: 00000001  ECX: 00000000  EDX: 00035025
-	; ESI: 00000000  EDI: 00000000  EBP: 00000000  ESP: 00000000
-	; DS: 0080  ES: 0080  FS: 0080  GS: 0080 SS: 0080  CS: 0088
-	; EIP: 00035023
-	; ELAGS: 00003212
-	; CR0: 00000011  CR2: 00000000
 	mov ebp,0b8000h                 ; EBP -> current TTY row start. 0b8000:0 is sthe start of the 80x25 text screen
 	_mov edi,ebp                    ; EDI -> current TTY column
 	mov ah,7                        ; AH = text color
 
+	; [PMODE/W]: Abort: 00
 	mov si,-pmodewk+aborts_pmwabort      ; put first string of abort
 	call abort_putstr
-
 	pop dx                          ; put abort number
 	call abort_puthexnum2
-
 	call abort_nextline
 
+	; Exception: (with space a the end)
 	pop bx                          ; put abort string
 	_xor bh,bh
 	_add bl,bl
 	mov si,[-pmodewk+aborts_tbl+bx]
-
 	jmp abort_putstr                ; put abort string and return
+	; Printing continues in exception_def, below `call abort_start'.
 
 abort_exit:                             ; exit after abnormal termination
 	mov ah,2                        ; position cursor at bottom of screen
