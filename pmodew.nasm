@@ -298,6 +298,17 @@
   %assign EXCEPTIONS EXCEPTIONS  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef ABORTMSGTTY  ; Can be specified on the command line.
+  %define ABORTMSGTTY 0   ; Write the exception abort message directly to video memory.
+  ;%define ABORTMSGTTY 1  ; Write the exception abort message to the video TTY console (int 10h, AH == 0eh). This is useful for some text-only DOS emulators.
+  ;%define ABORTMSGTTY 2  ; Write the exception abort message to DOS stdout (int 21h, AH == 2). This is useful for some text-only DOS emulators.
+  ;%define ABORTMSGTTY 3  ; Write the exception abort message to using undocumented DOS fast character write (int 29h). This is useful for some text-only DOS emulators.
+%elifidn (ABORTMSGTTY), ()
+  %define ABORTMSGTTY 1
+%else
+  %assign ABORTMSGTTY ABORTMSGTTY  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %ifndef FREEMEMINFO  ; Can be specified on the command line.
   %define FREEMEMINFO 1   ; Enable  DPMI get free memory information API (int 31h, AX == 500h).
   ;%define FREEMEMINFO 0  ; Disable DPMI get free memory information API (int 31h, AX == 500h).
@@ -3186,10 +3197,14 @@ exception_def:                          ; default exception handler (aborts)
 	; !! Move abort_exit here.
 %if SIZEOPT
 abort_exit:                             ; exit after abnormal termination
+%if ABORTMSGTTY
+	call abort_nextline
+%else
 	mov ah,2                        ; position cursor at bottom of screen
 	_xor bh,bh
 	mov dx,0800h
 	int 10h
+%endif
 
 	mov ah,4ch                      ; DOS terminate
 	int 21h
@@ -3228,24 +3243,62 @@ abort_pm:                               ; protected mode abort
 
 	jmp abort_exit
 
+%if ABORTMSGTTY
+abort_putc2:  ; Prints AL, then AH.
+	call abort_putc
+	mov al, ah
+	; Fall through to abort_putc.
+
+abort_putc:
+%if ABORTMSGTTY==1
+	push ax  ; Save.
+	push bx  ; Save.
+	mov ah, 0eh  ; Write text in teletype (TTY) mode.
+	xor bx, bx  ; Write to page 0 in text mode. In graphics mode, BL should be the color (typically white==7, we have black==0 here).
+	int 10h  ; BIOS video syscall.
+	pop bx  ; Restore.
+	pop ax  ; Restore.
+%elif ABORTMSGTTY==2
+	push ax  ; Save.
+	push dx  ; Save.
+	mov ah, 2  ; Write character to stdout.
+	mov dl, al
+	int 21h  ; DOS syscall.
+	pop dx  ; Restore.
+	pop ax  ; Restore.
+%elif ABORTMSGTTY==3
+	int 29h  ; Undocumented DOS fast write character syscall. On DOS 2.x and 3.x, simply calls BIOS video int 10h with AH == 0eh.
+%endif
+	ret
+%endif
+
+
 abort_putstr:
 	lodsb
 
 	_or al,al
 	jz short .00
 
+%if ABORTMSGTTY
+	call abort_putc
+%else
 	a32 stosw
-
+%endif
 	jmp short abort_putstr
 
 .00:
 	ret
 
 abort_nextline:
+%if ABORTMSGTTY
+	mov ax, 13 | 10<<8  ; CRLF.
+	jmp short abort_putc2
+%else
 	add bp,2*80
 	_mov di,bp
-
 	ret
+%endif
+	; Not reached.
 
 abort_puthexnum:
 	_xor bx,bx
@@ -3256,16 +3309,25 @@ abort_puthexnum:
 	and bl,0fh
 	mov al,[-pmodewk+aborts_hexctbl+bx]
 
+%if ABORTMSGTTY
+	call abort_putc
+%else
 	a32 stosw
+%endif
 
 	dec cl
 	jnz .00l
 
+%if ABORTMSGTTY
+	mov ax, ' ' | ' '<<8
+	jmp short abort_putc2
+%else
 	mov al,' '
 	a32 stosw
 	a32 stosw
-
 	ret
+%endif
+	; Not reached.
 
 abort_puthexnum2:
 	shl edx,24
@@ -3309,12 +3371,18 @@ abort_start:                            ; abort, stabilize system
 
 	call restoreRMints              ; restore real mode INT environment
 
+%if ABORTMSGTTY<=1
 	mov ax,3                        ; set 80x25 text mode
 	int 10h
+%endif
 
+%if ABORTMSGTTY
+	call abort_nextline             ; Start a new line, in case the output is mid-line.
+%else
 	mov ebp,0b8000h                 ; EBP -> current TTY row start. 0b8000:0 is sthe start of the 80x25 text screen
 	_mov edi,ebp                    ; EDI -> current TTY column
 	mov ah,7                        ; AH = text color
+%endif
 
 	; [PMODE/W]: Abort: 00
 	mov si,-pmodewk+aborts_pmwabort      ; put first string of abort
@@ -3333,10 +3401,14 @@ abort_start:                            ; abort, stabilize system
 
 %if SIZEOPT==0
 abort_exit:                             ; exit after abnormal termination
+%if ABORTMSGTTY
+	call abort_nextline
+%else
 	mov ah,2                        ; position cursor at bottom of screen
 	_xor bh,bh
 	mov dx,0800h
 	int 10h
+%endif
 
 	mov ah,4ch                      ; DOS terminate
 	int 21h
