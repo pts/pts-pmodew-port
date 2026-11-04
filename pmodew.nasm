@@ -225,16 +225,14 @@
 ;   keep using int 21h (DOS-extended) and int 31h (DPMI) services provided
 ;   by the PMODE/W stub for memory allocation and I/O.
 ; * The simple PE loader uses the PE entry point (AddressOfEntryPoint) by
-;   default, but with -SSPECUSTOMENTRY=1, it uses the last 2 bytes
+;   default, but with -DSPECUSTOMENTRY=1, it uses the last 2 bytes
 ;   (SizeOfRawData-2) of the first section as the entry point. This is to
 ;   avoid API and ABI conflicts with Win32, which uses AddressOfEntryPoint.
 ;   This way the same PE .exe program file, with the same PE sections can be
 ;   used as separate Win32 and DOS-extended programs sharing some code and
 ;   data. Native Win32 can still be detected even with the default
-;   (AddressOfEntryPoint), by checking e.g. that dword [__imp_ExitProcess]
-;   hasn't been modified. (The original value is a nonzero RVA value
-;   pointing to db 0, 0, 'ExitProcess', 0; this is a bit hard to extract.)
-; * Minimum CPU requirement: 80386.
+;   -DSPECUSTOMENTRY=0, see below.
+; * Minimum CPU requirement: 80386. Win32 and PMODE/W also need this.
 ;
 ; Because of the restrictions above, the simple PE loader isn't suitable for
 ; running existing Win32 programs on DOS. For that, use the HX DOS extender
@@ -265,6 +263,28 @@
 ;   shl ecx, 16
 ;   movzx edx, dx
 ;   add edx, ecx  ; EDX := linear base address of the first env var.
+;
+; Here are ways detect whether the PE .exe program is running on native
+; Win32 or on DOS with the simple PE loader:
+;
+; * If -DSPECUSTOMENTRY=1 is used, then the program starts on Win32 at
+;   ImageBase+AddressOfEntryPoint, and on DOS, the simple PE loader starts
+;   at a different entry pont (see above). The entry points can set a global
+;   variable to a different value, which can be checked later.
+;
+; * If -DSPECUSTOMENTRY=0 is used, then `cmp dword [ImageBase+0c4h], byte
+;   -1' (if relocated) sets ZF == 1 when running on DOS with the simple PE
+;   loader, and ZF == 0 when running on native Win32. That's because the
+;   simple PE loader sets this value dword [ImageBase+0c4h == ImageBase +
+;   spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT+peidd.Size] == dword
+;   [ImageBase+0c4h] to -1 (== 0xffffffff), and Win32 keeps it unchanged,
+;   and the file always contains an even value for Win32.
+;
+; * Detect DOS with the simple PE loader by checking e.g. that dword
+;   [__imp_ExitProcess] hasn't been modified. Compare it against the
+;   original value, which is a nonzero RVA value pointing to db 0, 0,
+;   'ExitProcess', 0; this is a bit hard to extract, because the linker
+;   determines it.
 
 %ifndef SPERELOC  ; Can be specified on the command line.
   %define SPERELOC 1   ; Enable  applying of relocations (in IMAGE_DIRECTORY_ENTRY_BASERELOC) in the simple PE payload.
@@ -5718,10 +5738,9 @@ spefofs:
 .pehdr.SizeOfStackCommit: equ 0a4h  ; dd.
 .pehdr.NumberOfRvaAndSizes: equ 0b4h  ; dd.
 .pehdr.IMAGE_DATA_DIRECTORY: equ 0b8h  ; times 16 dd ?, ?. Ignored.
-.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT: equ 0c0h  ; dd ? ?. Ignored.
+.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT: equ 0c0h  ; dd ? ?. Value ignored. For SPECUSTOMENTRY==0, dword [ImageBase+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT+peidd.Size] will be overwritten with -1 (0xffffffff), which the entry point can use to detect SPE on DOS, because Win32 never has that value.
 .pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC: equ 0e0h  ; dd ? ?. Ignored iff SPERELOC==0.
 .pehdr.IMAGE_SECTION_HEADER: equ 138h  ; 28h bytes each.
-
 pesechdr:  ; IMAGE_DATA_SECTION_HEADER.
 .Name: equ 0*4 ; times 8 db. NUL-padded. Ignored.
 .VirtualSize: equ 2*4  ; dd.
@@ -5802,6 +5821,8 @@ _loadSPE:
 	add edx, [esi+pesechdr.VirtualSize]
 	lea edx, [edx+eax-2]  ; dos_entry_point (EDX) := image_ptr+IMAGE_SECTION_HEADER[0].VirtualAddress+IMAGE_SECTION_HEADER[0].SizeOfRawData-2.
 %else
+	; Set dword [ImageBase+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT+peidd.Size] (== dword [ImageBase+0c4h]) := -1 (== 0xffffffff). The  entry point can check this to detect SPE on DOS, because Win32 never has that value.
+	or dword [esi-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT+peidd.Size], byte -1
 	mov edx, [eax+spefofs.pehdr.AddressOfEntryPoint]
 	add edx, eax  ; dos_entry_point (EDX) := image_ptr+AddressOfEntryPoint.
 %endif
