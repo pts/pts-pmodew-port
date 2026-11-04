@@ -843,19 +843,19 @@ PM_LOWMIN	equ 0
 
 %if UNC && CONFIGINEXEIMAGE && LOADSPE==0  ; By `nasm -DUNC'. Must be at te beginning of the .exe image, _openexe2 is looking for it there.
 pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
-.pagetables:	db PM_PAGETABLES	; @0:   db 4. Number of page tables under VCPI. Each page table makes 4 MiB of memory available. _pm_pagetables
-.selectors:	dw PM_SELECTORS		; @1:   dw 100h. Maximum number of selectors under VCPI/XMS/raw. _pm_selectors
-.rmstacklen:	dw PM_RMSTACKLEN	; @3:   dw 40h. Real-mode stack length, in para (10h bytes). _pm_rmstacklen
-.pmstacklen:	dw PM_PMSTACKLEN	; @5:   dw 80h. Protected-mode stack length, in para (10h bytes). _pm_pmstacklen
-.rmstacks:	db PM_RMSTACKS		; @7:   db 8. Real-mode stack nesting. _pm_rmstacks
-.pmstacks:	db PM_PMSTACKS		; @8:   db 8. Protected-mode stack nesting. _pm_pmstacks
-.callbacks:	db PM_CALLBACKS		; @9:   db 20h. Number of real-mode callbacks. _pm_callbacks
+.pagetables:	db PM_PAGETABLES	; @0:   db 4. Number of page tables under VCPI. Each page table makes 4 MiB of memory available. Minimum: 1. _pm_pagetables
+.selectors:	dw PM_SELECTORS		; @1:   dw 100h. Maximum number of selectors under VCPI/XMS/raw. Minimum: 4. _pm_selectors
+.rmstacklen:	dw PM_RMSTACKLEN	; @3:   dw 40h. Real-mode stack length, in para (10h bytes). Minimum approximately 100h>>1 _pm_rmstacklen
+.pmstacklen:	dw PM_PMSTACKLEN	; @5:   dw 80h. Protected-mode stack length, in para (10h bytes). Minimum approximately: 0 if .pmstacks==0, otherwise 200h>>1 _pm_pmstacklen
+.rmstacks:	db PM_RMSTACKS		; @7:   db 8. Real-mode stack nesting. Minimum: 1. _pm_rmstacks
+.pmstacks:	db PM_PMSTACKS		; @8:   db 8. Protected-mode stack nesting. Minimum: 0. _pm_pmstacks
+.callbacks:	db PM_CALLBACKS		; @9:   db 20h. Number of real-mode callbacks. Minimum: 0. _pm_callbacks
 .mode:		db PM_MODE		; @0ah: db 1. Mode bits. mode&1 means: detect VCPI before DPMI. _pm_mode
-.pampagemax:	db PM_PAMPAGEMAX	; @0bh: db 1. Maximum number of physical address mapping pages. Also called as .pamapping. _pm_pampagemax
+.pampagemax:	db PM_PAMPAGEMAX	; @0bh: db 1. Maximum number of physical address mapping pages. Also called as .pamapping. Minimum: 0. _pm_pampagemax
 .crap:		dw PM_CRAP		; @0ch: dw 0. Unused. _pm_crap
 .options:	db PM_OPTIONS		; @0eh: db 1. Option bits. options&1 means: display copyright message. _pm_options
 .maxextmem:	dd PM_MAXEXTMEM		; @0fh: dd 7fffffffh. Maximum extended memory to allocate, in bytes. _pm_maxextmem
-.lowmin:	dw PM_LOWMIN		; @13h: dw 0. Amount of low (below the first 1 MiB) memory to try and save. Loaded by _openexe2 to somewhere else. _pm16_lowmin
+.lowmin:	dw PM_LOWMIN		; @13h: dw 0. Amount of low (below the first 1 MiB) memory to try and save. Loaded by _openexe2 to somewhere else. Minimum: 0. _pm16_lowmin
 .end:		; @15h.
 
 padding_after_config: align 2, db 0
