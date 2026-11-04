@@ -318,6 +318,15 @@
   %assign EXCEPTIONS EXCEPTIONS  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef EXITCODE  ; Can be specified on the command line.
+  %define EXITCODE 0   ; Disable reporting deterministic DOS process exit codes on fatal error.
+  ;%define EXITCODE 1  ; Enable  reporting deterministic DOS process exit codes on fatal error.
+%elifidn (EXITCODE), ()
+  %define EXITCODE 1
+%else
+  %assign EXITCODE EXITCODE  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %ifndef ABORTMSGTTY  ; Can be specified on the command line.
   %define ABORTMSGTTY 0   ; Write the exception abort message directly to video memory.
   ;%define ABORTMSGTTY 1  ; Write the exception abort message to the video TTY console (int 10h, AH == 0eh). This is useful for some text-only DOS emulators.
@@ -1535,8 +1544,11 @@ dvxr_init:                              ; DPMI/VCPI/XMS/raw common init tail
 	int 31h
 	jnc short .dvxr_initf0
 
+%if EXITCODE
+	mov al,0fch                     ; exit(252); Not merging it to `mov ax,...' for better compressibility.
+%endif
 	mov ah,4ch                      ; could not allocate selector
-	int 21h                         ; terminate immediately
+	int 21h                         ; terminate DOS process
 
 .dvxr_initf0:
 	_mov bp,sp                       ; BP = SP for screwing with the stack
@@ -3232,8 +3244,11 @@ abort_exit:                             ; exit after abnormal termination
 	int 10h
 %endif
 
-	mov ah,4ch                      ; DOS terminate
-	int 21h
+%if EXITCODE
+	mov al,0fbh                     ; exit(251); Not merging it to `mov ax,...' for better compressibility.
+%endif
+	mov ah,4ch                      ; aborted because of a protected mode exception
+	int 21h                         ; terminate DOS process
 %else
 	jmp abort_exit                  ; finish abort
 %endif
@@ -3436,8 +3451,11 @@ abort_exit:                             ; exit after abnormal termination
 	int 10h
 %endif
 
-	mov ah,4ch                      ; DOS terminate
-	int 21h
+%if EXITCODE
+	mov al,0fbh                     ; exit(251); Not merging it to `mov ax,...' for better compressibility.
+%endif
+	mov ah,4ch                      ; aborted because of a protected mode exception
+	int 21h                         ; terminate DOS process
 %endif
 
 %else
@@ -5701,8 +5719,9 @@ _nomeminit1:
 	pop edx
 	mov ecx, 0x1000
 	int 21h  ; DOS-extended syscall.
-	mov ax, 4cfdh  ; exit(253);
-	int 21h  ; DOS-extended syscall.
+	mov al,0fdh                     ; exit(253); Not merging it to `mov ax,...' for better compressibility.
+	mov ah,4ch                      ; we stop right before jumping to the PE entry point for debugging
+	int 21h                         ; terminate DOS process
 %endif
 	db 66h
 	retf                            ; 32bit RETF to new CS:EIP
@@ -6777,8 +6796,13 @@ _pmstartuperr:
 %endif
 	int 21h
 %endif
-	mov ax,4cffh
-	int 21h
+%if EXITCODE
+	mov al,0ffh                     ; exit(255); Not merging it to `mov ax,...' for better compressibility.
+	mov ah,4ch                      ; fatal error at process startup, see errmsg0 etc. for reason
+%else
+	mov ax,4cffh                    ; fatal error at process startup, see errmsg0 etc. for reason
+%endif
+	int 21h                         ; terminate DOS process
 
 _pmsg:
 %if SIZEOPT
