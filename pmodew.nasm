@@ -1082,7 +1082,13 @@ abortrmstacktop dw      ANY             ; top of real mode stack for abort
 
 aborts_hexctbl  db      '0123456789ABCDEF'
 
-aborts_pmwabort db      '[PMODE/W]: Abort: ',0
+aborts_pmwabort:
+%if LOADSPE==3
+		db      '[PM]: '
+%else
+		db      '[PMODE/W]: '
+%endif
+		db	'Abort: ',0
 
 aborts_xception db      'Exception: ',0
 aborts_callback db      'No PM stack for callback!',0
