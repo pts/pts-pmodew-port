@@ -6103,9 +6103,13 @@ _loadexe:
 .l1f1:
 
 	mov gs,[-pmodewe+_selbuf]                  ; Get LE/PMW1 location from EXE header
-	fixpre_mov edx,[gs:3ch]                ; and seek to it
+%ifdef PROG32FOFS  ; Can be specified on the command line or in another .nasm source file.
+	fixpre_mov edx,[gs:(PROG32FOFS)]
+%else
+	fixpre_mov edx,[gs:3ch]
+%endif
 	mov [-pmodewe+_exebaseoffset],edx
-	call _seekfile
+	call _seekfile                             ; and seek to it
 
 	mov ecx,4
 	mov edx,[-pmodewe+_dtabufptr]              ; Read In Executable Signature
