@@ -327,10 +327,10 @@ fi
 if test "$is_reproducible"; then
   if test "$pmwv" = 33; then
     test "$(sha256sum pmodewu.exe)" = "debfc84a0278890a8676b49220b607decf4d7772da98cbe96b69ba4a294c6db0  pmodewu.exe"  # /dPMWV=33
-    test "$(sha256sum pmodewv.exe)" = "f0acd20dca7f037ab04b262bb22a9ca7b34813ebeb57f2a9c9eafe2119eddb0d  pmodewv.exe"  # /dPMWV=33 /dUNC=1
+    test "$(sha256sum pmodewv.exe)" = "72f772ba75920d82aa3f9a4dafa486549be7a5f7bdba27d0c34521b588339dc2  pmodewv.exe"  # /dPMWV=33 /dUNC=1
   else
     test "$(sha256sum pmodewu.exe)" = "7bb0de82fb0ed9c5ba6ad6f8772764a3fb47bc925a0e1a4bd7b64b698ffefb7f  pmodewu.exe"  # /dPMWV=34
-    test "$(sha256sum pmodewv.exe)" = "fe01d303904677238ec5af7014de08495657407546a69a4d143446778e14c2e9  pmodewv.exe"  # /dPMWV=34 /dUNC=1
+    test "$(sha256sum pmodewv.exe)" = "7ad31eb47b6c681c83e40d1e8427edc4729cb0a68c5658f497c32a7eb5fcac37  pmodewv.exe"  # /dPMWV=34 /dUNC=1
   fi
 fi
 

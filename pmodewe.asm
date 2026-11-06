@@ -3077,39 +3077,43 @@ _openexe2:
         mov bx,ax
         ; Read the LE/PMW1 header and pmodew_config from the .exe.
 IF UNC_  ; By `tasm /dUNC'.
-        mov cx,110h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h.
-        mov ds,_int21lowdtaseg
-        xor dx,dx
-        mov ah,3fh  ; Read from file using handle.
-        int 21h
-        jc _loaderror
-        mov dx,ds:[8]  ; hdrsize. Typical value created by OpenWatcom: 0bh (relocations between 40h and 0b0h, pmodew_config ends at 0b0h+21).
-        shl dx,4  ; Maximum .hdrsize supported: 0fffh.
-        mov si,dx
-        test dh,dh
-        jz @@copy  ; The default hdrsize created by TLINK is 20h, with SI == 200h here. But when OpenWatcom embeds it as a stub, the hdrsize becomes 0dh, thus we jump.
-        xor cx,cx  ; High word of file offset.
-        mov ax,4200h  ; Move file pointer using handle.
-        int 21h
-        jc _loaderror
-        mov cx,21  ; Must be at most 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset loaded above.
-        xor dx,dx
-        mov ah,3fh  ; Read from file using handle.
-        int 21h
-        jc _loaderror
-        xor si,si
-@@copy:
-        push es
+	mov cx,200h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h.
+	mov ds,_int21lowdtaseg
+	xor dx,dx
+	mov ah,3fh  ; Read from file using handle.
+	int 21h
+	jc _loaderror
+	mov dx,ds:[8]  ; DX := hdrsize. Typical value created by OpenWatcom: 0bh (relocations between 40h and 0b0h, pmodew_config ends at 0b0h+21).
+	mov si,dx
+	shl si,4  ; Maximum .hdrsize supported: 0fffh.
+	cmp dx,(200h-15h) shr 4  ; pmodws_config.size == 15h == 21.
+	jbe @@after_read_config  ; The default hdrsize created by TLINK is 20h, with SI == DX == 200h here. But when OpenWatcom embeds it as a stub, the hdrsize becomes 0dh, which is small, thus we don't (have to) seek or read.
+@@seek_for_config:
+	xor cx,cx  ; High word of file offset.
+	shld cx,dx,4
+	mov dx,si  ; CX:DX := hdrsize<<4.
+	mov ax,4200h  ; Move file pointer using handle. whence (AL) := SEEK_SET (== 0).
+	int 21h
+	jc _loaderror
+@@read_config_from_good_file_position:
+	mov cx,21  ; pmodew_config._size == 15h == 21. Must be at most 3ch, _loadexe uses dword [gs:3ch] ([3ch] here) for the file offset of the 32-bit payload (LE or PMW1).
+	xor dx,dx
+	mov ah,3fh  ; Read from file using handle.
+	int 21h
+	jc _loaderror
+	xor si,si
+@@after_read_config:  ; Now: DS:SI points to the config (pmodew_config structure) read from the .EXE file.
+	push es
 ELSE
-        mov cx,40h+21  ; Must be >=21+(hdrsize>>2). Thus this supports hdrsize values 2, 3 and 4.
-        mov ds,_int21lowdtaseg
-        xor dx,dx
-        mov ah,3fh
-        int 21h
-        jc _loaderror
-        push es
-        mov si,ds:[8]  ; Typically hdrsize == 2 (for compressed PMODE/W) or == 4 (when embedded by WLINK as stub).
-        shl si,4
+	mov cx,40h+21  ; Must be >=21+(hdrsize>>2). Thus this supports hdrsize values 2, 3 and 4.
+	mov ds,_int21lowdtaseg
+	xor dx,dx
+	mov ah,3fh
+	int 21h
+	jc _loaderror
+	push es
+	mov si,ds:[8]  ; Typically hdrsize == 2 (for compressed PMODE/W) or == 4 (when embedded by WLINK as stub).
+	shl si,4
 ENDIF
         mov ax,PMODE_TEXT
         mov es,ax

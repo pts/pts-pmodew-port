@@ -106,7 +106,7 @@
 
 %ifndef UNC  ; Can be specified on the command line.
   %define UNC 0   ; Generate non-working, uncompressed DOS .exe (pmodewu.exe), which will have to be compressed by pmwc to produce the working, compressed, final, release pmodew.exe.
-  ;%define UNC 1  ; Generate the working, remains-uncompressed DOS .exe stub (pmodewv.exe). Longer that pmodew.exe, but it is faster to create, and it is useful for testing.
+  ;%define UNC 1  ; Generate the working, remains-uncompressed DOS .exe stub (pmodewv.exe), which contains the pmodew_config at the beginning of the MZ .exe image. Longer that pmodew.exe, but it is faster to create, and it is useful for testing.
 %elifidn (UNC), ()
   %define UNC 1
 %else
@@ -131,13 +131,22 @@
   %assign LOGO LOGO  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
-%ifndef CONFIGINEXEIMAGE  ; Can be specified on the command line.
-  %define CONFIGINEXEIMAGE 1   ; Include the pmodew_config at the beginning of the MZ .exe image. This is required by VARTYPE==1 (-DVARTYPE=1 pmodew.nasm).
-  ;%define CONFIGINEXEIMAGE 0  ; Exclude the pmodew_config.
-%elifidn (CONFIGINEXEIMAGE), ()
-  %define CONFIGINEXEIMAGE 1
+%ifndef CONFIGTYPE  ; Can be specified on the command line.
+  %define CONFIGTYPE 0   ; Use ==1 if UNC==0 (default, for bytewise identical pmodew.exe), ==3 for UNC==1.
+  ;%define CONFIGTYPE 1  ; When loading pmodew_config from beginning of the MZ .exe image, support 2 <= hdrsize <= 4. and the behavior is undefined if hdrsize is larger. It's for bytewise identical pmodew.exe. Most users should use ==2 or ==3 instead. Ignored if VARTYPE!=1 or LOADSPE>0.
+  ;%define CONFIGTYPE 2  ; When loading pmodew_config from beginning of the MZ .exe image, support 2 <= hdrsize <= 30, and it fail cleanly for larger values. Ignored if VARTYPE!=1 or LOADSPE>0.
+  ;%define CONFIGTYPE 3  ; When loading pmodew_config from beginning of the MZ .exe image, support 2 <= hdrsize <= 0xffff (unlimited), and  fail cleanly for larger values. Ignored if VARTYPE!=1 or LOADSPE>0.
+%elifidn (CONFIGTYPE), ()
+  %define CONFIGTYPE 3
 %else
-  %assign CONFIGINEXEIMAGE CONFIGINEXEIMAGE  ; Make sure it's an integer (expression), convert it to integer constant.
+  %assign CONFIGTYPE CONFIGTYPE  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+%if CONFIGTYPE==0
+  %if UNC
+    %define CONFIGTYPE 3
+  %else
+    %define CONFIGTYPE 1  ; For bytewise identical pmodew.exe.
+  %endif
 %endif
 
 %ifndef SIZEOPT  ; Can be specified on the command line.
@@ -755,61 +764,6 @@
   %endif
 %endm
 
-; --- DOS .exe header.
-
-bits 16
-cpu 386
-
-HDRSIZE equ 0x20
-RELOCPOS equ 0x3e
-STACKSIZE equ 0x400  ; Stub stack size in byte. Keep this >=0x40.
-
-exe_header:  ; DOS .exe header: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
-; load module length == 0x3f6e.
-.signature:	db 'MZ'
-.lastsize:	dw (exe_end-exe_header)&0x1ff  ; Length of load module mod 200H.
-.nblocks:	dw (exe_end-exe_header+0x1ff)>>9  ; Number of 200H pages in load module.
-.nreloc:	dw NRELOC  ; Number of relocation items; no relocations.
-.hdrsize:	dw HDRSIZE  ; Size of header in paragraphs.
-;.minalloc:	dw ((mem_end-exe_image+0xf)>>4)-((exe_end-exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Minimum number of paragraphs required above load mod.  ; This would be the correct formula.
-.minalloc:	dw ((((exe_end-exe_image)&0xf)+0xf)>>4)+((STACKSIZE+1)>>4)  ; Minimum number of paragraphs required above load mod.  ; This implements the incorrect (but large enough to be safe) formula used by TLINK 2.0--7.0.
-.maxalloc:	dw -1  ; Maximum number of paragraphs required above load mod.
-.ss:		dw pmstack  ; Offset of stack segment in load module.
-.sp:		dw STACKSIZE  ; Initial value of SP.
-.checksum:	dw 0  ; Checksum.
-.ip:		dw -pmodewe+_pm16start  ; Initial value of IP.
-.cs:		dw pmcode16  ; Offset of code segment within load module (segment).
-.relocpos:	dw RELOCPOS  ; File offset of first relocation item.
-.noverlay:	dw 0  ; Overlay number.
-
-.one:		dw 1  ; Seems to be 1 for TLINK 2.0--
-
-; This value seems to depend on the TLINK version number.
-;
-; * TLINK 2.0: dw 0x20fb, 0x6a72
-; * TLINK 3.0--4.01 (last tlink.exe running on a 8086, we imitate this): dw 0x30fb, 0x726a
-; * TLINK 5.0--5.1--??: (used by pmw133src/PMODEW.EXE): dw 0x50fb, 0x726a
-; * TLINK 7.0: dw 0x61fb, 0x726a
-.linker_id:	dw 0x30fb, 0x726a  ; We imitate TLINK 3.0--4.01.
-
-.padding1:	times RELOCPOS-($-exe_header) db 0
-
-.relocs:  ; (offset, offset) pairs with exe_image as the base.
-		emit_relocs 32  ; Increase this limit if you add many more relocations. PMODE/W 1.33 has 26.
-.relocs.end:
-
-.padding2:	times (HDRSIZE<<4)-($-exe_header) db 0
-
-exe_image:
-
-; --- Based on pmodewk.asm.
-
-; PMODE/W DPMI/VCPI/XMS/raw protected mode interface kernel.
-; Copyright (c) 1994, 1996, Tran (a.k.a. Thomas Pytel).
-
-reloc_seg pmodewk, PMODE_TEXT  ; PMODE_TEXT segment word public use16 'CODE'
-;assume  cs:PMODE_TEXT, ds:PMODE_TEXT
-
 ; --- Load-time configuration.
 ;
 ; PMODE/W also has load-time configuration which can be changed using e.g. a
@@ -841,29 +795,215 @@ PM_OPTIONS	equ 1
 PM_MAXEXTMEM	equ 7fffffffh
 PM_LOWMIN	equ 0
 
-%if UNC && CONFIGINEXEIMAGE && LOADSPE==0  ; By `nasm -DUNC'. Must be at te beginning of the .exe image, _openexe2 is looking for it there.
-pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
-.pagetables:	db PM_PAGETABLES	; @0:   db 4. Number of page tables under VCPI. Each page table makes 4 MiB of memory available. Minimum: 1. _pm_pagetables
-.selectors:	dw PM_SELECTORS		; @1:   dw 100h. Maximum number of selectors under VCPI/XMS/raw. Minimum: 4. _pm_selectors
-.rmstacklen:	dw PM_RMSTACKLEN	; @3:   dw 40h. Real-mode stack length, in para (10h bytes). Minimum approximately 100h>>1 _pm_rmstacklen
-.pmstacklen:	dw PM_PMSTACKLEN	; @5:   dw 80h. Protected-mode stack length, in para (10h bytes). Minimum approximately: 0 if .pmstacks==0, otherwise 200h>>1 _pm_pmstacklen
-.rmstacks:	db PM_RMSTACKS		; @7:   db 8. Real-mode stack nesting. Minimum: 1. _pm_rmstacks
-.pmstacks:	db PM_PMSTACKS		; @8:   db 8. Protected-mode stack nesting. Minimum: 0. _pm_pmstacks
-.callbacks:	db PM_CALLBACKS		; @9:   db 20h. Number of real-mode callbacks. Minimum: 0. _pm_callbacks
-.mode:		db PM_MODE		; @0ah: db 1. Mode bits. mode&1 means: detect VCPI before DPMI. _pm_mode
-.pampagemax:	db PM_PAMPAGEMAX	; @0bh: db 1. Maximum number of physical address mapping pages. Also called as .pamapping. Minimum: 0. _pm_pampagemax
-.crap:		dw PM_CRAP		; @0ch: dw 0. Unused. _pm_crap
-.options:	db PM_OPTIONS		; @0eh: db 1. Option bits. options&1 means: display copyright message. _pm_options
-.maxextmem:	dd PM_MAXEXTMEM		; @0fh: dd 7fffffffh. Maximum extended memory to allocate, in bytes. _pm_maxextmem
-.lowmin:	dw PM_LOWMIN		; @13h: dw 0. Amount of low (below the first 1 MiB) memory to try and save. Loaded by _openexe2 to somewhere else. Minimum: 0. _pm16_lowmin
-.end:		; @15h.
-
-padding_after_config: align 2, db 0
-%endif
+%macro emit_pmodew_config 0
+  pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
+  .pagetables:	db PM_PAGETABLES	; @0:   db 4. Number of page tables under VCPI. Each page table makes 4 MiB of memory available. _pm_pagetables
+  .selectors:	dw PM_SELECTORS		; @1:   dw 100h. Maximum number of selectors under VCPI/XMS/raw. _pm_selectors
+  .rmstacklen:	dw PM_RMSTACKLEN	; @3:   dw 40h. Real-mode stack length, in para (10h bytes). _pm_rmstacklen
+  .pmstacklen:	dw PM_PMSTACKLEN	; @5:   dw 80h. Protected-mode stack length, in para (10h bytes). _pm_pmstacklen
+  .rmstacks:	db PM_RMSTACKS		; @7:   db 8. Real-mode stack nesting. _pm_rmstacks
+  .pmstacks:	db PM_PMSTACKS		; @8:   db 8. Protected-mode stack nesting. _pm_pmstacks
+  .callbacks:	db PM_CALLBACKS		; @9:   db 20h. Number of real-mode callbacks. _pm_callbacks
+  .mode:	db PM_MODE		; @0ah: db 1. Mode bits. mode&1 means: detect VCPI before DPMI. _pm_mode
+  .pampagemax:	db PM_PAMPAGEMAX	; @0bh: db 1. Maximum number of physical address mapping pages. Also called as .pamapping. _pm_pampagemax
+  .crap:	dw PM_CRAP		; @0ch: dw 0. Unused. _pm_crap
+  .options:	db PM_OPTIONS		; @0eh: db 1. Option bits. options&1 means: display copyright message. _pm_options
+  .maxextmem:	dd PM_MAXEXTMEM		; @0fh: dd 7fffffffh. Maximum extended memory to allocate, in bytes. _pm_maxextmem
+  .lowmin:	dw PM_LOWMIN		; @13h: dw 0. Amount of low (below the first 1 MiB) memory to try and save. Loaded by _openexe2 to somewhere else. _pm16_lowmin
+  .end:		; @15h.
+%endm
 pmodew_config._size equ 15h
 
-; --- Back to pmodewk.asm.
+; --- DOS .exe header.
 
+bits 16
+cpu 386
+
+HDRSIZE equ 0x20
+%if UNC && LOADSPE
+  _MAX_UNC_PE_SECTIONS equ 2  ; !! TODO(pts): Remove 2 relocations of the 22 for -DRELOCPOS=3 (!! what about ==1 and ==2?), and then increase this from 2 to 3.
+  RELOCPOS equ 0x200-5*0x28+_MAX_UNC_PE_SECTIONS*0x28
+  RELOC_LIMIT equ (0x200-RELOCPOS)>>2
+%else
+  RELOCPOS equ 0x3e
+  RELOC_LIMIT equ 32  ; Increase this limit if you add many more relocations. PMODE/W 1.33 has 26 with LOADSPE==0 (default).
+%endif
+STACKSIZE equ 0x400  ; Stub stack size in byte. Keep this >=0x40.
+
+exe_header:  ; DOS .exe header: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
+; load module length == 0x3f6e.
+.signature:	db 'MZ'
+.lastsize:	dw (exe_end-exe_header)&0x1ff  ; Length of load module mod 200H.
+.nblocks:	dw (exe_end-exe_header+0x1ff)>>9  ; Number of 200H pages in load module.
+.nreloc:	dw NRELOC  ; Number of relocation items; no relocations.
+.hdrsize:	dw HDRSIZE  ; Size of header in paragraphs.
+;.minalloc:	dw ((mem_end-exe_image+0xf)>>4)-((exe_end-exe_header+0x1ff)>>9<<5)+HDRSIZE  ; Minimum number of paragraphs required above load mod.  ; This would be the correct formula.
+.minalloc:	dw ((((exe_end-exe_image)&0xf)+0xf)>>4)+((STACKSIZE+1)>>4)  ; Minimum number of paragraphs required above load mod.  ; This implements the incorrect (but large enough to be safe) formula used by TLINK 2.0--7.0.
+.maxalloc:	dw -1  ; Maximum number of paragraphs required above load mod.
+.ss:		dw pmstack  ; Offset of stack segment in load module.
+.sp:		dw STACKSIZE  ; Initial value of SP.
+.checksum:	dw 0  ; Checksum.
+.ip:		dw -pmodewe+_pm16start  ; Initial value of IP.
+.cs:		dw pmcode16  ; Offset of code segment within load module (segment).
+.relocpos:	dw RELOCPOS  ; File offset of first relocation item.
+.noverlay:	dw 0  ; Overlay number.
+
+.one:		dw 1  ; Seems to be 1 for TLINK 2.0--
+
+%if UNC && LOADSPE
+times 0x20-($-exe_header) db 0
+emit_pmodew_config
+db 'PMODE/W'  ; Signature. Unchecked.
+times 0x3c-($-exe_header) db 0  ; Empty.
+pehdr_fofs_ptr:	dd pehdr-exe_header
+pe:
+.IMAGE_FILE_RELOCS_STRIPPED equ 1
+.IMAGE_FILE_EXECUTABLE_IMAGE equ 2
+.IMAGE_FILE_LINE_NUMS_STRIPPED equ 4
+.IMAGE_FILE_LOCAL_SYMS_STRIPPED equ 8
+.IMAGE_FILE_BYTES_REVERSED_LO equ 0x80  ; Deprecated, shouldn't be specified.
+.IMAGE_FILE_32BIT_MACHINE equ 0x100
+.IMAGE_FILE_DEBUG_STRIPPED equ 0x200
+.IMAGE_FILE_DLL equ 0x2000  ; Shouldn't be specified for .exe.
+pehdr:  ; @0x40.
+; This below is not a perfectly valid PE header, it's just an unfinished
+; example template of how a real PE header supported by the simple PE loader
+; would look like.
+IMAGE_NT_HEADERS:  ; ..@0x40.
+..@0x40:
+.Signature: dd 'PE'
+IMAGE_FILE_HEADER:
+.Machine: dw 0x14c  ; CPU type == ISA == i386.
+.NumberOfSections: dw (IMAGE_SECTION_HEADER_end-IMAGE_SECTION_HEADER)/0x28  ; 1 here. Valid valus are 1..5 for the simple PE loader. The upper limit is less (_MAX_UNC_PE_SECTIONS) for -DUNC.
+.TimeDateStamp: dd 0  ; 0 works as an unset timestamp.
+.PointerToSymbolTable: dd 0
+.NumberOfSymbols: dd 0
+.SizeOfOptionalHeader: dw IMAGE_OPTIONAL_HEADER_end-IMAGE_OPTIONAL_HEADER  ; @0x54. 0xe0. Depends on .NumberOfRvaAndSizes.
+.Characteristics: dw pe.IMAGE_FILE_EXECUTABLE_IMAGE|pe.IMAGE_FILE_LINE_NUMS_STRIPPED|pe.IMAGE_FILE_LOCAL_SYMS_STRIPPED|pe.IMAGE_FILE_32BIT_MACHINE|pe.IMAGE_FILE_DEBUG_STRIPPED|pe.IMAGE_FILE_BYTES_REVERSED_LO  ; 0x39e. Doesn't have pe.IMAGE_FILE_RELOCS_STRIPPED or pe.IMAGE_FILE_DLL.
+IMAGE_OPTIONAL_HEADER:  ; @0x58.
+.Magic: dw 0x10b  ; i386.
+.MajorLinkerVersion: db 6  ; Even 2 could work.
+.MinorLinkerVersion: db 0
+.SizeOfCode: dd 0  ; 0 works.
+.SizeOfInitializedData: dd 0  ; 0 works.
+.SizeOfUninitializedData: dd 0   ; 0 works.
+.AddressOfEntryPoint: dd '????'  ; RVA. The actual virtual memory address where execution starts is .ImageBase.AddressOfEntryPoint.
+.BaseOfCode: dd 0x1000
+.BaseOfData: dd 0x1000
+.ImageBase: dd 0x400000  ; Typical, most compatible value.
+.SectionAlignment: dd 0x1000
+.FileAlignment: dd 0x200
+.MajorOperatingSystemVersion: dw 4  ; 1 would be equally good.
+.MinorOperatingSystemVersion: dw 0
+.MajorImageVersion: dw 0
+.MinorImageVersion: dw 0
+.MajorSubsystemVersion: dw 3
+.MinorSubsystemVersion: dw 10  ; (3, 1) works on Windows NT 3.1. (4, 0) needs Windows NT 4.0 or later, or Windows 95 or later.
+.Win32VersionValue: dd 0  ; reserved1.
+.SizeOfImage: dd '????'  ; .VirtualAddress+.VirtualSize of the last-in-memory section.
+.SizeOfHeaders: dd 0x1000  ; Windows NT 3.1 and 4.0 require that (.SizeOfHeaders+0xfff)&0xfff == IMAGE_SECTION_HEADER_0.VirtualAddress, and for each subsequent section, .VirtualAddress == (prev.VirtualAddress+prev.VirtualSize+0xfff)^~0xfff, i.e. there are no memory gaps.
+.CheckSum: dd 0
+.Subsystem: dw 3  ; NT subsystem. Windows CUI. The Windows GUI would be 2.
+.DllCharacteristics: dw 0
+.SizeOfStackReserve: dd 0x1000  ; Must be at least .SizeOfStackCommit. Must be a multiple of 0x1000.
+.SizeOfStackCommit: dd 0x1000  ; 4 KiB of stack is the minimum. Must be a multiple of 0x1000.
+.SizeOfHeapReserve: dd 0  ; Must be at least .SizeOfHeapCommit. Must be a multiple of 0x1000.
+.SizeOfHeapCommit: dd 0  ; HeapAlloc(...) uses it. An empty heap (== 0) is OK. Must be a multiple of 0x1000.
+.LoaderFlags: dd 0  ; Also address of TLS index.
+.NumberOfRvaAndSizes: dd (IMAGE_DATA_DIRECTORY_end-IMAGE_DATA_DIRECTORY)>>3  ; 16. 16 is the most compatible, and the simple PE loader requires it (this can be changed). 10 works with all versions of Windows, Wine and recent ReactOS. !! TODO(pts): Make the simple PE loader support any value (between 6 and 16).
+IMAGE_DATA_DIRECTORY:
+IMAGE_DIRECTORY_ENTRY_EXPORT:  ; 0. Export.
+..@0x0b8: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_IMPORT:  ; 1. Import.
+..@0x0c0: dd 0, 0  ; The simple PE loader ignores it. If filled no nonzero, the Win32 PE loader will do the DLL imports based on it.
+IMAGE_DIRECTORY_ENTRY_RESOURCE:  ; 2. Resource.
+..@0x0c8: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_EXCEPTION:  ; 3. Exception.
+..@0x0d0: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_SECURITY:  ; 4. Security. Certificates.
+..@0x0d8: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_BASERELOC:  ; 5. Base relocation.
+..@0x0e0: dd '?????', '?????'  ; Set both to 0 if you don't have any relocations.
+IMAGE_DIRECTORY_ENTRY_DEBUG:  ; 6. Debug.
+..@0x0e8: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_ARCHITECTURE:  ; 7. Description. Architecture.
+..@0x0f0: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_GLOBALPTR:  ; 8. Global pointer. Special.
+..@0x0f8: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_TLS:  ; 9. Thread local storage.
+..@0x100: dd 0, 0
+%if 1 ; Changing this to `%if 0' would still work all versions of Windows, Wine and recent ReactOS.
+IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG:  ; 10. Load configuration.
+..@0x108: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_BOUND_IMPORT:  ; 11. Bound import.
+..@0x110: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_IAT:  ; 12. Import address table.
+..@0x118: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_DELAY_IMPORT:  ; 13. Delay Import.
+..@0x120: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_COM_DESCRIPTOR:  ; 14. COM descriptor. CLR runtime. Nonzero for .NET .exe.
+..@0x128: dd 0, 0
+IMAGE_DIRECTORY_ENTRY_RESERVED:  ; 15. Reserved.
+..@0x130: dd 0, 0
+%endif
+..@0x138:  ; This mill change to @0x108 if we remove 16-10 entries.
+IMAGE_DATA_DIRECTORY_end:  ; @0x138.
+IMAGE_OPTIONAL_HEADER_end:  ; @0x138.
+IMAGE_SECTION_HEADER:  ; @0x138.
+IMAGE_SECTION_HEADER_0:  ; @0x138. 0x28 == 40 bytes.
+.Name:			db '.text', 0, 0, 0
+.VirtualSize:		dd  '????'  ; Number of bytes to map to memory. Can be odd, no need to align it.
+.VirtualAddress:	dd  0x1000  ; RVA. This is the minimum value. It must be a positive multiple of .SectionAlignment. Actual virtual memory address is .ImageBase+.section.VirtualAddress.
+.SizeOfRawData:		dd '????'  ; Number of bytes to load from file offset .PointerToRawData. Must be a multiple of .FileAlignment except for the last section (where it can match .VirtualAddrees).
+.PointerToRawData:	dd pe_sections-exe_header  ; Must be a multiple of .FileAlignment.
+.PointerToRelocations:	dd 0
+.PointerToLineNumbers:	dd 0
+.NumberOfRelocations:	dw 0
+.NumberOfLineNumbers:	dw 0
+.Characteristics:	dd 0xe0000060 ;  .Characteristics == (CODE|INIT_DATA|READABLE|WRITABLE_EXECUTABLE).
+; Typical characteristics for section .text (CODE): 0x60000020 == (CODE|EXECUTABLE|READABLE).
+; Typical characteristics for section .data (DATA) and .idata: 0xc0000040 == (INIT_DATA|READABLE|WRITABLE).
+; Typical characteristics for section .reloc: 0x50000040 == (INIT_DATA|SHARED|READABLE).
+IMAGE_SECTION_HEADER_end:
+IMAGE_SECTION_HEADER_1: equ $+0*0x28  ; @0x160. 0x28 == 40 bytes.
+IMAGE_SECTION_HEADER_2: equ $+1*0x28  ; @0x198. 0x28 == 40 bytes.
+IMAGE_SECTION_HEADER_3: equ $+2*0x28  ; @0x1b0. 0x28 == 40 bytes.
+IMAGE_SECTION_HEADER_4: equ $+3*0x28  ; @0x1d8. 0x28 == 40 bytes. The simple PE loader supports 1..5 sections.
+after_pehdr:
+%else
+; This value seems to depend on the TLINK version number.
+;
+; * TLINK 2.0: dw 0x20fb, 0x6a72
+; * TLINK 3.0--4.01 (last tlink.exe running on a 8086, we imitate this): dw 0x30fb, 0x726a
+; * TLINK 5.0--5.1--??: (used by pmw133src/PMODEW.EXE): dw 0x50fb, 0x726a
+; * TLINK 7.0: dw 0x61fb, 0x726a
+.linker_id:	dw 0x30fb, 0x726a  ; We imitate TLINK 3.0--4.01.
+%endif
+
+.padding1:	times RELOCPOS-($-exe_header) db 0
+
+.relocs:  ; (offset, offset) pairs with exe_image as the base.
+		emit_relocs RELOC_LIMIT
+.relocs.end:
+
+.padding2:	times (HDRSIZE<<4)-($-exe_header) db 0
+
+exe_image:
+
+; --- Based on pmodewk.asm.
+
+; PMODE/W DPMI/VCPI/XMS/raw protected mode interface kernel.
+; Copyright (c) 1994, 1996, Tran (a.k.a. Thomas Pytel).
+
+reloc_seg pmodewk, PMODE_TEXT  ; PMODE_TEXT segment word public use16 'CODE'
+;assume  cs:PMODE_TEXT, ds:PMODE_TEXT
+
+%if UNC && LOADSPE==0  ; Must be at te beginning of the .exe image, _openexe2 with VARTYPE==1 (default) is looking for it there.
+emit_pmodew_config
+padding_after_config: align 2, db 0
+%endif
+
+; --- Back to pmodewk.asm.
 ;
 ; DATA
 ;
@@ -3232,7 +3372,6 @@ exception_def:                          ; default exception handler (aborts)
 	call abort_puthexnum8
 
 	; Printing as finishes. This moves the cursor, and exits.
-	; !! Move abort_exit here.
 %if SIZEOPT
 abort_exit:                             ; exit after abnormal termination
 %if ABORTMSGTTY
@@ -6621,7 +6760,7 @@ _readfile:
 	pop ds
 	; BUG: `cmp eax, ecx' ++ `jne _loaderror' is missing. We should
 	; check that all the bytes we need have been read. However, that would
-	; change pmodew.exe, so it wouldn't be bytewise identicaly anymore.
+	; change pmodew.exe, so it wouldn't be bytewise identical anymore.
 	multipop bx, eax
 	jc _loaderror
 	ret
@@ -8591,10 +8730,6 @@ _openexe3err:
 %if LOADSPE
 _openexe2.j_loaderror:
 	jmp _loaderror
-  ; Recommendation for -DLOADSPE: set -DCONFIGINEXEIMAGE=0, because it will be ignored anyway.
-%elif CONFIGINEXEIMAGE==0
-  %error ERROR_VARTYPE_1_NEEDS_CONFIGINEXEIMAGE
-  times -1 nop
 %endif
 
 _openexe2_vartype_1:
@@ -8604,31 +8739,7 @@ _openexe2:
 	push ds
 	_mov bx,ax
 	; Read the LE/PMW1 header and pmodew_config from the .exe.
-%if UNC && LOADSPE==0  ; By `tasm /dUNC'.
-	mov cx,110h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h. !! Why not just 100h here?
-	mov ds,[-pmodewe+_int21lowdtaseg]
-	_xor dx,dx
-	mov ah,3fh  ; Read from file using handle.
-	int 21h
-	jc _loaderror
-	mov dx,[8]  ; hdrsize. Typical value created by OpenWatcom: 0bh (relocations between 40h and 0b0h, pmodew_config ends at 0b0h+21).
-	shl dx,4  ; Maximum .hdrsize supported: 0fffh.
-	_mov si,dx
-	test dh,dh
-	jz .copy  ; The default hdrsize created by TLINK is 20h, with SI == DX == 200h here. But when OpenWatcom embeds it as a stub, the hdrsize becomes 0dh, which is small, thus we jump.
-	_xor cx,cx  ; High word of file offset.
-	mov ax,4200h  ; Move file pointer using handle.
-	int 21h
-	jc _loaderror
-	mov cx,pmodew_config._size  ; 15h == 21. Must be at most 3ch, _loadexe uses dword [gs:3ch] ([3ch] here) for the file offset of the 32-bit payload (LE or PMW1).
-	_xor dx,dx
-	mov ah,3fh  ; Read from file using handle.
-	int 21h
-	jc _loaderror
-	_xor si,si
-.copy:
-	push es
-%elif LOADSPE
+%if LOADSPE
 	mov cx, 200h  ; Must be at most DTABUFSIZE == 200h.
 	mov ds, [-pmodewe+_int21lowdtaseg]
 	_xor dx, dx
@@ -8660,15 +8771,52 @@ _openexe2:
 	ja short .j_loaderror
 %endif
 	push es
+%elif CONFIGTYPE==3
+	mov cx, 200h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h.
+	mov ds, [-pmodewe+_int21lowdtaseg]
+	_xor dx, dx
+	mov ah, 3fh  ; Read from file using handle.
+	int 21h
+	jc _loaderror
+	mov dx, [8]  ; DX := hdrsize. Typical value created by OpenWatcom: 0bh (relocations between 40h and 0b0h, pmodew_config ends at 0b0h+21).
+	_mov si, dx
+	shl si, 4  ; Maximum .hdrsize supported: 0fffh.
+	cmp dx, (200h-pmodew_config._size)>>4
+	jbe .after_read_config  ; The default hdrsize created by TLINK is 20h, with SI == DX == 200h here. But when OpenWatcom embeds it as a stub, the hdrsize becomes 0dh, which is small, thus we don't (have to) seek or read.
+.seek_for_config:
+	_xor cx, cx  ; High word of file offset.
+	shld cx, dx, 4
+	_mov dx, si  ; CX:DX := hdrsize<<4.
+	mov ax, 4200h  ; Move file pointer using handle. whence (AL) := SEEK_SET (== 0).
+	int 21h
+	jc _loaderror
+.read_config_from_good_file_position:
+	mov cx, pmodew_config._size  ; 15h == 21. Must be at most 3ch, _loadexe uses dword [gs:3ch] ([3ch] here) for the file offset of the 32-bit payload (LE or PMW1).
+	_xor dx, dx
+	mov ah, 3fh  ; Read from file using handle.
+	int 21h
+	jc _loaderror
+	_xor si,si
+.after_read_config:  ; Now: DS:SI points to the config (pmodew_config structure) read from the .EXE file.
+	push es
 %else
-	mov cx,40h+pmodew_config._size  ; pmodew_config._size == 15h == 21. Must be >=pmodew_config._size+(hdrsize>>4). Thus this supports hdrsize values 2, 3 and 4.
+%if CONFIGTYPE>1  ; This makes sense. It supports 2 <= hdrsize <= 0x1e == 30.
+	mov cx,200h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h.
+%else  ; This is for bytewise identical original pmodew.exe. It supports 2 <= hdrsize <= 4.
+	mov cx,40h+pmodew_config._size  ; pmodew_config._size == 15h == 21. Must be >=pmodew_config._size+(hdrsize>>4).
+%endif
 	mov ds,[-pmodewe+_int21lowdtaseg]
 	_xor dx,dx
 	mov ah,3fh  ; Read from file using handle.
 	int 21h
 	jc _loaderror
 	push es
-	mov si,[8]  ; hdrsize. Typical values for compress PMODE/W pmodew.exe: hdrsize == 2 (pmodew.exe) or == 4 (when pmodew.exe embedded by WLINK as stub).
+	mov si,[8]  ; SI := hdrsize. Typical values for compress PMODE/W pmodew.exe: hdrsize == 2 (pmodew.exe) or == 4 (when pmodew.exe embedded by WLINK as stub).
+%if CONFIGTYPE>1  ; This makes sense. It supports 2 <= hdrsize <= 0x1e == 30.
+	cmp si,(200h-pmodew_config._size)>>4
+	ja _loaderror
+%else  ; This is for bytewise identical original pmodew.exe. It carelessly omits the check for hdrsize <= 4.
+%endif
 	shl si,4
 %endif
 	reloc mov ax,PMODE_TEXT
@@ -8724,5 +8872,9 @@ stack_end equ stack+STACKSIZE
 exe_end:
 mem_end equ stack_end
 finalize_relocs
+%if UNC && LOADSPE
+times (exe_header-$)&(200h-1) db 0  ; inpe.FileAlignment == 200h.
+pe_sections:
+%endif
 
 ; __END__
