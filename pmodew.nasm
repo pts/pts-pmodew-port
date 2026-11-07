@@ -97,6 +97,109 @@
 ;
 ; See also load-time configuration later.
 
+%ifdef SPE_EntryPoint  ; Compile-time configuration for the simple PE builder. The program may override each setting with a `%define'.
+  %ifndef   UNC
+    %define UNC 1
+  %endif
+  %ifndef   LOGO
+    %define LOGO 0
+  %endif
+  %ifndef   SIZEOPT
+    %define SIZEOPT 1
+  %endif
+  %ifndef   LOADSPE
+    %define LOADSPE 3
+  %endif
+  %ifndef   LOADLE
+    %define LOADLE 0
+  %endif
+  %ifndef   LOADPMW1
+    %define LOADPMW1 0
+  %endif
+  %ifndef   INT3108FUNC
+    %define INT3108FUNC 0
+  %endif
+  %ifndef   INT1B
+    %define INT1B 0
+  %endif
+  %ifndef   INT33
+    %define INT33 0
+  %endif
+  %ifndef   FREEMEMINFO
+    %define FREEMEMINFO 0
+  %endif
+  %ifndef   GETVERSION
+    %define GETVERSION 0
+  %endif
+  %ifndef   ABORTMSGTTY
+    %define ABORTMSGTTY 1
+  %endif
+  %ifndef   EXITCODE
+    %define EXITCODE 1
+  %endif
+  %ifndef   FEWRELOCS
+    %define FEWRELOCS 0  ; FEWRELOCS==1 only needed if we use >=3 PE sections. But we use only 1.
+  %endif
+  %ifndef   SPEDOSONLY
+    %define SPEDOSONLY 1  ; Setting this prevents Windows from recognize this program as a Win32 i386 PE .exe (and then failing at runtime). 32-bit i386 Windows will run it as a DOS .exe instead. Comment this out to make static analysis tools (such as GNU objdump) work.
+  %endif
+
+  %define SPE_end SPE_end  ; Define the label later.
+  %define SPE_bssend SPE_bssend  ; Define the label later.
+  ;%define SPE_EntryPoint SPE_EntryPoint  ; Define the label later. Already defined.
+%endif
+; This is the simple PE builder, it can be activated using `%define
+; SPE_EntryPoint ...'.
+;
+; If the simple PE builder is active, then pmodew.nasm not only builds the
+; DOS stub of the DOS extender PMODE/W, but it builds a simple Win32 PE .exe
+; program file directly, with the uncompressed PMODE/W DOS extender in its
+; DOS stub, so thes program will run on DOS and in OS/2 >=2.0 DOS window.
+;
+; Example hello-world program (hellospe.nasm):
+;
+;   %define SPE_EntryPoint _start  ; Activate the simple PE builder.
+;   %include 'pmodew.nasm'
+;   _start:
+;           spe_pic_delta_to ebp
+;           mov ah, 9  ; Print '$'-terminated message starting at EDX.
+;           lea edx, [ebp+msg]  ; +EBP for position-independent code.
+;           int 0x21  ; DOS-extended syscall.
+;           mov ax, 0x4c00  ; Exit successfully.
+;           int 0x21  ; DOS-extended syscall.
+;   msg:    db 'Hello, World!', 13, 10, '$'
+;   spe_end
+;
+; Build it with: nasm -O32700 -w+orphan-labels -o hellospe.exe hellospe.nasm
+;
+; See helluspe.nasm for an example which uses more features of the simple PE
+; builder.
+;
+; Limitations:
+;
+; * These are the limitations of the simple PE builder. The simple PE loader
+;   has its own, less restrictive limitations.
+; * Building Win32 i386 .exe programs is not supported, because the the
+;   simple PE builder can't build the import table, and the import table is
+;   needed for calling Win32 API functions like ExitProcess(...).
+; * To make sure that the .exe program files built are not misdetected as
+; * Win32 i386 .exe programs, the simple PE builder emits an incorrect PE
+;   header file offset (41h instead of 40h) at file offset 3ch.
+; * Relocations are not supported, so for each global variable access, a
+;   helper register value should be added to the address (see
+;   `spe_pic_delta_to ebp' in the example above.
+; * Only the uncompressed PMODE/W DOS extender DOS stub is supported.
+;   Compressing it would make the resulting .exe file exactly 3 KiB shorter
+;   (because of PE .FileAlignment == 200h), but by compression we'd lose the
+;   simplicity of creating the .exe file in a single run of NASM.
+; * The global namespace is polluted with internal PMODE/W labels and
+;   macros.
+; * Only a single section (combined code, data and BSS) is supported.
+; * It can't generate debug info (such as labels and source line numbers).
+; * The entire program must be compiled in a single run of NASM. This can
+;   be slow or need too much memory for large programs. It can also lead
+;   to label collisions (dependening on the quality of the soruce code).
+
 %ifndef PMWV  ; Can be specified on the command line.
   %define PMWV 33  ; Generate PMODE/W version 1.33.
   ;%define PMWV 34  ; Generate PMODE/W version 1.34.
@@ -276,8 +379,8 @@
 ;
 ; * `test byte [ImageBase+3ch], 1' sets ZF := 0 when running on DOS with the
 ;   simple PE loader, and ZF := 1 when running on native Win32. That's
-;   because the simple PE loader changes the PE header offset from 40h to
-;   41h in memory.
+;   because the simple PE loader changes the PE header file offset from 40h
+;   to 41h in memory.
 ;
 ; * If -DSPECUSTOMENTRY=1 is used, then the program starts on Win32 at
 ;   ImageBase+AddressOfEntryPoint, and on DOS, the simple PE loader starts
@@ -319,7 +422,7 @@
 %ifndef SPEDOSONLY  ; Can be specified on the command line.
   %define SPEDOSONLY 0   ; Make Windows, Wine and static analysis tools recognize the .exe as a Win32 PE .exe. Windows and Wine will run it directly. OS/2 >=2.0 DOS window and DOS will run it using the embedded PMODE/W.
   ;%define SPEDOSONLY 1  ; Make Windows, Wine and static analysis tools recognize the .exe as a DOS .exe. 32-bit i386 Windows, OS/2 >=2.0 DOS window and DOS will run it using the embedded PMODE/W. Wine and 64-bit Windows won't run it.
-  ;%define SPEDOSONLY 2  ; Like ==1, but the simple PE loader will run it even if the PE header offset field in the header is changed back to 40h manually. Most users need ==1 instead.
+  ;%define SPEDOSONLY 2  ; Like ==1, but the simple PE loader will run it even if the PE header file offset field in the header is changed back to 40h manually. Most users need ==1 instead.
 %elifidn (SPEDOSONLY), ()
   %define SPEDOSONLY 1
 %else
@@ -800,91 +903,100 @@
 ; _pm16_lowmin when the .exe payload is loaded by _openexe2, and then used
 ; from there.
 
-; Load-time configuration default values.
-; Used for (-DUNC=1 -DVARRTYPE=1) via pmodew_config below.
-; Used for -DVARTYPE=2 via _openexe2_vartype_2.
-;
+%macro pm_default 2
+  %ifndef %1  ; If %1 is defined, it must be defined to itself, e.g. `%define PM_PAGETABLES PM_PAGETABLES', then the value can be set with `PM_PAGETABLES equ 1'.
+    %define %1 %1
+    %1 equ %2
+  %endif
+%endm
+
 ; This NASM macro workaround is unfortunately verbose. But there is now
 ; easier way to make `%define PM_MAXEXTMEM 0x10000' and `nasm
 ; -DPM_MAXEXTMEM=0x10000' work.
 %ifdef PM_PAGETABLES
   $PM_PAGETABLES equ PM_PAGETABLES
-  %undef PM_PAGETABLES
-%else
-  $PM_PAGETABLES equ 4
+  %define PM_PAGETABLES PM_PAGETABLES
 %endif
 %ifdef PM_SELECTORS
   $PM_SELECTORS equ PM_SELECTORS
-  %undef PM_SELECTORS
-%else
-  $PM_SELECTORS equ 100h
+  %define PM_SELECTORS PM_SELECTORS
 %endif
 %ifdef PM_RMSTACKLEN
   $PM_RMSTACKLEN equ PM_RMSTACKLEN
-  %undef PM_RMSTACKLEN
-%else
-  $PM_RMSTACKLEN equ 40h
+  %define PM_RMSTACKLEN PM_RMSTACKLEN
 %endif
 %ifdef PM_PMSTACKLEN
   $PM_PMSTACKLEN equ PM_PMSTACKLEN
-  %undef PM_PMSTACKLEN
-%else
-  $PM_PMSTACKLEN equ 80h
+  %define PM_PMSTACKLEN PM_PMSTACKLEN
 %endif
 %ifdef PM_RMSTACKS
   $PM_RMSTACKS equ PM_RMSTACKS
-  %undef PM_RMSTACKS
-%else
-  $PM_RMSTACKS equ 8
+  %define PM_RMSTACKS PM_RMSTACKS
 %endif
 %ifdef PM_PMSTACKS
   $PM_PMSTACKS equ PM_PMSTACKS
-  %undef PM_PMSTACKS
-%else
-  $PM_PMSTACKS equ 8
+  %define PM_PMSTACKS PM_PMSTACKS
 %endif
 %ifdef PM_CALLBACKS
   $PM_CALLBACKS equ PM_CALLBACKS
-  %undef PM_CALLBACKS
-%else
-  $PM_CALLBACKS equ 20h
+  %define PM_CALLBACKS PM_CALLBACKS
 %endif
 %ifdef PM_MODE
   $PM_MODE equ PM_MODE
-  %undef PM_MODE
-%else
-  $PM_MODE equ 1
+  %define PM_MODE PM_MODE
 %endif
 %ifdef PM_PAMPAGEMAX
   $PM_PAMPAGEMAX equ PM_PAMPAGEMAX
-  %undef PM_PAMPAGEMAX
-%else
-  $PM_PAMPAGEMAX equ 1
+  %define PM_PAMPAGEMAX PM_PAMPAGEMAX
 %endif
 %ifdef PM_CRAP
   $PM_CRAP equ PM_CRAP
-  %undef PM_CRAP
-%else
-  $PM_CRAP equ 0
+  %define PM_CRAP PM_CRAP
 %endif
 %ifdef PM_OPTIONS
   $PM_OPTIONS equ PM_OPTIONS
-  %undef PM_OPTIONS
-%else
-  $PM_OPTIONS equ 1
+  %define PM_OPTIONS PM_OPTIONS
 %endif
 %ifdef PM_MAXEXTMEM
   $PM_MAXEXTMEM equ PM_MAXEXTMEM
-  %undef PM_MAXEXTMEM
-%else
-  $PM_MAXEXTMEM equ 7fffffffh
+  %define PM_MAXEXTMEM PM_MAXEXTMEM
 %endif
 %ifdef PM_LOWMIN
   $PM_LOWMIN equ PM_LOWMIN
-  %undef PM_LOWMIN
-%else
-  $PM_LOWMIN equ 0
+  %define PM_LOWMIN PM_LOWMIN
 %endif
+
+%ifdef SPE_EntryPoint  ; Load-time configuration default values for the simple PE builder. The program may override each setting with a `%define'.
+  ; The defaults later below would also work, but this uses less memory.
+  pm_default	PM_MAXEXTMEM,	64<<20		; 64 MiB. Maximum extended memory to allocate, in bytes.
+  pm_default	PM_PAGETABLES, (PM_MAXEXTMEM+0x3fffff)>>22  ; Number of page tables under VCPI. Each page table makes 4 MiB of memory available.
+  pm_default	PM_SELECTORS,	4		; Maximum number of selectors under VCPI/XMS/raw. Minimum working value is 4.
+  pm_default	PM_RMSTACKLEN,	0x100>>4	; Default: dw 0x40. Real-mode stack length, in para (10h bytes). Will be multipled with .rmstacks. Value matters, 0x100 bytes should be enough.
+  pm_default	PM_PMSTACKLEN,	0		; Default: dw 0x80. Protected-mode stack length, in para (10h bytes). Will be multipled with .pmstacks, so value doesn't matter.
+  pm_default	PM_RMSTACKS,	1		; Real-mode stack nesting. Minimum working value is 1.
+  pm_default	PM_PMSTACKS,	0		; Protected-mode stack nesting. Minimum working value is 0.
+  pm_default	PM_CALLBACKS,	0		; Number of real-mode callbacks.
+  pm_default	PM_MODE,	0		; Mode bits. mode&1 means: detect VCPI before DPMI.
+  pm_default	PM_PAMPAGEMAX,	0		; Maximum number of physical address mapping pages. Not relevant, our PMODE/W has the feature disabled (-DINT3108FUNC=1).
+  pm_default	PM_OPTIONS,	0		; Option bits. options&1 means: display copyright message.
+%endif
+
+; Load-time configuration default values.
+; Used for (-DUNC=1 -DVARRTYPE=1) via pmodew_config below.
+; Used for -DVARTYPE=2 via _openexe2_vartype_2.
+pm_default	PM_PAGETABLES,	4
+pm_default	PM_SELECTORS,	100h
+pm_default	PM_RMSTACKLEN,	40h
+pm_default	PM_PMSTACKLEN,	80h
+pm_default	PM_RMSTACKS,	8
+pm_default	PM_PMSTACKS,	8
+pm_default	PM_CALLBACKS,	20h
+pm_default	PM_MODE,	1
+pm_default	PM_PAMPAGEMAX,	1
+pm_default	PM_CRAP,	0
+pm_default	PM_OPTIONS,	1
+pm_default	PM_MAXEXTMEM,	7fffffffh
+pm_default	PM_LOWMIN,	0
 
 %macro emit_pmodew_config 0
   pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
@@ -947,6 +1059,10 @@ exe_header:  ; DOS .exe header: http://justsolve.archiveteam.org/wiki/MS-DOS_EXE
 .one:		dw 1  ; Seems to be 1 for TLINK 2.0--
 
 %if UNC && LOADSPE
+pm_default SPE_ImageBase, 0x400000
+%ifndef SPE_EntryPoint
+  pm_default SPE_AddressOfEntryPoint, '????'
+%endif
 times 0x20-($-exe_header) db 0
 emit_pmodew_config
 db 'PMODE/W'  ; Signature. Unchecked.
@@ -988,10 +1104,15 @@ IMAGE_OPTIONAL_HEADER:  ; @0x58.
 .SizeOfCode: dd 0  ; 0 works.
 .SizeOfInitializedData: dd 0  ; 0 works.
 .SizeOfUninitializedData: dd 0   ; 0 works.
-.AddressOfEntryPoint: dd '????'  ; RVA. The actual virtual memory address where execution starts is .ImageBase.AddressOfEntryPoint.
+.AddressOfEntryPoint:  ; RVA. The actual virtual memory address where execution starts is .ImageBase.AddressOfEntryPoint.
+%ifdef SPE_EntryPoint
+		dd (SPE_EntryPoint)-(SPE_ImageBase)
+%else
+		dd SPE_AddressOfEntryPoint
+%endif
 .BaseOfCode: dd 0x1000
 .BaseOfData: dd 0x1000
-.ImageBase: dd 0x400000  ; Typical, most compatible value.
+.ImageBase: dd SPE_ImageBase  ; 0x400000 is the typical, most compatible value.
 .SectionAlignment: dd 0x1000
 .FileAlignment: dd 0x200
 .MajorOperatingSystemVersion: dw 4  ; 1 would be equally good.
@@ -1001,8 +1122,15 @@ IMAGE_OPTIONAL_HEADER:  ; @0x58.
 .MajorSubsystemVersion: dw 3
 .MinorSubsystemVersion: dw 10  ; (3, 1) works on Windows NT 3.1. (4, 0) needs Windows NT 4.0 or later, or Windows 95 or later.
 .Win32VersionValue: dd 0  ; reserved1.
-.SizeOfImage: dd '????'  ; .VirtualAddress+.VirtualSize of the last-in-memory section.
-.SizeOfHeaders: dd 0x1000  ; Windows NT 3.1 and 4.0 require that (.SizeOfHeaders+0xfff)&0xfff == IMAGE_SECTION_HEADER_0.VirtualAddress, and for each subsequent section, .VirtualAddress == (prev.VirtualAddress+prev.VirtualSize+0xfff)^~0xfff, i.e. there are no memory gaps.
+.SizeOfImage:  ; .VirtualAddress+.VirtualSize of the last-in-memory section, minus .ImageBase.
+%ifdef SPE_bssend  ; A label.
+		dd SPE_bssend-SPE_sections  ; Correct for a single section.
+%elifdef SPE_end  ; A label.
+		dd SPE_end-SPE_sections  ; Correct for a single section.
+%else
+		dd '????'
+%endif
+.SizeOfHeaders: dd 0x200  ; Windows NT 3.1 and 4.0 require that (.SizeOfHeaders+0xfff)&0xfff == IMAGE_SECTION_HEADER_0.VirtualAddress, and for each subsequent section, .VirtualAddress == (prev.VirtualAddress+prev.VirtualSize+0xfff)^~0xfff, i.e. there are no memory gaps.
 .CheckSum: dd 0
 .Subsystem: dw 3  ; NT subsystem. Windows CUI. The Windows GUI would be 2.
 .DllCharacteristics: dw 0
@@ -1024,7 +1152,11 @@ IMAGE_DIRECTORY_ENTRY_EXCEPTION:  ; 3. Exception.
 IMAGE_DIRECTORY_ENTRY_SECURITY:  ; 4. Security. Certificates.
 ..@0x0d8: dd 0, 0
 IMAGE_DIRECTORY_ENTRY_BASERELOC:  ; 5. Base relocation.
+%ifdef SPE_end
+		dd 0, 0
+%else
 ..@0x0e0: dd '?????', '?????'  ; Set both to 0 if you don't have any relocations.
+%endif
 IMAGE_DIRECTORY_ENTRY_DEBUG:  ; 6. Debug.
 ..@0x0e8: dd 0, 0
 IMAGE_DIRECTORY_ENTRY_ARCHITECTURE:  ; 7. Description. Architecture.
@@ -1053,10 +1185,22 @@ IMAGE_OPTIONAL_HEADER_end:  ; @0x138.
 IMAGE_SECTION_HEADER:  ; @0x138.
 IMAGE_SECTION_HEADER_0:  ; @0x138. 0x28 == 40 bytes.
 .Name:			db '.text', 0, 0, 0
-.VirtualSize:		dd  '????'  ; Number of bytes to map to memory. Can be odd, no need to align it.
+.VirtualSize:  ; Number of bytes to map to memory. Can be odd, no need to align it.
+%ifdef SPE_bssend  ; A label.
+			dd SPE_bssend-SPE_sections  ; Correct for a single section.
+%elifdef SPE_end
+			dd SPE_end-SPE_sections  ; Correct for a single section.
+%else
+			dd  '????'
+%endif
 .VirtualAddress:	dd  0x1000  ; RVA. This is the minimum value. It must be a positive multiple of .SectionAlignment. Actual virtual memory address is .ImageBase+.section.VirtualAddress.
-.SizeOfRawData:		dd '????'  ; Number of bytes to load from file offset .PointerToRawData. Must be a multiple of .FileAlignment except for the last section (where it can match .VirtualAddrees).
-.PointerToRawData:	dd pe_sections-exe_header  ; Must be a multiple of .FileAlignment.
+.SizeOfRawData:  ; Number of bytes to load from file offset .PointerToRawData. Must be a multiple of .FileAlignment except for the last section (where it can match .VirtualAddrees).
+%ifdef SPE_end
+			dd SPE_end-SPE_sections  ; Correct for a single section.
+%else
+			dd  '????'
+%endif
+.PointerToRawData:	dd SPE_sections-exe_header  ; Must be a multiple of .FileAlignment.
 .PointerToRelocations:	dd 0
 .PointerToLineNumbers:	dd 0
 .NumberOfRelocations:	dw 0
@@ -9020,8 +9164,38 @@ exe_end:
 mem_end equ stack_end
 finalize_relocs
 %if UNC && LOADSPE
-times (exe_header-$)&(200h-1) db 0  ; inpe.FileAlignment == 200h.
-pe_sections:
+  times (exe_header-$)&(200h-1) db 0  ; inpe.FileAlignment == 200h.
+  SPE_sections:
+  SPE_sections_va equ SPE_ImageBase+0x1000
+  %ifdef SPE_EntryPoint
+    cpu 386
+    bits 32
+    org SPE_sections_va-($-exe_header)  ; It's OK to set `org' even this late, after lots of assembly instructions in pmodew.nasm.
+    %macro spe_pic_delta_to 1  ; %1 is an 32-bit register, typically EBP. It doesn't modify EFLAGS.
+      call %%here
+      %%here: pop %1  ; EBP := linear address to where .here has been loaded.
+      lea %1, [%1-(SPE_sections_va+%%here-SPE_sections)]  ; EBP := linear address delta, for manual relocations. !! Add PE relocations, generate them.
+    %endm
+    %macro spe_bss 0  ; Mark the start of zero-initialized data (BSS). From now on, use resb etc. instructions.
+      SPE_end:
+      absolute $
+      resb (SPE_sections-$)&3  ; Align to dword boundary.
+      %define SPE_bss SPE_bss
+      SPE_bss:
+    %endm
+    %macro spe_end 0  ; Put it at the end of your .nasm source file.
+      %ifndef SPE_bss
+        %define SPE_bss SPE_bss
+        SPE_end:  ; End of initialized code and data. BSS starts after this.
+        SPE_bss:  ; No need for alignment, because BSS is empty.
+      %endif
+      %if $-SPE_bss==0
+        SPE_bssend: equ SPE_end
+      %else
+        SPE_bssend: equ $
+      %endif
+    %endm
+  %endif
 %endif
 
 ; __END__
