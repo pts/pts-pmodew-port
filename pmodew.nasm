@@ -1283,7 +1283,9 @@ exceptionecsize db      0,0,0,0,0,0,0,0,4,0,4,4,4,4,4
 
 abortrmstacktop dw      ANY             ; top of real mode stack for abort
 
+%if SIZEOPT==0
 aborts_hexctbl  db      '0123456789ABCDEF'
+%endif
 
 aborts_pmwabort:
 %if LOADSPE==3
@@ -3524,9 +3526,19 @@ abort_puthexnum:
 
 .00l:
 	rol edx,4
+%if SIZEOPT
+	_mov al,dl
+	and al,0fh
+	add al,'0'
+	cmp al,'9'
+	jbe short .have_char_in_al
+	add al,'A'-10-'0'  ; 7.
+.have_char_in_al:
+%else
 	_mov bl,dl
 	and bl,0fh
 	mov al,[-pmodewk+aborts_hexctbl+bx]
+%endif
 
 %if ABORTMSGTTY
 	call abort_putc
