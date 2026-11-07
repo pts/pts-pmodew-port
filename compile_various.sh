@@ -20,7 +20,7 @@ asm_prog="$nasm0"
 # Tested and found working: TLINK 2.0, 3.0, 3.01, 4.0, 4.01.
 # It's not working with WLINK in OpenWatcom 2.0 2023-03-04, it generates incorrect relocations.
 tlink_exe=tlink20.exe
-emudos=tools/kvikdos-v1
+emudos=tools/kvikdos-v1.upx
 emudosflags=
 nasm="$nasm0"  # --dd-nasm=... doesn't affect it.
 pmwv=33
@@ -45,7 +45,7 @@ for arg in "$@"; do
    --tlink*.exe) tlink_exe="${arg#--}" ;;
    --dd-nasm=*) nasm="${arg#*=}" ;;  # For --dd. Ignored if a NASM command is specified in --asm=... .
    --kvikdos=*) emudos="${arg#*=}"; is_emu2=; is_explicit_kvikdos=1; emudosflags=; is_dnx= ;;
-   --kvikdos) emudos=tools/kvikdos-v1; is_emu2=; is_explicit_kvikdos=1; emudosflags=; is_dnx= ;;
+   --kvikdos) emudos=tools/kvikdos-v1.upx; is_emu2=; is_explicit_kvikdos=1; emudosflags=; is_dnx= ;;
    --emu2=*) emudos="${arg#*=}"; is_emu2=1; is_explicit_kvikdos=; emudosflags=; is_dnx= ;;
    --emu2) emudos=tools/emu2-lc-2021.01; is_emu2=1; is_explicit_kvikdos=; emudosflags=; is_dnx= ;;
    --dosbox | --dnx) emudos=dosbox.nox.static; is_emu2=; is_explicit_kvikdos=; emudosflags=--cmd; is_dnx=1 ;;
