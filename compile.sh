@@ -156,7 +156,7 @@ if test "$is_nasm"; then
 else
   if ! test "${asm_prog#tasm30*.exe}" && ! test "$is_emu2"; then
     # TASM 3.0 produces `int 3' in kvikdos. Without --mem-mb=2, TASM
-    # 3.0 would just hang in --dnx. Solution: we run it in emu2 instead
+    # 3.0 would just hang in --cmd. Solution: we run it in emu2 instead
     # of kvikdos.
     if test "$is_explicit_kvikdos"; then echo "fatal: can't run TASM 3.0 or 3.1 in kvikdos, please omit --kvikdos* to use emu2 instead for them" >&2; exit 1; fi
     if test "$is_dnx"; then
