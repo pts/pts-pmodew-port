@@ -47,7 +47,7 @@ for arg in "$@"; do
    --kvikdos=*) emudos="${arg#*=}"; is_emu2=; is_explicit_kvikdos=1; emudosflags=; is_dnx= ;;
    --kvikdos) emudos=tools/kvikdos-v1.upx; is_emu2=; is_explicit_kvikdos=1; emudosflags=; is_dnx= ;;
    --emu2=*) emudos="${arg#*=}"; is_emu2=1; is_explicit_kvikdos=; emudosflags=; is_dnx= ;;
-   --emu2) emudos=tools/emu2-lc-2021.01; is_emu2=1; is_explicit_kvikdos=; emudosflags=; is_dnx= ;;
+   --emu2) emudos=tools/emu2-lc-2021.01.upx; is_emu2=1; is_explicit_kvikdos=; emudosflags=; is_dnx= ;;
    --dosbox | --dnx) emudos=dosbox.nox.static; is_emu2=; is_explicit_kvikdos=; emudosflags=--cmd; is_dnx=1 ;;
    --33 | --v33) pmwv=33 ;;
    --34 | --v34) pmwv=34 ;;
@@ -163,7 +163,7 @@ else
     if test "$is_dnx"; then
       if test "$emudosflags" = --cmd; then emudosflags="$emudosflags --mem-mb=2"; fi
     else
-      emudos=tools/emu2-lc-2021.01
+      emudos=tools/emu2-lc-2021.01.upx
     fi
   fi
   set -x  # Echo all commands run.
