@@ -5705,7 +5705,7 @@ _nostartmsg:
 	add [-pmodewe+_membase],edx
 %endif
 
-	reloc call 0:-pmodewk+_pm_init  ; Initialize and enter Protected Mode
+	reloc call PMODE_TEXT:-pmodewk+_pm_init  ; Initialize and enter Protected Mode
 	jc _pmstartuperr
 
 ;
@@ -7481,7 +7481,7 @@ _termhandler:
         cmp ah,3
         jz _termnocr0
 %endif
-	reloc call 0:-pmodewk+_pm_cleanup
+	reloc call PMODE_TEXT:-pmodewk+_pm_cleanup
 	mov eax,cr0
 	fixpre_cmp eax,[cs:-pmodewe+_cr0valuerm]
 	jz short _termnocr0
