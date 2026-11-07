@@ -110,6 +110,12 @@
 #  include <unistd.h>  /* write(...). */
 #endif
 
+#ifndef PMWV
+#  ifndef COMPRESS_BITS
+#    define PMWV 33  /* A reasonable default. No need for any other `gcc -D...' below. */
+#  endif
+#endif
+
 #ifdef PMWV  /* Apply defaults to make the compiler command line shorter for DOS. */
 #  ifndef COMPRESS_BITS
 #    define COMPRESS_BITS 16
