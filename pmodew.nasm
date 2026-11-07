@@ -803,19 +803,88 @@
 ; Load-time configuration default values.
 ; Used for (-DUNC=1 -DVARRTYPE=1) via pmodew_config below.
 ; Used for -DVARTYPE=2 via _openexe2_vartype_2.
-PM_PAGETABLES	equ 4
-PM_SELECTORS	equ 100h
-PM_RMSTACKLEN	equ 40h
-PM_PMSTACKLEN	equ 80h
-PM_RMSTACKS	equ 8
-PM_PMSTACKS	equ 8
-PM_CALLBACKS	equ 20h
-PM_MODE		equ 1
-PM_PAMPAGEMAX	equ 1
-PM_CRAP		equ 0
-PM_OPTIONS	equ 1
-PM_MAXEXTMEM	equ 7fffffffh
-PM_LOWMIN	equ 0
+;
+; This NASM macro workaround is unfortunately verbose. But there is now
+; easier way to make `%define PM_MAXEXTMEM 0x10000' and `nasm
+; -DPM_MAXEXTMEM=0x10000' work.
+%ifdef PM_PAGETABLES
+  $PM_PAGETABLES equ PM_PAGETABLES
+  %undef PM_PAGETABLES
+%else
+  $PM_PAGETABLES equ 4
+%endif
+%ifdef PM_SELECTORS
+  $PM_SELECTORS equ PM_SELECTORS
+  %undef PM_SELECTORS
+%else
+  $PM_SELECTORS equ 100h
+%endif
+%ifdef PM_RMSTACKLEN
+  $PM_RMSTACKLEN equ PM_RMSTACKLEN
+  %undef PM_RMSTACKLEN
+%else
+  $PM_RMSTACKLEN equ 40h
+%endif
+%ifdef PM_PMSTACKLEN
+  $PM_PMSTACKLEN equ PM_PMSTACKLEN
+  %undef PM_PMSTACKLEN
+%else
+  $PM_PMSTACKLEN equ 80h
+%endif
+%ifdef PM_RMSTACKS
+  $PM_RMSTACKS equ PM_RMSTACKS
+  %undef PM_RMSTACKS
+%else
+  $PM_RMSTACKS equ 8
+%endif
+%ifdef PM_PMSTACKS
+  $PM_PMSTACKS equ PM_PMSTACKS
+  %undef PM_PMSTACKS
+%else
+  $PM_PMSTACKS equ 8
+%endif
+%ifdef PM_CALLBACKS
+  $PM_CALLBACKS equ PM_CALLBACKS
+  %undef PM_CALLBACKS
+%else
+  $PM_CALLBACKS equ 20h
+%endif
+%ifdef PM_MODE
+  $PM_MODE equ PM_MODE
+  %undef PM_MODE
+%else
+  $PM_MODE equ 1
+%endif
+%ifdef PM_PAMPAGEMAX
+  $PM_PAMPAGEMAX equ PM_PAMPAGEMAX
+  %undef PM_PAMPAGEMAX
+%else
+  $PM_PAMPAGEMAX equ 1
+%endif
+%ifdef PM_CRAP
+  $PM_CRAP equ PM_CRAP
+  %undef PM_CRAP
+%else
+  $PM_CRAP equ 0
+%endif
+%ifdef PM_OPTIONS
+  $PM_OPTIONS equ PM_OPTIONS
+  %undef PM_OPTIONS
+%else
+  $PM_OPTIONS equ 1
+%endif
+%ifdef PM_MAXEXTMEM
+  $PM_MAXEXTMEM equ PM_MAXEXTMEM
+  %undef PM_MAXEXTMEM
+%else
+  $PM_MAXEXTMEM equ 7fffffffh
+%endif
+%ifdef PM_LOWMIN
+  $PM_LOWMIN equ PM_LOWMIN
+  %undef PM_LOWMIN
+%else
+  $PM_LOWMIN equ 0
+%endif
 
 %macro emit_pmodew_config 0
   pmodew_config:  ; Default configuration for PMODE/W. Read manually from the beginning of the MZ .exe image (hdrsize<<<4).
