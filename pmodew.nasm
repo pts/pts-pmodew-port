@@ -152,7 +152,7 @@
 ; SPE_EntryPoint ...'.
 ;
 ; If the simple PE builder is active, then pmodew.nasm not only builds the
-; DOS stub of the DOS extender PMODE/W, but it builds a simple Win32 PE .exe
+; DOS stub of the DOS extender PMODE/W, but it builds a simple i386 PE .exe
 ; program file directly, with the uncompressed PMODE/W DOS extender in its
 ; DOS stub, so thes program will run on DOS and in OS/2 >=2.0 DOS window.
 ;
@@ -299,7 +299,7 @@
   %assign LOADSPE LOADSPE  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 ; The simple PE loader (with signature simPloEd) is not part of PMODE/W,
-; it's an extension written by pts. It can load Win32 PE i386 .exe program
+; it's an extension written by pts. It can load i386 PE .exe program
 ; files, with the following restrictions:
 ;
 ; * The load-time configuration is loaded from file offset 20h.
