@@ -122,6 +122,9 @@
   %ifndef   INT1B
     %define INT1B 0
   %endif
+  %ifndef   INT31VENDOR
+    %define INT31VENDOR 0
+  %endif
   %ifndef   INT33
     %define INT33 0
   %endif
@@ -506,6 +509,15 @@
   %define INT1B 1
 %else
   %assign INT1B INT1B  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef INT31VENDOR  ; Can be specified on the command line.
+  %define INT31VENDOR 1   ; Enable  vendor-specific PMODE/W extension DPMI APIs (int 31h, AX == 0a00h and AX == 0eeffh).
+  ;%define INT31VENDOR 0  ; Disable vendor-specific PMODE/W extension DPMI APIs (int 31h, AX == 0a00h and AX == 0eeffh).
+%elifidn (INT31VENDOR), ()
+  %define INT31VENDOR 1
+%else
+  %assign INT31VENDOR INT31VENDOR  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
 %ifndef INT33  ; Can be specified on the command line.
@@ -5601,8 +5613,10 @@ _oldfilepos1    dd ANY
 _datapagesloc   dd ANY
 %endif
 
+%if INT31VENDOR
 _oldint31off    dd ANY
 _oldint31sel    dw ANY
+%endif
 
 %if LOADSPE
 _init_eip       dd ANY  ; EIP of the payload entry point. CS will be 0-based 32-bit data selector.
@@ -6026,6 +6040,7 @@ _nomeminit1:
 	jc _exiterror
 
 	; !! TODO(pts): Omit if not needed, add -DINT31VENDOR=0.
+%if INT31VENDOR
 	mov ax,204h
 	mov bl,31h
 	int 31h
@@ -6035,7 +6050,7 @@ _nomeminit1:
 	mov cx,cs                       ; the system PMODE/W is running under
 	mov edx,-pmodewe+_int310A00       ; and is needed in order for FPU
 	int 31h                         ; emulation to work.
-
+%endif
 ;
 ; PROTECTED MODE STARTUP
 ;
@@ -7368,10 +7383,11 @@ _initgetcallback:
 	add esp,2
 	jmp short _initdosexterror
 %endif
+
 ;
 ; INT 31H HANDLER
 ;
-
+%if INT31VENDOR
 ;
 ; INT 31h Service 0A00h - Get API Entry Point
 ; In:
@@ -7383,12 +7399,15 @@ _initgetcallback:
 _int310A00:
 	cmp ax,strict word 0a00h
 	jnz short _int31not0A00
-	and byte [esp+8],~1
+	and byte [esp+8],~1  ; CF := 0.
+	; TODO(pts): According to https://www.phatcode.net/res/262/files/dpmi09.html#18 , this should set ES:EDI to the extended API entry point. But it doesn't do anything. Why?
 	iretd
 _int31not0A00:
 
 ;
 ; INT 31h Service 0EEFFh - Get DOS Extender Information
+; This is not a standard service, call but it's supported by DOS extenders
+; PMODE/2, DOS/32A, WDOSX and some versions of D3X.
 ; In:
 ;   AX - 0EEFFh
 ; Out:
@@ -7406,7 +7425,7 @@ _int31not0A00:
 	mov eax,'WDMP'  ; It's reverse is 'PMDW' for TASM.
 	mov es,[cs:-pmodewe+_selzero]
 	_xor ebx,ebx
-	reloc mov bx,pmcode16
+	reloc mov bx,pmcode16  ; This reloc is present %if INT31VENDOR.
 	shl ebx,4
 	add ebx,strict dword -pmodewe+_copyrightmsg
 %if SIZEOPT
@@ -7425,6 +7444,7 @@ _int31not0A00:
 	iretd
 _int31not0EEFF:
 	fixpre_jmp_dword far [cs:-pmodewe+_oldint31off]
+%endif
 
 ;
 ; INT 33h Handler
