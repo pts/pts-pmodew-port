@@ -336,6 +336,15 @@
   %assign EXITCODE EXITCODE  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef FEWRELOCS  ; Can be specified on the command line.
+  %define FEWRELOCS 0   ; Disable code changes which use fewer DOS MZ .exe relocations.
+  ;%define FEWRELOCS 1  ; Enable  code changes which use fewer DOS MZ .exe relocations. Thease are useful to increase _MAX_UNC_PE_SECTIONS by 1 %if UNC && LOADSPE && INT1B==0 && INT33==0.
+%elifidn (FEWRELOCS), ()
+  %define FEWRELOCS 1
+%else
+  %assign FEWRELOCS FEWRELOCS  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %ifndef ABORTMSGTTY  ; Can be specified on the command line.
   %define ABORTMSGTTY 0   ; Write the exception abort message directly to video memory.
   ;%define ABORTMSGTTY 1  ; Write the exception abort message to the video TTY console (int 10h, AH == 0eh). This is useful for some text-only DOS emulators.
@@ -821,7 +830,12 @@ cpu 386
 
 HDRSIZE equ 0x20
 %if UNC && LOADSPE
-  _MAX_UNC_PE_SECTIONS equ 2  ; !! TODO(pts): Remove 2 relocations of the 22 for -DRELOCPOS=3 (!! what about ==1 and ==2?), and then increase this from 2 to 3.
+  ; !! TODO(pts): Decrease .NumberOfRvaAndSizes from 16 to 10, save 6*8 bytes, increase _MAX_UNC_PE_SECTIONS by 1.
+  %if FEWRELOCS && INT1B==0 && INT33==0
+    _MAX_UNC_PE_SECTIONS equ 3  ; 20 MZ .exe relocations use 20*4 bytes, which take away 2 PE section definitions (0x28 bytes each).
+  %else
+    _MAX_UNC_PE_SECTIONS equ 2  ; 22 or 26 MZ .exe relocations use 22*4 or 26*4 bytes, which take away 3 PE section definitions (0x28 bytes each).
+  %endif
   RELOCPOS equ 0x200-5*0x28+_MAX_UNC_PE_SECTIONS*0x28
   RELOC_LIMIT equ (0x200-RELOCPOS)>>2
 %else
@@ -1634,7 +1648,12 @@ _pm_init:
 
 	call getrmirqvectors
 
-	reloc2 mov eax,PMODE_TEXT              ; set base addx of PMODE_TEXT
+%if FEWRELOCS  ; Do it without relocation.
+	_xor eax,eax
+	mov ax,cs                        ; set base addx of PMODE_TEXT
+%else
+	reloc2 mov eax,PMODE_TEXT        ; set base addx of PMODE_TEXT
+%endif
 
 %if ($-passupintregs)<32h+40h
   %error ERROR_3
@@ -4310,8 +4329,12 @@ int31030201:                            ; common to 0300h, 0301h, and 0302h
 	add esi,6                       ; copy FS and GS to real mode stack
 	fixstr a32, movsd
 
+%if 0 ; `%if SIZEOPT' disabled. It doesn't make the compressed .exe any shorter.
+	reloc mov dword [es:edi+6],(-pmodewk+.int31030201f1)|(PMODE_TEXT<<16)  ; return address from call
+%else
 	reloc mov word [es:edi+8],PMODE_TEXT      ; return address from call
 	mov word [es:edi+6],-pmodewk+.int31030201f1
+%endif
 
 	mov [es:edi+4],ax               ; store FLAGS for real mode IRET maybe
 	fixpre2_mov [es:edi],ebp      ; put call address to real mode stack
@@ -4319,8 +4342,13 @@ int31030201:                            ; common to 0300h, 0301h, and 0302h
 	mov cx,[esi-8]                  ; real mode ES from register structure
 	mov ax,[esi-6]                  ; real mode DS from register structure
 
-	mov di,-pmodewk+.int31030201f0
-	reloc mov si,PMODE_TEXT         ; real mode target CS:IP
+%if FEWRELOCS  ; Do it without relocation.
+	mov si,[es:edi+8]               ; SI := real mode target CS == relocated(PMODE_TEXT).
+	mov di,-pmodewk+.int31030201f0  ; DI := real mode target IP
+%else
+	mov di,-pmodewk+.int31030201f0  ; DI := real mode target IP
+	reloc mov si,PMODE_TEXT         ; SI := real mode target CS == relocated(PMODE_TEXT).
+%endif
 
 	                                ; JMP DWORD PTR, as in 32bit offset,
 	fixpre_jmp_dword [cs:-pmodewk+pmtormswrout]    ;  not seg:16bit offset
