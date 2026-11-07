@@ -201,8 +201,6 @@
 ;
 ; * The load-time configuration is loaded from file offset 20h.
 ; * The PE header must start at file offset 40h. This is checked.
-; * Only the compressed PMODE/W stub works, because there must be no MZ .exe
-;   relocations (nreloc == 0). This is checked.
 ; * The PMODE/W stub with the simple PE loader is not able to load any other
 ;   file formats, i.e. LOADLE and LOADPMW1 must be 0. This is checked at
 ;   compile time.
@@ -8792,10 +8790,8 @@ _openexe2:
 %else
 	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.signature], 'MZ'
 	jne short .j_loaderror
-	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.nreloc], 0
-	jne short .j_loaderror
-	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.hdrsize], 200h>>4
-	jne short .j_loaderror
+	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.hdrsize], (160h+0fh)>>4  ; IMAGE_SECTION_HEADER_1 == exe_header+160h.
+	jb short .j_loaderror
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 40h
 	jne short .j_loaderror
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.Signature], 'PE'
