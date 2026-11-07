@@ -274,14 +274,19 @@
 ; Here are ways detect whether the PE .exe program is running on native
 ; Win32 or on DOS with the simple PE loader:
 ;
+; * `test byte [ImageBase+3ch], 1' sets ZF := 0 when running on DOS with the
+;   simple PE loader, and ZF := 1 when running on native Win32. That's
+;   because the simple PE loader changes the PE header offset from 40h to
+;   41h in memory.
+;
 ; * If -DSPECUSTOMENTRY=1 is used, then the program starts on Win32 at
 ;   ImageBase+AddressOfEntryPoint, and on DOS, the simple PE loader starts
 ;   at a different entry pont (see above). The entry points can set a global
 ;   variable to a different value, which can be checked later.
 ;
 ; * If -DSPECUSTOMENTRY=0 is used, then `cmp dword [ImageBase+0c4h], byte
-;   -1' (if relocated) sets ZF == 1 when running on DOS with the simple PE
-;   loader, and ZF == 0 when running on native Win32. That's because the
+;   -1' (if relocated) sets ZF := 1 when running on DOS with the simple PE
+;   loader, and ZF := 0 when running on native Win32. That's because the
 ;   simple PE loader sets this value dword [ImageBase+0c4h == ImageBase +
 ;   spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT+peidd.Size] == dword
 ;   [ImageBase+0c4h] to -1 (== 0xffffffff), and Win32 keeps it unchanged,
@@ -309,6 +314,16 @@
   %define SPECUSTOMENTRY 1
 %else
   %assign SPECUSTOMENTRY SPECUSTOMENTRY  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
+%ifndef SPEDOSONLY  ; Can be specified on the command line.
+  %define SPEDOSONLY 0   ; Make Windows, Wine and static analysis tools recognize the .exe as a Win32 PE .exe. Windows and Wine will run it directly. OS/2 >=2.0 DOS window and DOS will run it using the embedded PMODE/W.
+  ;%define SPEDOSONLY 1  ; Make Windows, Wine and static analysis tools recognize the .exe as a DOS .exe. 32-bit i386 Windows, OS/2 >=2.0 DOS window and DOS will run it using the embedded PMODE/W. Wine and 64-bit Windows won't run it.
+  ;%define SPEDOSONLY 2  ; Like ==1, but the simple PE loader will run it even if the PE header offset field in the header is changed back to 40h manually. Most users need ==1 instead.
+%elifidn (SPEDOSONLY), ()
+  %define SPEDOSONLY 1
+%else
+  %assign SPEDOSONLY SPEDOSONLY  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
 %if (LOADLE|LOADPMW1|LOADSPE)==0
@@ -867,7 +882,12 @@ times 0x20-($-exe_header) db 0
 emit_pmodew_config
 db 'PMODE/W'  ; Signature. Unchecked.
 times 0x3c-($-exe_header) db 0  ; Empty.
-pehdr_fofs_ptr:	dd pehdr-exe_header
+pehdr_fofs_ptr:
+%if SPEDOSONLY
+	dd pehdr-exe_header+1  ; The +1 (== 0x41) makes Windows, Wine and static analysis tools recognize the .exe as a DOS .exe (rather than a Win32 .exe). 32-bit i386 Windows, OS/2 >=2.0 DOS window and DOS will run it using the embedded PMODE/W. Wine and 64-bit Windows won't run it.
+%else
+	dd pehdr-exe_header  ; 0x40 == 40h == 64.
+%endif
 pe:
 .IMAGE_FILE_RELOCS_STRIPPED equ 1
 .IMAGE_FILE_EXECUTABLE_IMAGE equ 2
@@ -8792,8 +8812,19 @@ _openexe2:
 	jne short .j_loaderror
 	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.hdrsize], (160h+0fh)>>4  ; IMAGE_SECTION_HEADER_1 == exe_header+160h.
 	jb short .j_loaderror
-	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 40h
+%if SPEDOSONLY==2
+	or byte [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 1
+	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 41h
 	jne short .j_loaderror
+%else
+%if SPEDOSONLY
+	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 41h
+%else
+	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 40h
+%endif
+	jne short .j_loaderror
+	or byte [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 1
+%endif
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.Signature], 'PE'
 	jne short .j_loaderror
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.SizeOfHeaders], 200h
