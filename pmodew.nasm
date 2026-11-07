@@ -995,6 +995,8 @@ exe_image:
 ; PMODE/W DPMI/VCPI/XMS/raw protected mode interface kernel.
 ; Copyright (c) 1994, 1996, Tran (a.k.a. Thomas Pytel).
 
+; PMODE_TEXT equ 0  ; For pmodew.exe.
+; pmodewk:  ; equ exe_image
 reloc_seg pmodewk, PMODE_TEXT  ; PMODE_TEXT segment word public use16 'CODE'
 ;assume  cs:PMODE_TEXT, ds:PMODE_TEXT
 
@@ -5207,6 +5209,8 @@ int310203:                              ; get processor exception vector
 PMWVER_MAJOR    equ 1
 PMWVER_MINOR    equ PMWV
 
+; pmcode16 equ 0x21c  ; For pmodew.exe. It can be e.g. 0x1f9 with some compile-time configuration.
+; pmodewe:  ; == equ exe_image+0x21c0  ; equ exe_image+(pmcode16<<4).  ; For pmodew.exe.
 reloc_seg pmodewe, pmcode16  ; pmcode16 segment para public use16 'CODE'
 ;assume cs:pmcode16,ds:pmcode16
 
@@ -5750,6 +5754,7 @@ _nomeminit1:
 	call _initdosext                ; Install 1Bh, 21h, and 33h handlers
 	jc _exiterror
 
+	; !! TODO(pts): Omit if not needed, add -DINT31VENDOR=0.
 	mov ax,204h
 	mov bl,31h
 	int 31h
@@ -7050,7 +7055,7 @@ _nomousedriver3:
 
 %if INT1B
 	db 66h,65h,0c7h,6,6ch,0
-	reloc dw -pmodewe+_int1Brmhandler,pmcode16
+	reloc dw -pmodewe+_int1Brmhandler,pmcode16  ; This reloc is present %if INT1B.
 
 ;       MOV DWORD PTR GS:[6Ch], pmcode16:_int1Brmhandler
 
@@ -7103,6 +7108,7 @@ _initgetcallback:
 ; Out:
 ;   CF=0
 ;
+; !! TODO(pts): Omit if not needed, add -DINT31VENDOR=0.
 _int310A00:
 	cmp ax,strict word 0a00h
 	jnz short _int31not0A00
@@ -7123,6 +7129,7 @@ _int31not0A00:
 ;   DL - Extender MINOR Version (Binary)
 ;   CF=0
 ;
+; !! TODO(pts): Omit if not needed, add -DINT31VENDOR=0.
 	cmp ax,strict word 0eeffh
 	jnz short _int31not0EEFF
 	mov eax,'WDMP'  ; It's reverse is 'PMDW' for TASM.
@@ -7216,7 +7223,7 @@ _int330C:
 	mov ds,[cs:-pmodewe+_int21datasel64]
 	mov [ebp+_eax],ax
 	mov [ebp+_ecx],cx
-	reloc mov word [ebp+_es],pmcode16
+	reloc mov word [ebp+_es],pmcode16  ; This reloc is is present %if INT33.
 	mov word [ebp+_edx],-pmodewe+_int330Crmentry
 	_xor eax,eax
 	mov ax,es
@@ -7292,7 +7299,7 @@ _int330Cpmentry:
 %endif
 
 _int330Cos2crap:
-	reloc mov word [es:edi+_cs],pmcode16
+	reloc mov word [es:edi+_cs],pmcode16  ; This reloc is is present %if INT33.
 	mov word [es:edi+_ip],-pmodewe+_int330Crmreturn
 	db 0x66, 0x26, 0x67, 0x0f, 0xb7, 0x47, _eax  ; movzx eax,word [es:edi+_eax]  ; Diff: TASM encodes the 0x66 prefix, then the segment prefix, NASM does it the other way round.
 	db 0x66, 0x26, 0x67, 0x0f, 0xb7, 0x5f, _ebx  ; movzx ebx,word [es:edi+_ebx]  ; Diff: TASM encodes the 0x66 prefix, then the segment prefix, NASM does it the other way round.
@@ -8593,7 +8600,7 @@ _int1Brmreturn:
 	iret
 
 _int1Bpmchandler:
-	reloc mov word [es:edi+_cs],pmcode16
+	reloc mov word [es:edi+_cs],pmcode16  ; This reloc is is present %if INT1B.
 	mov word [es:edi+_ip],-pmodewe+_int1Brmreturn
 	int 1bh
 	iretd
@@ -8848,7 +8855,7 @@ _openexe2:
 	mov ah,3fh
 	int 21h
 	jc _loaderror
-	reloc mov ax,PMODE_TEXT  ; PMODE_TEXT corresponds to pmodewk.
+	reloc mov ax,PMODE_TEXT  ; PMODE_TEXT corresponds to pmodewk. This reloc is is present %if VARTYPE==2.
 	mov ds,ax
 	; TODO(pts): With -DUNC, copy from pmodew_config, also PM_LOWMIN above. This would break `./compile.sh --reproducible' (default) pmodewv.exe.
 	; Populates _pm_config_except_for_lowmin using hardcoded default values.
