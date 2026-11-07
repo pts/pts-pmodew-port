@@ -11,17 +11,18 @@ test "$ZSH_VERSION" && set -y 2>/dev/null  # SH_WORD_SPLIT for zsh(1). It's an i
 
 test "$0" = "${0%/*}" || cd "${0%/*}"
 
+nasm0=tools/nasm-0.98.39.upx  # -dd-nasm=... affects it.
 # Tested and found working: TASM 2.0, 2.01, 2.02, 2.5, 2.51, 3.0, 3.1, 3.2i, 3.2, 4.1, 5.0, 5.2, 5.3.
 # It's not working with TASM 1.0 and 1.01: they don't have the /m2 command-line flag (for optimization).
 # It's not working with TASM 3.0 and 3.1 in kvikdos, they fail with `int 0x03' in kvikdos.
-asm_prog=tasm20.exe
+#asm_prog=tasm20.exe
+asm_prog="$nasm0"
 # Tested and found working: TLINK 2.0, 3.0, 3.01, 4.0, 4.01.
 # It's not working with WLINK in OpenWatcom 2.0 2023-03-04, it generates incorrect relocations.
 tlink_exe=tlink20.exe
 emudos=tools/kvikdos-v1
 emudosflags=
-nasm=tools/nasm-0.98.39.upx  # -dd-nasm=... affects it.
-nasm0="$nasm"  # --dd-nasm=... doesn't affect it.
+nasm="$nasm0"  # --dd-nasm=... doesn't affect it.
 pmwv=33
 is_dd=
 is_reproducible=1
