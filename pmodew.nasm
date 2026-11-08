@@ -6269,7 +6269,7 @@ _loadSPE:
 	;mov es, [-pmodewe+_selzero]  ; Not needed, it's already set.
 	xor eax, eax
 	push edi  ; Save.
-	rep a32 stosd  ; Fill the entire image (including the stack (ECX dwords starting at ES:EDI) with NUL bytes. Also sets ECX := 0.
+	rep a32 stosd  ; This zero-initializes BSS. Fill the entire image (including the stack (ECX dwords starting at ES:EDI) with NUL bytes. Also sets ECX := 0.
 .copy_hdr_to_base:
 	push gs
 	pop ds  ; DS := _selbuf == _dtabufptr containing the first 200h bytes of the .exe file.
@@ -6652,7 +6652,7 @@ _loadobjects_LE_lastpage2:
 	_sub ecx,eax
 	_add edi,eax
 	_xor al,al
-	rep a32 stosb
+	rep a32 stosb			; This zero-initializes BSS.
 	popad
 	_mov edx,ecx
 	_sub edx,eax
