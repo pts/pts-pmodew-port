@@ -989,15 +989,23 @@
 %endif
 
 %ifdef SPE_EntryPoint  ; Load-time configuration default values for the simple PE builder. The program may override each setting with a `%define'.
+  %if INT1B
+    CALLBACKS1 equ 1
+    PMSTACKS1  equ 1
+  %else
+    CALLBACKS1 equ 0
+    PMSTACKS1  equ 0
+  %endif
+
   ; The defaults later below would also work, but this uses less memory.
   pm_default	PM_MAXEXTMEM,	64<<20		; 64 MiB. Maximum extended memory to allocate, in bytes.
   pm_default	PM_PAGETABLES, (PM_MAXEXTMEM+0x3fffff)>>22  ; Number of page tables under VCPI. Each page table makes 4 MiB of memory available.
   pm_default	PM_SELECTORS,	4		; Maximum number of selectors under VCPI/XMS/raw. Minimum working value is 4.
   pm_default	PM_RMSTACKLEN,	0x100>>4	; Default: dw 0x40. Real-mode stack length, in para (10h bytes). Will be multipled with .rmstacks. Value matters, 0x100 bytes should be enough.
-  pm_default	PM_PMSTACKLEN,	0		; Default: dw 0x80. Protected-mode stack length, in para (10h bytes). Will be multipled with .pmstacks, so value doesn't matter.
+  pm_default	PM_PMSTACKLEN,	0x100>>4	; Default: dw 0x80. Protected-mode stack length, in para (10h bytes). Will be multipled with .pmstacks, so value doesn't matter.
   pm_default	PM_RMSTACKS,	1		; Real-mode stack nesting. Minimum working value is 1.
-  pm_default	PM_PMSTACKS,	0		; Protected-mode stack nesting. Minimum working value is 0.
-  pm_default	PM_CALLBACKS,	0		; Number of real-mode callbacks.
+  pm_default	PM_PMSTACKS,	PMSTACKS1	; Protected-mode stack nesting. Minimum working value is 0.
+  pm_default	PM_CALLBACKS,	CALLBACKS1	; Number of real-mode callbacks.
   pm_default	PM_MODE,	0		; Mode bits. mode&1 means: detect VCPI before DPMI.
   pm_default	PM_PAMPAGEMAX,	0		; Maximum number of physical address mapping pages. Not relevant, our PMODE/W has the feature disabled (-DINT3108FUNC=1).
   pm_default	PM_OPTIONS,	0		; Option bits. options&1 means: display copyright message.
