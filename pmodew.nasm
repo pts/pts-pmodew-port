@@ -504,6 +504,7 @@
 
 %ifndef INT1B  ; Can be specified on the command line.
   %define INT1B 1   ; Enable  handling of the Ctrl-Break interrupt (int 1bh). At the beginning of each `int 1bh' call, PMODE/W checks if Ctrl-<Break> was press. If so, it exits with code 0 (success).
+  ;%define INT1B 2  ; Enable  handling of the Ctrl-Break interrupt (int 1bh). At the beginning of each `int 1bh' call, PMODE/W checks if Ctrl-<Break> was press. If so, it exits with code 0feh == 254 (failure).
   ;%define INT1B 0  ; Disable handling of the Ctrl-Break interrupt (int 1bh).
 %elifidn (INT1B), ()
   %define INT1B 1
@@ -7688,7 +7689,11 @@ _int21handler:
 %if INT1B
 	cmp byte [cs:-pmodewe+_int1Bflag],1
 	jnz _int21no1B
+%if INT1B==2
+	mov word [esp+1eh],4cfeh  ; exit(254);
+%else
 	mov word [esp+1eh],4c00h
+%endif
 ;        jmp _int21tend
 	jmp _int214C
 _int21no1B:
