@@ -503,13 +503,23 @@
 %endif
 
 %ifndef INT1B  ; Can be specified on the command line.
-  %define INT1B 1   ; Enable  handling of the Ctrl-Break interrupt (int 1bh).
+  %define INT1B 1   ; Enable  handling of the Ctrl-Break interrupt (int 1bh). At the beginning of each `int 1bh' call, PMODE/W checks if Ctrl-<Break> was press. If so, it exits with code 0 (success).
   ;%define INT1B 0  ; Disable handling of the Ctrl-Break interrupt (int 1bh).
 %elifidn (INT1B), ()
   %define INT1B 1
 %else
   %assign INT1B INT1B  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
+; DOSBox 0.74-3 doesn't support sending Ctrl-<Break> to the program via int
+; 1bh. Ctrl-<Break> and Ctrl-<ScrolLock> presses will be ignored. When
+; running on MS-DOS running in QEMU, the Ctrl-<Break> gets delivered as int
+; 1bh.
+;
+; Regular DOS is more eager to stop the program at Ctrl-<Break>. For example
+; it can do so while it is waiting for keyboard input (int 21h with AH ==
+; 1). PMODE/W will only stop the program at a subsequent int 21h call after
+; the keypress, so the user has to press another key after Ctrl-<Break>, then
+; they have to wait for an int 21h call.
 
 %ifndef INT31VENDOR  ; Can be specified on the command line.
   %define INT31VENDOR 1   ; Enable  vendor-specific PMODE/W extension DPMI APIs (int 31h, AX == 0a00h and AX == 0eeffh).
