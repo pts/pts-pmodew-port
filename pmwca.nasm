@@ -46,8 +46,9 @@
 %endif
 
 %ifndef CONFIGINEXEIMAGE  ; Can be specified on the command line.
-  %define CONFIGINEXEIMAGE 1   ; Include the pmodew_config at the beginning of the MZ .exe image. This is required by VARTYPE==1 (-DVARTYPE=1 pmodew.nasm).
-  ;%define CONFIGINEXEIMAGE 0  ; Exclude the pmodew_config.
+  %define CONFIGINEXEIMAGE 1   ; Include the pmodew_config at the beginning of the MZ .exe image with the PMODE/W 1.33 defaults.
+  ;%define CONFIGINEXEIMAGE 2  ; Include the pmodew_config at the beginning of the MZ .exe image with the smaller defaults.
+  ;%define CONFIGINEXEIMAGE 0  ; Exclude the pmodew_config. This doesn't work with VARTYPE==1 (-DVARTYPE=1 pmodew.nasm).
 %elifidn (CONFIGINEXEIMAGE), ()
   %define CONFIGINEXEIMAGE 1
 %else
@@ -1062,41 +1063,75 @@ pmodew_config:  ; Load-time configuration for PMODE/W. Read manually from the be
 ;    it is between 0x20...0x35, so they fit.
 ; 3. The function _openexe2 (with -DVARTYPE=2, non-default) populates
 ;    _pm_config_except_for_lowmin and _pm16_lowmin from hardcoded defaults.
-%ifndef   PM_PAGETABLES
+;
+%ifdef    PM_MAXEXTMEM
+%elif CONFIGINEXEIMAGE==2
+  %assign PM_MAXEXTMEM	64<<20
+%else
+  %define PM_MAXEXTMEM	0x7fffffff
+%endif
+%ifdef    PM_PAGETABLES
+%elif CONFIGINEXEIMAGE==2
+  %assign PM_PAGETABLES	(PM_MAXEXTMEM>>22)+(((PM_MAXEXTMEM&0x3fffff)+0x3fffff)>>22)  ; Like (MAXEXTMEM+0x3fffff)>>22, but avoid overflow.
+%else
   %define PM_PAGETABLES	4
 %endif
-%ifndef   PM_SELECTORS
-  %define PM_SELECTORS	100h
+%ifdef    PM_SELECTORS
+%elif CONFIGINEXEIMAGE==2
+  %define PM_SELECTORS	5  ; >=5 is needed for -DLOADLE=1 and/or -DLOADPMW1=1, >=4 is needed for -DLOADSPE=1.
+%else
+  %define PM_SELECTORS	0x100
 %endif
-%ifndef   PM_RMSTACKLEN
-  %define PM_RMSTACKLEN	40h
+%ifdef    PM_RMSTACKLEN
+%elif CONFIGINEXEIMAGE==2
+  %assign PM_RMSTACKLEN	0x100>>4
+%else
+  %assign PM_RMSTACKLEN	0x400>>4
 %endif
-%ifndef   PM_PMSTACKLEN
-  %define PM_PMSTACKLEN	80h
+%ifdef    PM_PMSTACKLEN
+%elif CONFIGINEXEIMAGE==2
+  %assign PM_PMSTACKLEN	0x100>>4
+%else
+  %assign PM_PMSTACKLEN	0x800>>4
 %endif
-%ifndef   PM_RMSTACKS
+%ifdef    PM_RMSTACKS
+%elif CONFIGINEXEIMAGE==2
+  %define PM_RMSTACKS	1
+%else
   %define PM_RMSTACKS	8
 %endif
-%ifndef   PM_PMSTACKS
+%ifdef    PM_PMSTACKS
+%elif CONFIGINEXEIMAGE==2
+  %define PM_PMSTACKS	1
+%else
   %define PM_PMSTACKS	8
 %endif
-%ifndef   PM_CALLBACKS
-  %define PM_CALLBACKS	20h
+%ifdef    PM_CALLBACKS
+%elif CONFIGINEXEIMAGE==2
+  %define PM_CALLBACKS	1
+%else
+  %define PM_CALLBACKS	0x20
 %endif
-%ifndef   PM_MODE
+%ifdef    PM_MODE
+%elif CONFIGINEXEIMAGE==2
+  %define PM_MODE	0
+%else
   %define PM_MODE	1
 %endif
-%ifndef   PM_PAMPAGEMAX
+%ifdef    PM_PAMPAGEMAX
+%elif CONFIGINEXEIMAGE==2
+  %define PM_PAMPAGEMAX	0
+%else
   %define PM_PAMPAGEMAX	1
 %endif
 %ifndef   PM_CRAP
   %define PM_CRAP	0
 %endif
-%ifndef   PM_OPTIONS
+%ifdef    PM_OPTIONS
+%elif CONFIGINEXEIMAGE==2
+  %define PM_OPTIONS	0
+%else
   %define PM_OPTIONS	1
-%endif
-%ifndef   PM_MAXEXTMEM
-  %define PM_MAXEXTMEM	7fffffffh
 %endif
 %ifndef   PM_LOWMIN
   %define PM_LOWMIN	0
