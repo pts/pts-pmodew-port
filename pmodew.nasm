@@ -120,7 +120,7 @@
     %define INT3108FUNC 0
   %endif
   %ifndef   INT1B
-    %define INT1B 0
+    %define INT1B 2  ; exit(254) on Ctrl-<Break>.
   %endif
   %ifndef   INT31VENDOR
     %define INT31VENDOR 0
