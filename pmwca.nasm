@@ -1062,19 +1062,59 @@ pmodew_config:  ; Load-time configuration for PMODE/W. Read manually from the be
 ;    it is between 0x20...0x35, so they fit.
 ; 3. The function _openexe2 (with -DVARTYPE=2, non-default) populates
 ;    _pm_config_except_for_lowmin and _pm16_lowmin from hardcoded defaults.
-.pagetables:	db 4  ; Number of page tables under VCPI. Each page table makes 4 MiB of memory available. _pm_pagetables
-.selectors:	dw 100h  ; Maximum number of selectors under VCPI/XMS/raw. _pm_selectors
-.rmstacklen:	dw 40h  ; Real-mode stack length, in para (10h bytes). _pm_rmstacklen
-.pmstacklen:	dw 80h  ; Protected-mode stack length, in para (10h bytes). _pm_pmstacklen
-.rmstacks:	db 8  ; Real-mode stack nesting. _pm_rmstacks
-.pmstacks:	db 8  ; Protected-mode stack nesting. _pm_pmstacks
-.callbacks:	db 20h  ; Number of real-mode callbacks. _pm_callbacks
-.mode:		db 1  ; Mode bits. mode&1 means: detect VCPI before DPMI. _pm_mode
-.pampagemax:	db 1  ; Maximum number of physical address mapping pages. Also called as .pamapping. _pm_pampagemax
-.crap:		dw 0  ; Unused. _pm_crap
-.options:	db 1  ; Option bits. options&1 means: display copyright message. _pm_options
-.maxextmem:	dd 7fffffffh  ; Maximum extended memory to allocate, in bytes. _pm_maxextmem
-.lowmin:	dw 0  ; Amount of low (below the first 1 MiB) memory to try and save. Loaded by _openexe2 to somewhere else. _pm16_lowmin
+%ifndef   PM_PAGETABLES
+  %define PM_PAGETABLES	4
+%endif
+%ifndef   PM_SELECTORS
+  %define PM_SELECTORS	100h
+%endif
+%ifndef   PM_RMSTACKLEN
+  %define PM_RMSTACKLEN	40h
+%endif
+%ifndef   PM_PMSTACKLEN
+  %define PM_PMSTACKLEN	80h
+%endif
+%ifndef   PM_RMSTACKS
+  %define PM_RMSTACKS	8
+%endif
+%ifndef   PM_PMSTACKS
+  %define PM_PMSTACKS	8
+%endif
+%ifndef   PM_CALLBACKS
+  %define PM_CALLBACKS	20h
+%endif
+%ifndef   PM_MODE
+  %define PM_MODE	1
+%endif
+%ifndef   PM_PAMPAGEMAX
+  %define PM_PAMPAGEMAX	1
+%endif
+%ifndef   PM_CRAP
+  %define PM_CRAP	0
+%endif
+%ifndef   PM_OPTIONS
+  %define PM_OPTIONS	1
+%endif
+%ifndef   PM_MAXEXTMEM
+  %define PM_MAXEXTMEM	7fffffffh
+%endif
+%ifndef   PM_LOWMIN
+  %define PM_LOWMIN	0
+%endif
+;
+.pagetables:	db PM_PAGETABLES	; Number of page tables under VCPI. Each page table makes 4 MiB of memory available. _pm_pagetables
+.selectors:	dw PM_SELECTORS		; Maximum number of selectors under VCPI/XMS/raw. _pm_selectors
+.rmstacklen:	dw PM_RMSTACKLEN	; Real-mode stack length, in para (10h bytes). _pm_rmstacklen
+.pmstacklen:	dw PM_PMSTACKLEN	; Protected-mode stack length, in para (10h bytes). _pm_pmstacklen
+.rmstacks:	db PM_RMSTACKS		; Real-mode stack nesting. _pm_rmstacks
+.pmstacks:	db PM_PMSTACKS		; Protected-mode stack nesting. _pm_pmstacks
+.callbacks:	db PM_CALLBACKS		; Number of real-mode callbacks. _pm_callbacks
+.mode:		db PM_MODE		; Mode bits. mode&1 means: detect VCPI before DPMI. _pm_mode
+.pampagemax:	db PM_PAMPAGEMAX	; Maximum number of physical address mapping pages. Also called as .pamapping. _pm_pampagemax
+.crap:		dw PM_CRAP		; Unused. _pm_crap
+.options:	db PM_OPTIONS		; Option bits. options&1 means: display copyright message. _pm_options
+.maxextmem:	dd PM_MAXEXTMEM		; Maximum extended memory to allocate, in bytes. _pm_maxextmem
+.lowmin:	dw PM_LOWMIN		; Amount of low (below the first 1 MiB) memory to try and save. Loaded by _openexe2 to somewhere else. _pm16_lowmin
 .end:		; @15h.
 %endif
 
