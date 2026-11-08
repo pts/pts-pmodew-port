@@ -83,6 +83,15 @@ _start:
 		mov ah, 9  ; Print '$'-terminated message starting at EDX.
 		lea edx, [ebp+msg2]
 		int 0x21  ; DOS-extended syscall.
+%if 0  ; This is for testing Ctrl-<Break>
+.again:
+		mov ah, 2  ; Write character in DL to stdout.
+		mov dl, '?'
+		int 0x21
+		mov ah, 1  ; Keyboard input with echo.
+		int 0x21
+		jmp short .again
+%endif
 		mov ax, 0x4c00  ; Exit successfully.
 		int 0x21  ; DOS-extended syscall.
 		; Not reached.
