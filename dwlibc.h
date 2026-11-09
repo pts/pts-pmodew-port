@@ -192,6 +192,21 @@ int strcmp(const char *s1, const char *s2);
 char *strcpy(char *dest, const char *src);
 size_t strlen(const char *s);
 
+#ifndef __GNUC__
+   /* For this to work with __GNUC__, we muset make sure that if the
+    * function taking the `...' arguments is __attribute__((noinline)).
+    *
+    * Everything below is i386-only.
+    */
+  typedef char *va_list;
+#  define va_start(ap, last) ((ap) = (char*)&(last) + ((sizeof(last)+3)&~3), \
+      (void)0)
+#  define va_arg(ap, type) ((ap) += (sizeof(type)+3)&~3, \
+      *(type*)((ap) - ((sizeof(type)+3)&~3)))
+#  define va_copy(dest, src) ((dest) = (src), (void)0)
+#  define va_end(ap) /*((ap) = 0, (void)0)*/  /* Same as with the `= 0'. */
+#endif
+
 /* --- Register usage of main1. */
 
 /* It must not modify `ebp', otherwise the OpenWatcom C compiler omits the
