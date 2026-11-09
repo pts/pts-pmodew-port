@@ -304,6 +304,7 @@
 ; it's an extension written by pts. It can load i386 PE .exe program
 ; files, with many limitations:
 ;
+; * Minimum CPU requirement: 80386. Win32 and PMODE/W also need this.
 ; * The PMODE/W stub with the simple PE loader is not able to load any other
 ;   file formats, i.e. LOADLE and LOADPMW1 must be 0. This is checked at
 ;   compile time.
@@ -328,14 +329,20 @@
 ;   keep using int 21h (DOS-extended) and int 31h (DPMI) services provided
 ;   by the PMODE/W stub for memory allocation and I/O.
 ; * The simple PE loader uses the PE entry point (AddressOfEntryPoint) by
-;   default, but with -DSPECUSTOMENTRY=1, it uses the last 2 bytes
-;   (SizeOfRawData-2) of the first section as the entry point. This is to
-;   avoid API and ABI conflicts with Win32, which uses AddressOfEntryPoint.
-;   This way the same PE .exe program file, with the same PE sections can be
-;   used as separate Win32 and DOS-extended programs sharing some code and
-;   data. Native Win32 can still be detected even with the default
+;   default (SPECUSTOMENTRY==0), but with -DSPECUSTOMENTRY=1, it uses the
+;   last 2 bytes (SizeOfRawData-2) of the first section as the entry point,
+;   and with -DSPECUSTOMENTRY=2 (only if there is an import table), it uses
+;   AddressOfEntryPoint+5 as the entry point. This is to avoid API and ABI
+;   conflicts with Win32, which uses AddressOfEntryPoint. This way the same
+;   PE .exe program file, with the same PE sections can be used as separate
+;   Win32 and DOS-extended programs sharing some code and data. Native Win32
+;   can still be detected even with the default
 ;   -DSPECUSTOMENTRY=0, see below.
-; * Minimum CPU requirement: 80386. Win32 and PMODE/W also need this.
+; * The simple PE loader initializes FS to the same value as DS == ES == SS.
+;   This is different from Win32, which initializes FS to a selector to the
+;   Thread Information Block (TIB) or TEB, containing pointers to
+;   Structured Exception Handling (SEH) and the Process Environment Block
+;   (PEB). Thus the Simple PE loader doesn't support SEH.
 ;
 ; Limitations if CONFIGTYPE==2 (non-default, designed to be used as a DOS
 ; stub embedded into the PE .exe file with OpenWatcom v2 `wlink format
@@ -408,15 +415,25 @@
 ; Here are ways detect whether the PE .exe program is running on native
 ; Win32 or on DOS with the simple PE loader:
 ;
-; * `test byte [ImageBase+3ch], 1' sets ZF := 0 when running on DOS with the
-;   simple PE loader, and ZF := 1 when running on native Win32. That's
-;   because the simple PE loader changes the PE header file offset from 40h
-;   to 41h in memory.
+; * `test byte [ImageBase+3ch], 1' (if relocated) sets ZF := 0 when running
+;   on DOS with the simple PE loader, and ZF := 1 when running on native
+;   Win32. That's because the simple PE loader changes the PE header file
+;   offset from 40h to 41h in memory. The test is hardto pull of from
+;   OpenWatcom v2 C code, because it's not possible to get an instruction
+;   with the relocated ImageBase.
+;
+; * If -DSPECUSTOMENTRY=2 is used, then the program starts on Win32 at
+;   ImageBase+AddressOfEntryPoint, and on DOS, the simple PE loader starts
+;   it there iff there is no import table (i.e. it's a DOS-only program),
+;   and at ImageBase+AddressOfEntryPoint+5 if there is (i.e. it's a
+;   DOS--Win32 combined program). The entry points can set a global variable
+;   to a different value, which can be checked later.
 ;
 ; * If -DSPECUSTOMENTRY=1 is used, then the program starts on Win32 at
 ;   ImageBase+AddressOfEntryPoint, and on DOS, the simple PE loader starts
-;   at a different entry pont (see above). The entry points can set a global
-;   variable to a different value, which can be checked later.
+;   it at the last 2 bytes (SizeOfRawData-2) of the first section. The entry
+;   points can set a global variable to a different value, which can be
+;   checked later.
 ;
 ; * If -DSPECUSTOMENTRY=0 is used, then `cmp dword [ImageBase+0c4h], byte
 ;   -1' (if relocated) sets ZF := 1 when running on DOS with the simple PE
@@ -444,6 +461,7 @@
 %ifndef SPECUSTOMENTRY  ; Can be specified on the command line.
   %define SPECUSTOMENTRY 0   ; Use AddressOfEntryPoint in the PE header as the entry point.
   ;%define SPECUSTOMENTRY 1  ; Use the last 2 bytes (SizeOfRawData-2) of the first section as the entry point.
+  ;%define SPECUSTOMENTRY 2  ; If there is an import table (IMAGE_DIRECTORY_ENTRY_IMPORT.RVA is nonzero), use AddressOfEntryPoint+5, otherwise use AddressOfEntryPoint as the entry point.
 %elifidn (SPECUSTOMENTRY), ()
   %define SPECUSTOMENTRY 1
 %else
@@ -6317,13 +6335,20 @@ _loadSPE:
 	mov edi, eax  ; EDI := image_ptr (EAX).
 	mov cl, 200h>>2  ; ECX := 200h>>2. This implementatios is shorter, and it works because ECX was 0.
 	;mov es, [-pmodewe+_selzero]  ; Not needed, it's already set.
-	rep a32 movsd  ; Copy the first 200h bytes of the .exe file to the image base. Win32 does the same.
+	rep a32 movsd  ; Copy the first 200h bytes of the .exe file to the image base. Win32 does the same. Also sets ECX := 0.
 .load_sections:
 	pop di  ; Restore DI := NumberOfSections.
 	push es
 	pop ds  ; DS := zero-based data selector.
 	lea esi, [eax+spefofs.pehdr.IMAGE_SECTION_HEADER]
-%if SPECUSTOMENTRY
+%if SPECUSTOMENTRY==2
+	mov edx, [eax+spefofs.pehdr.AddressOfEntryPoint]
+	add edx, eax  ; dos_entry_point (EDX) := image_ptr+AddressOfEntryPoint.
+	cmp [esi-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT+peidd.VirtualAddress], ecx  ; We have ECX == 0 here.
+	je short .have_entry_point_in_edx  ; This jumps iff there is no import table, i.e. it's a DOS-only PE program.
+	add edx, byte 5  ; This is a DOS--Win32 combined PE program running on DOS, loaded by the simple PE loader. We start at AddressOfEntryPoint+5.
+.have_entry_point_in_edx:
+%elif SPECUSTOMENTRY
 	mov edx, [esi+pesechdr.VirtualAddress]
 	add edx, [esi+pesechdr.VirtualSize]
 	lea edx, [edx+eax-2]  ; dos_entry_point (EDX) := image_ptr+IMAGE_SECTION_HEADER[0].VirtualAddress+IMAGE_SECTION_HEADER[0].SizeOfRawData-2.
