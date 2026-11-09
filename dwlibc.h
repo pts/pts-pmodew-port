@@ -195,6 +195,19 @@ int strcmp(const char *s1, const char *s2);
 char *strcpy(char *dest, const char *src);
 size_t strlen(const char *s);
 
+int isalnum(int c);
+int isalpha(int c);
+int isascii(int c);
+int isdigit(int c);
+int islower(int c);
+int isprint(int c);
+int isspace(int c);
+int isupper(int c);
+int isxdigit(int c);
+
+int tolower(int c);
+int toupper(int c);
+
 #ifndef __GNUC__
    /* For this to work with __GNUC__, we muset make sure that if the
     * function taking the `...' arguments is __attribute__((noinline)).
@@ -236,6 +249,68 @@ size_t strlen(const char *s);
 #define main0_is_progarg_null(arg) 0  /* Size optimization, never NULL. */
 
 /* --- Implementation of system-agnostic functions. */
+
+/* static __inline int isalnum(int c) { return (c >= 'A' && c <= 'Z') ||
+ *     (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'); }
+ */
+#pragma aux isalnum = "sub al, 48"  "cmp al, 10"  "jc @$1"  "add al, 48" \
+    "or al, 32"  "sub al, 97"  "cmp al, 26"  "@$1: sbb eax, eax" \
+    "neg eax"  __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int isalpha(int c) { return (c >= 'A' && c <= 'Z') ||
+ *     (c >= 'a' && c <= 'z'); }
+ */
+#pragma aux isalpha = "or al, 32"  "sub al, 97"  "cmp al, 26" \
+    "sbb eax, eax"  "neg eax" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int isascii(int c) { return c >= 0 && c <= 127; } */
+#pragma aux isascii = "cmp al, 127+1"  "sbb eax, eax"  "neg eax" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int isdigit(int c) { return c >= '0' && c <= '9'; } */
+#pragma aux isdigit = "sub al, 48"  "cmp al, 10"  "sbb eax, eax"  "neg eax" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int islower(int c) { return c >= 'a' && c <= 'z'; } */
+#pragma aux islower = "sub al, 97"  "cmp al, 26"  "sbb eax, eax"  "neg eax" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int isprint(int c) { return c >= 32 && c <= 126; } */
+#pragma aux isprint = "sub al, 32"  "cmp al, 126-32+1"  "sbb eax, eax" \
+    "neg eax"  __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int isspace(int c) { return (c >= '\t' && c <= '\r') ||
+ *     c == ' '; }
+ */
+#pragma aux isspace = "sub al, 9"  "cmp al, 13-9+1"  "jc short @$1" \
+    "sub al, 32-9"  "cmp al, 1"  "@$1: sbb eax, eax"  "neg eax" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int isupper(int c) { return c >= 'A' && c <= 'Z'; } */
+#pragma aux isupper = "sub al, 65"  "cmp al, 26"  "sbb eax, eax"  "neg eax" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int isxdigit(int c) { return (c >= 'A' && c <= 'F') ||
+ *     (c >= 'a' && c <= 'f') || (c >= '0' && c <= '9'); }
+ */
+#pragma aux isxdigit = "sub al, 48"  "cmp al, 10"  "jc short @$1" \
+    "or al, 32"  "sub al, 97-48"  "cmp al, 6"  "@$1: sbb eax, eax" \
+    "neg eax"  __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int tolower(int c) { return c >= 'A' && c <= 'Z' ?
+ *     c + 'a' - 'A' : i; }
+ */
+#pragma aux tolower = "sub al, 65"  "cmp al, 25"  "ja short @$1" \
+    "add al, 32"  "@$1: add al, 65" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax]
+
+/* static __inline int toupper(int c) { return c >= 'a' && c <= 'z' ?
+ *     c + 'A' - 'a' : i; }
+ */
+#pragma aux toupper = "sub al, 97"  "cmp al, 25"  "ja short @$1" \
+    "add al, -32"  "@$1: add al, 97" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax]
 
 /* To prevent wlink: Error! E2028: strlen_ is an undefined reference */
 #pragma intrinsic(abs)
@@ -358,11 +433,11 @@ extern HANDLE __dwlibc_std_handles[3];
   ssize_t __dwlibc_dos_write(int fd, const void *buf, size_t count);
 #  pragma aux __dwlibc_dos_write = \
     "xor eax, eax"  "jecxz ok"  "mov ah, 40h"  "int 21h" \
-    "jnc ok"  "sbb eax, eax"  "ok:"  \
+    "jnc ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
   int __dwlibc_dos_isatty(int fd);
 #  pragma aux __dwlibc_dos_isatty = \
-     "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done"  \
+     "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done" \
     "test dl, dl"  "jns done"  "inc eax"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ebx __edx]
   __declspec(noreturn) void __dwlibc_dos_exit(unsigned char exit_code);
@@ -506,7 +581,7 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
     __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
 
 #pragma aux write = "xor eax, eax"  "jecxz ok"  "mov ah, 40h"  "int 21h" \
-    "jnc ok"  "sbb eax, eax"  "ok:"  \
+    "jnc ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
 
 /* Just returns whether fd is a character device. (On Unix, there are
@@ -517,7 +592,7 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
  * https://github.com/open-watcom/open-watcom-v2/blob/2d1ea451c2dbde4f1efd26e14c6dea3b15a1b42b/bld/clib/environ/c/isatt.c#L58C10-L59
  * ).
  */
-#pragma aux isatty = "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done"  \
+#pragma aux isatty = "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done" \
     "test dl, dl"  "jns done"  "inc eax"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ebx __edx]
 
