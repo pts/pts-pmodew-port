@@ -39,11 +39,9 @@ if ! test -f "$mydir"/pmodewd.exe; then  # Build the DOS extender DOS stub pmode
     "$nasm" -v >/dev/null 2>&1 || nasm=nasm  # Use the system nasm if the bundled "$nasm" doesn't work.
   fi
   # !! Consider -DLOGO=1 if it fits.
-  # -DLOADSPE=3 -DLOADLE=0 --- -DPM_SELECTORS=4 !!-DLOGO
-  # -DLOADSPE=0 -DLOADLE=1 --- -DPM_SELECTORS=5 !!-DLOGO
   set -x  # Enable echo of commands run.
-  (cd "$mydir" && "$nasm" -O32700 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DSIZEOPT=1 -DCONFIGTYPE=3 -DLOADSPE=0 -DLOADLE=1 -DLOADPMW1=0 -DEXCEPTIONS=1 -DINT3108FUNC=0 -DINT1B=2 -DINT33=0 -DINT31VENDOR=0 -DFREEMEMINFO=0 -DGETVERSION=0 -DABORTMSGTTY=1 -DEXITCODE=1 -DSHORTMSG=1 -o pmodewdu.exe pmodew.nasm) || exit "$?"
-  (cd "$mydir" && "$nasm" -O0 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DCONFIGINEXEIMAGE=2 -DPM_SELECTORS=5 -o pmwca pmwcax.nasm) || exit "$?"
+  (cd "$mydir" && "$nasm" -O32700 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DSIZEOPT=1 -DCONFIGTYPE=2 -DLOADSPE=3 -DLOADLE=0 -DLOADPMW1=0 -DEXCEPTIONS=1 -DINT3108FUNC=0 -DINT1B=2 -DINT33=0 -DINT31VENDOR=0 -DFREEMEMINFO=0 -DGETVERSION=0 -DABORTMSGTTY=1 -DEXITCODE=1 -DSHORTMSG=1 -o pmodewdu.exe pmodew.nasm) || exit "$?"
+  (cd "$mydir" && "$nasm" -O0 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DCONFIGINEXEIMAGE=2 -DPM_SELECTORS=4 -o pmwca pmwcax.nasm) || exit "$?"
   chmod +x "$mydir"/pmwca
   (cd "$mydir" && ./pmwca pmodewdu.exe pmodewd.exe) || exit "$?"  # This runs on Linux i386, Linux amd64 and FreeBSD i386.
   rm -f pmodewdu.exe
@@ -58,12 +56,13 @@ fi
 # If wcc386 doesn't get any -bt=anything flag, then it will use the host system name (e.g. linux if compiling on Linux, nt if compiling on Win32), e.g. `wcc386 -D__LINUX__=1'.
 # Disable a warning like this: -Wno-n201
 # !! Document how -Wl,op -Wl,st=8K can be overridden for a larger stack.
+# Here the -Wl,com st=8K is used for the stack size. !! Make the override consistent.
+# !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this? Patch it.
 if test "$target" = dos32; then
-  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,os2 -Wl,le                                                                          -Wl,op -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"
+  # !! Patch 0x40 --> 0x41 in the PE header file offset header field at file offset @0x3c.
+  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"
 elif test "$target" = win32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk  # !! This imports all the functions, even the unused ones. Provide a library instead.
-  # Here the -Wl,com st=8K is used for the stack size. !! Make the override consistent.
-  # !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this?
   exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_                                      -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"
 else
   echo "$0: fatal: target not implemented: -b$target" >&2; exit 1

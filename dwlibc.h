@@ -85,6 +85,9 @@
 #ifdef __MINILIBC686__
 #  error Unexpected libc minilibc686 __MINILIBC686__.
 #endif
+/* According to https://catfox.life/2022/04/16/the-musl-preprocessor-debate/
+ * , musl libc doesn't define a preprocessor macro to identify it.
+ */
 
 #ifdef __DWLIBC__
 #  if (__DWLIBC__)!=1
@@ -378,20 +381,6 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
 
 #ifdef __DOS__
 
-/* According to https://catfox.life/2022/04/16/the-musl-preprocessor-debate/
- * , musl libc doesn't define a preprocessor macro to identify it. */
-
-/* Magic incantation to emit a make wlink find a segment of class STACK, and
- * create a correct LE executable. As a side effect, it also silences the
- * wlink warning `Warning! W1014: stack segment not found'.
- *
- * Normally the segment name would be _STACK (rather than MYSTACK), but
- * wcc386 crashes with a Segmentation fault for that. wlink doesn't care
- * about the segment name.
- */
-#pragma data_seg("MYSTACK", "STACK")
-extern char __unused_stack1[1];
-#pragma data_seg()
 
 /* It must not modify `ebp', otherwise the OpenWatcom C compiler omits the
  * `pop ebp' between the `mov esp, ebp' and the `ret'.
@@ -416,20 +405,13 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
  * It gets the command-line string from PSP, calls main1(cmdline), and
  * exits to DOS with the return value of main1(...) as the exit code.
  # At entry, CS is a zero-based code selector, DS and SS are zero-based data
- * selectors. Either (ES == DS, and PSP is at DS:EAX) or (ES != DS, and PSP
- * is at ES:0). The latter is original PMODE/W behavior. BSS is already
+ * selectors. Also ES == DS, and PSP is at DS:EAX. BSS is already
  * zero-initialized.
  */
 #define main1(argspec1) \
     /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
-    /* At LE startup, ES is the PSP selector. Get base from DPMI. */ \
     __asm { cld }  /* Shouldn't be needed. */ \
-    __asm { mov ebx, es } __asm { mov edx, ds } __asm { cmp ebx, edx } \
-    __asm { db 74h, 13 }  /* je skip */ \
-    __asm { mov ax, 6 } __asm { int 31h } /* DPMI Get segment BX base. */ \
-    __asm { xchg eax, ecx } __asm { shl eax, 16 } __asm { mov ax, dx } \
-    __asm { skip: sub eax, -80h }  /* EAX := DOS cmdline. */ \
-    __asm { push ds } __asm { pop es }  /* ES := zero-based segment. */ \
+    __asm { sub eax, -80h }  /* EAX := DOS cmdline. */ \
     __asm { call __dwlibc_doscmdline } \
     __asm { call main1 } __asm { mov ah, 4ch } __asm { int 21h } } \
     int main1(argspec1)
