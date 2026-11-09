@@ -57,8 +57,14 @@ fi
 # wcc386 takes the last -bt=anything flag value passed to it, capitalizes it, and defines the macro like `wcc386 -D__ANYTHING__=1' (same as C code `#define __ANYTHING__ 1').
 # If wcc386 doesn't get any -bt=anything flag, then it will use the host system name (e.g. linux if compiling on Linux, nt if compiling on Win32), e.g. `wcc386 -D__LINUX__=1'.
 # Disable a warning like this: -Wno-n201
+# !! Document how -Wl,op -Wl,st=8K can be overridden for a larger stack.
 if test "$target" = dos32; then
-  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,os2 -Wl,le -Wl,op -Wl,d -Wl,op -Wl,stack=8k -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"
+  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,os2 -Wl,le                                                                          -Wl,op -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"
+elif test "$target" = win32; then
+  export WLINK_LNK="$mydir"/dwlibc_win32.lnk  # !! This imports all the functions, even the unused ones. Provide a library instead.
+  # Here the -Wl,com st=8K is used for the stack size. !! Make the override consistent.
+  # !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this?
+  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_                                      -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"
 else
   echo "$0: fatal: target not implemented: -b$target" >&2; exit 1
 fi

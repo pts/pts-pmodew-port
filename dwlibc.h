@@ -49,14 +49,17 @@
 #ifndef __386__
 #  error Need CPU __386__.
 #endif
-#ifndef __DOS__
-#  error Need target __DOS__.
+#ifdef __DOS__
+#  ifdef __NT__
+#    error Unexpected target both __DOS__ and __NT__.
+#  endif
+#else
+#  ifndef __NT__
+#    error Need target __DOS__ or __NT__.
+#  endif
 #endif
 #ifdef __BEGIN__
 #  error Unexpected target __BEGIN__.
-#endif
-#ifdef __NT__
-#  error Unexpected target __NT__.
 #endif
 #ifdef __OS2__
 #  error Unexpected target __OS2__.
@@ -127,6 +130,16 @@ typedef int off_t;
 
 #define EOF -1  /* Indicates end-of-file (EOF) or error. */
 
+/* --- Helper macros for function declarations. */
+
+#ifdef __NT__
+#  define __DWLIBCABI1 static __inline
+#  define __DWLIBCABI2 /*__declspec(dllimport)*/
+#else
+#  define __DWLIBCABI1
+#  define __DWLIBCABI2
+#endif
+
 /* --- Function declarations. */
 
 /* The entire command-line is passed without leading whitespace. The
@@ -136,15 +149,15 @@ typedef int off_t;
 int __watcall main1(const char *cmdline);
 
 /* Only valid fd values are: STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO. */
-ssize_t read(int fd, void *buf, size_t count);
+__DWLIBCABI1 ssize_t read(int fd, void *buf, size_t count);
 
 /* Only valid fd values are: STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO. */
-ssize_t write(int fd, const void *buf, size_t count);
+__DWLIBCABI1 ssize_t write(int fd, const void *buf, size_t count);
 
 /* Returns bool indicating whether fd is a terminal (interactive text
  * console).
  */
-int isatty(int fd);
+__DWLIBCABI1 int isatty(int fd);
 
 __declspec(noreturn) void  exit(unsigned char exit_code);
 __declspec(noreturn) void _exit(unsigned char exit_code);
@@ -184,7 +197,186 @@ size_t strlen(const char *s);
 #define main0_exit(exit_code) _exit(exit_code)
 #define main0_is_progarg_null(arg) 0  /* Size optimization, never NULL. */
 
-/* --- Implementation. Mostly dark magic in OpenWatcom C. */
+/* --- Implementation of system-agnostic functions. */
+
+/* To prevent wlink: Error! E2028: strlen_ is an undefined reference */
+#pragma intrinsic(abs)
+#pragma intrinsic(labs)
+#pragma intrinsic(_rotl)
+#pragma intrinsic(_rotr)
+#pragma intrinsic(_lrotl)
+#pragma intrinsic(_lrotr)
+#pragma intrinsic(memchr)
+#pragma intrinsic(memcmp)
+#pragma intrinsic(memcpy)
+#pragma intrinsic(memset)
+#pragma intrinsic(strcat)
+#pragma intrinsic(strchr)
+#pragma intrinsic(strcmp)
+#pragma intrinsic(strcpy)
+#pragma intrinsic(strlen)  /* No error if function not available. */
+
+/* --- Win32 implementation. */
+
+#ifdef __NT__
+
+/* TODO(pts): Hide these implementation details from the C program source. */
+
+/*#include <windows.h>*/  /* Too much, also loads <ctype.h> etc. */
+
+typedef unsigned long	ULONG;
+typedef ULONG		*PULONG;
+typedef unsigned short	USHORT;
+typedef USHORT		*PUSHORT;
+typedef unsigned char	UCHAR;
+typedef UCHAR		*PUCHAR;
+typedef char		*PSZ;
+typedef unsigned long	DWORD;
+typedef int		BOOL;
+typedef unsigned char	BYTE;
+typedef unsigned short	WORD;
+typedef float		FLOAT;
+typedef FLOAT		*PFLOAT;
+typedef BOOL		*PBOOL;
+typedef BOOL		*LPBOOL;
+typedef BYTE		*PBYTE;
+typedef BYTE		*LPBYTE;
+typedef int		*PINT;
+typedef int		*LPINT;
+typedef WORD		*PWORD;
+typedef WORD		*LPWORD;
+typedef long		*LPLONG;
+typedef DWORD		*PDWORD;
+typedef DWORD		*LPDWORD;
+typedef void		*LPVOID;
+typedef const void	*LPCVOID;
+typedef int		INT;
+typedef unsigned int	UINT;
+typedef unsigned int	*PUINT;
+typedef void		*PVOID;
+typedef void		*PVOID64;
+typedef char		CHAR;
+typedef short		SHORT;
+typedef long		LONG;
+typedef SHORT		*PSHORT;
+typedef LONG		*PLONG;
+typedef void		*HANDLE;
+typedef HANDLE		*PHANDLE;
+typedef BYTE		FCHAR;
+typedef WORD		FSHORT;
+typedef DWORD		FLONG;
+typedef LONG		HRESULT;
+typedef char		CCHAR;
+typedef DWORD		LCID;
+typedef PDWORD		PLCID;
+typedef CHAR		*LPSTR;
+typedef const CHAR	*LPCSTR;
+typedef unsigned short	wchar_t;
+typedef unsigned short	WCHAR;
+typedef WCHAR		*LPWSTR;
+typedef long		LONG_PTR;
+typedef unsigned long	ULONG_PTR;
+typedef ULONG_PTR	SIZE_T;
+
+typedef struct _OVERLAPPED  *LPOVERLAPPED;
+typedef struct _SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
+
+/* kernel32.dll, <windows.h> */
+__DWLIBCABI2 __declspec(noreturn) void __stdcall ExitProcess(
+    UINT uExitCode);
+__DWLIBCABI2 HANDLE __stdcall GetStdHandle(DWORD nStdHandle);
+__DWLIBCABI2 BOOL   __stdcall WriteFile(
+    HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
+    LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped);
+__DWLIBCABI2 BOOL   __stdcall ReadFile(
+    HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
+    LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped);
+__DWLIBCABI2 LPSTR  __stdcall GetCommandLineA(void);
+__DWLIBCABI2 DWORD __stdcall GetFileType(HANDLE hFile);
+
+/* nStdHandle for GetStdHandle(...): */
+#define STD_INPUT_HANDLE    ((DWORD)-10)
+#define STD_OUTPUT_HANDLE   ((DWORD)-11)
+#define STD_ERROR_HANDLE    ((DWORD)-12)
+
+#define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
+
+#define FILE_TYPE_CHAR ((DWORD)2)
+
+extern HANDLE __dwlibc_std_handles[3];
+
+/* !! This included in the .o file even if unused, because of `call'. */
+__DWLIBCABI1 ssize_t read(int fd, void *buf, size_t count) {
+  DWORD read_count;
+  return ReadFile(__dwlibc_std_handles[fd], buf, count, &read_count, NULL) ?
+      read_count : -1;
+}
+
+__DWLIBCABI1 ssize_t write(
+    int fd, const void *buf, size_t count) {
+  DWORD written_count;
+  return WriteFile(__dwlibc_std_handles[fd], buf, count, &written_count, NULL)
+      ? written_count : -1;
+}
+
+/* Returns bool indicating whether fd is a terminal (interactive text
+ * console).
+ */
+__DWLIBCABI1 int isatty(int fd) {
+  return GetFileType(__dwlibc_std_handles[fd]) == FILE_TYPE_CHAR;
+}
+
+#pragma aux  exit = "movzx eax, al"  "push eax" "call ExitProcess" \
+     __parm [__al] __modify __exact []
+#pragma aux _exit = "movzx eax, al"  "push eax" "call ExitProcess" \
+     __parm [__al] __modify __exact []
+
+static __inline const char * __watcall __dwlibc_win32cmdline(
+    const char *cmdline) {
+  __dwlibc_std_handles[STDIN_FILENO ] = GetStdHandle(STD_INPUT_HANDLE );
+  __dwlibc_std_handles[STDOUT_FILENO] = GetStdHandle(STD_OUTPUT_HANDLE);
+  __dwlibc_std_handles[STDERR_FILENO] = GetStdHandle(STD_ERROR_HANDLE );
+  if (*cmdline != ' ' && *cmdline != '\t') {  /* Skip program name. */
+    if (*cmdline == '\"') {
+      for (++cmdline; *cmdline != '\0' && *cmdline != '\"'; ++cmdline) {}
+      if (*cmdline != '\0') ++cmdline;
+    } else {
+      for (; *cmdline != '\0' && *cmdline != ' ' || *cmdline == '\t';
+           ++cmdline) {}
+    }
+  }
+  for (; *cmdline == ' ' || *cmdline == '\t'; ++cmdline) {}
+  return cmdline;
+}
+
+/* Actually, this defines the _dwlibcstart_ function. We do it using a macro
+ * so that _dwlibcstart_ is only defined where the C source file defines
+ * `int main1(const char *cmdline) { ... }'. The benefit is that the program
+ * can be split to multiple C source files, and only one of them will define
+ * _dwlibcstart_ and thus the `redefinition of _dwlibcstart_' error by wlink
+ * is avoided. As a negative side effect of this hack, it is not possible to
+ * reference main1 anywhere else in the source C file.
+ *
+ * This implements the 32-bit i386 program entry point Win32 jumps to. It
+ * gets the standard file descriptor handles, it gets the command-line
+ * string, calls main1(cmdline), and exits to Win32 with the return value of
+ * main1(...) as the exit code. BSS is already zero-initialized.
+ */
+#define main1(argspec1) \
+    /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
+    __asm { cld }  /* Shouldn't be needed. */ \
+    __asm { call GetCommandLineA } \
+    __asm { call __dwlibc_win32cmdline } \
+    __asm { call main1 } \
+    __asm { movzx eax, al } __asm { push eax } __asm { call ExitProcess } } \
+    HANDLE __dwlibc_std_handles[3]; \
+    int main1(argspec1)
+
+#endif  /* #ifdef __NT__ */
+
+/* --- DOS implementation. Mostly dark magic in OpenWatcom C. */
+
+#ifdef __DOS__
 
 /* According to https://catfox.life/2022/04/16/the-musl-preprocessor-debate/
  * , musl libc doesn't define a preprocessor macro to identify it. */
@@ -264,21 +456,6 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
     "test dl, dl"  "jns done"  "inc eax"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ebx __edx]
 
-/* To prevent wlink: Error! E2028: strlen_ is an undefined reference */
-#pragma intrinsic(abs)
-#pragma intrinsic(labs)
-#pragma intrinsic(_rotl)
-#pragma intrinsic(_rotr)
-#pragma intrinsic(_lrotl)
-#pragma intrinsic(_lrotr)
-#pragma intrinsic(memchr)
-#pragma intrinsic(memcmp)
-#pragma intrinsic(memcpy)
-#pragma intrinsic(memset)
-#pragma intrinsic(strcat)
-#pragma intrinsic(strchr)
-#pragma intrinsic(strcmp)
-#pragma intrinsic(strcpy)
-#pragma intrinsic(strlen)  /* No error if function not available. */
+#endif  /* #ifdef __DOS__ */
 
 #endif  /* #ifdef _DWLIBC_H */
