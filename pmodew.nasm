@@ -464,6 +464,15 @@
   %assign FEWRELOCS FEWRELOCS  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef SHORTMSG  ; Can be specified on the command line.
+  %define SHORTMSG 0   ; Print the original PMODE/W 1.33 error messages.
+  ;%define SHORTMSG 1  ; Print short error messages.
+%elifidn (SHORTMSG), ()
+  %define SHORTMSG 1
+%else
+  %assign SHORTMSG SHORTMSG  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %ifndef ABORTMSGTTY  ; Can be specified on the command line.
   %define ABORTMSGTTY 0   ; Write the exception abort message directly to video memory.
   ;%define ABORTMSGTTY 1  ; Write the exception abort message to the video TTY console (int 10h, AH == 0eh). This is useful for some text-only DOS emulators.
@@ -1532,7 +1541,7 @@ aborts_hexctbl  db      '0123456789ABCDEF'
 %endif
 
 aborts_pmwabort:
-%if LOADSPE==3
+%if LOADSPE==3 || SHORTMSG
 		db      '[PM]: '
 %else
 		db      '[PMODE/W]: '
@@ -5530,7 +5539,7 @@ errmsgtbl       dw -pmodewe+errmsg0,-pmodewe+errmsg1,-pmodewe+errmsg2,-pmodewe+e
 		dw -pmodewe+errmsg8,-pmodewe+errmsg9
 %endif
 
-%if LOADSPE==3
+%if LOADSPE==3 || SHORTMSG
 pmodemsg        db '[PM]: ',36
 errmsg0         db 'out of memory!',13,10,36  ; _memoryerr.
 errmsg1         db 'no 386+ CPU!',13,10,36  ; Returned as AX=1 CF=1 by _pm_info.

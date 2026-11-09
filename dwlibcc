@@ -1,0 +1,66 @@
+#! /bin/sh --
+#
+# dwlibcc: C compiler frontend for dwlibc
+# by pts@fazekas.hu at Sun Nov  8 16:20:04 CET 2026
+#
+# Example first-run compile: ./dwlibcc -bdos32 -s -Os -W -Wall -Wextra -Werror -std=c89 -o helldspe.exe helldspe.c
+#
+# Example compile of a larger project:
+#
+#   $ git clone https://github.com/pts/luuzcat
+#   $ (cd luuzcat && ../dwlibcc -bdos32 -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DLIBC_PREINCLUDED -o luuzcat.exe luuzcat.c unscolzh.c uncompact.c unopack.c unpack.c undeflate.c uncompress.c unfreeze.c)
+#   $ ls -ld luuzcat/luuzcat.exe
+#
+set -e
+unset LANG LANGUAGE
+export LC_ALL=C  # For reproducible builds.
+export TZ=GMT  # For reproducible builds.
+mydir=.
+test "$0" = "${0%/*}" || mydir="${0%/*}"
+
+unset INC LIB LIBDIR WLINK_LNK WATCOM
+export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
+target=; nasm=
+while ! test "$target"; do
+  case "$1" in
+   "" | -\? | -v) exec owcc "$@" 2>&1 ;;
+   --help) shift; exec owcc -\? "$@" 2>&1 ;;
+   --nasm=*) nasm="${1#*=}"; shift ;;
+   -bdos | -bdos32 | -bpmodew) shift; target=dos32 ;;
+   -bwin32) shift; target=win32 ;;
+   -bdoswin32) target=doswin32; shift ;;
+   *) target=doswin32 ;;
+  esac
+done
+
+if ! test -f "$mydir"/pmodewd.exe; then  # Build the DOS extender DOS stub pmodewd.exe upon first run.
+  if ! test "$nasm"; then
+    nasm="$mydir"/tools/nasm-0.98.39.upx
+    "$nasm" -v >/dev/null 2>&1 || nasm=nasm  # Use the system nasm if the bundled "$nasm" doesn't work.
+  fi
+  # !! Consider -DLOGO=1 if it fits.
+  # -DLOADSPE=3 -DLOADLE=0 --- -DPM_SELECTORS=4 !!-DLOGO
+  # -DLOADSPE=0 -DLOADLE=1 --- -DPM_SELECTORS=5 !!-DLOGO
+  set -x  # Enable echo of commands run.
+  (cd "$mydir" && "$nasm" -O32700 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DSIZEOPT=1 -DCONFIGTYPE=3 -DLOADSPE=0 -DLOADLE=1 -DLOADPMW1=0 -DEXCEPTIONS=1 -DINT3108FUNC=0 -DINT1B=2 -DINT33=0 -DINT31VENDOR=0 -DFREEMEMINFO=0 -DGETVERSION=0 -DABORTMSGTTY=1 -DEXITCODE=1 -DSHORTMSG=1 -o pmodewdu.exe pmodew.nasm) || exit "$?"
+  (cd "$mydir" && "$nasm" -O0 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DCONFIGINEXEIMAGE=2 -DPM_SELECTORS=5 -o pmwca pmwcax.nasm) || exit "$?"
+  chmod +x "$mydir"/pmwca
+  (cd "$mydir" && ./pmwca pmodewdu.exe pmodewd.exe) || exit "$?"  # This runs on Linux i386, Linux amd64 and FreeBSD i386.
+  rm -f pmodewdu.exe
+  set +x  # Disable echo of commands run.
+fi
+
+# This design of doing the full compile and link without .asm or object (.o) files is based on: https://stackoverflow.com/a/62495257
+# `owcc -bbegin' passes `system begin' to wlink and `-bt=begin\ (default-mapped) to wcc396.
+# There mapping from `owcc -banything' to `wcc386 ...' flags is defined in the specs file bin*/specs.owc. If `system begin anything' is not found there, then the default flag will be `wcc386 -bt=anything'.
+# Typical `-bt=...' values in bin*/specs.owc: dos (both 16-bit and 32-bit), nt (Win32, 32-bit), windows (Windows 3.1, 16-bit), linux (i386, 32-bit), os2 (both 16-bit and 32-bit), netware (i386, 32-bit), qnx (i386, 32-bit), zdos, rdos, rdosdev, rdos_*.
+# wcc386 takes the last -bt=anything flag value passed to it, capitalizes it, and defines the macro like `wcc386 -D__ANYTHING__=1' (same as C code `#define __ANYTHING__ 1').
+# If wcc386 doesn't get any -bt=anything flag, then it will use the host system name (e.g. linux if compiling on Linux, nt if compiling on Win32), e.g. `wcc386 -D__LINUX__=1'.
+# Disable a warning like this: -Wno-n201
+if test "$target" = dos32; then
+  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,os2 -Wl,le -Wl,op -Wl,d -Wl,op -Wl,stack=8k -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"
+else
+  echo "$0: fatal: target not implemented: -b$target" >&2; exit 1
+fi
+
+: "$0" OK.
