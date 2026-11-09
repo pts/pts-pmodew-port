@@ -6291,14 +6291,14 @@ _loadSPE:
 	push ds  ; Save.
 	mov cx, [gs:spefofs.pehdr.NumberOfSections]  ; dw.
 	push cx  ; Save NumberOfSections.
-	xor edx, edx  ; Largest RVA so far.
+	_xor edx, edx  ; Largest RVA so far.
 	mov si, spefofs.pehdr.IMAGE_SECTION_HEADER
 .section_size_loop:
 	mov eax, [gs:si+pesechdr.VirtualAddress]
 	add eax, [gs:si+pesechdr.VirtualSize]
-	cmp edx, eax
+	_cmp edx, eax
 	jae .largest_rva_updated
-	mov edx, eax
+	_mov edx, eax
 .largest_rva_updated:
 	add si, pesechdr._size
 	loop .section_size_loop
@@ -6306,33 +6306,33 @@ _loadSPE:
 	mov eax, [gs:spefofs.pehdr.SizeOfStackCommit]
 	add eax, 3
 	and al, ~3
-	xchg eax, edx  ; EAX := EDX; EDX := junk.
+	_xchg eax, edx  ; EAX := EDX; EDX := junk.
 	add eax, 3
 	and al, ~3
-	add eax, edx
+	_add eax, edx
 .allocate_base:
 	; Now: EAX == image_and_stack_size. (number of bytes to allocate).
 	push eax  ; Save image_and_stack_size.
 	call _malloc_aligned_SPE  ; Also ruins EBX. This is the only allocation done from _loadSPE. If it fails, it makes the process exit with a fatal error. Inlining would make it longer.
 	pop ecx  ; Restore ECX := image_and_stack_size.
-	mov edi, eax  ; EDI := linear address of the actual image_ptr (instead of ImageBase).
-	add eax, ecx  ; ECX := linear address of the end of the image.
+	_mov edi, eax  ; EDI := linear address of the actual image_ptr (instead of ImageBase).
+	_add eax, ecx  ; ECX := linear address of the end of the image.
 	mov [-pmodewe+_init_esp], eax
 	mov bx, [-pmodewe+_exehandle]  ; This is the last instruction which needs DS == pmodewe data selector.
 .fill_base:
 	; Now: EDI == image_ptr; ECX == number of bytes allocated at the image_ptr, always divisible by 4.
 	shr ecx, 2
 	;mov es, [-pmodewe+_selzero]  ; Not needed, it's already set.
-	xor eax, eax
+	_xor eax, eax
 	push edi  ; Save.
 	rep a32 stosd  ; This zero-initializes BSS. Fill the entire image (including the stack (ECX dwords starting at ES:EDI) with NUL bytes. Also sets ECX := 0.
 .copy_hdr_to_base:
 	; !! TODO(pts): With CONFIGTYPE==2, load the entire header again (everything in front of the first section. not just 200h bytes), set the lowest bit at pefofs.pehdr_fofs_ptr to 1.
 	push gs
 	pop ds  ; DS := _selbuf == _dtabufptr containing the first 200h bytes of the .exe file.
-	xor esi, esi
+	_xor esi, esi
 	pop eax  ; Restore EAX := image_ptr.
-	mov edi, eax  ; EDI := image_ptr (EAX).
+	_mov edi, eax  ; EDI := image_ptr (EAX).
 	mov cl, 200h>>2  ; ECX := 200h>>2. This implementatios is shorter, and it works because ECX was 0.
 	;mov es, [-pmodewe+_selzero]  ; Not needed, it's already set.
 	rep a32 movsd  ; Copy the first 200h bytes of the .exe file to the image base. Win32 does the same. Also sets ECX := 0.
@@ -6343,7 +6343,7 @@ _loadSPE:
 	lea esi, [eax+spefofs.pehdr.IMAGE_SECTION_HEADER]
 %if SPECUSTOMENTRY==2
 	mov edx, [eax+spefofs.pehdr.AddressOfEntryPoint]
-	add edx, eax  ; dos_entry_point (EDX) := image_ptr+AddressOfEntryPoint.
+	_add edx, eax  ; dos_entry_point (EDX) := image_ptr+AddressOfEntryPoint.
 	cmp [esi-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT+peidd.VirtualAddress], ecx  ; We have ECX == 0 here.
 	je short .have_entry_point_in_edx  ; This jumps iff there is no import table, i.e. it's a DOS-only PE program.
 	add edx, byte 5  ; This is a DOS--Win32 combined PE program running on DOS, loaded by the simple PE loader. We start at AddressOfEntryPoint+5.
@@ -6356,15 +6356,15 @@ _loadSPE:
 	; Set dword [ImageBase+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT+peidd.Size] (== dword [ImageBase+0c4h]) := -1 (== 0xffffffff). The  entry point can check this to detect SPE on DOS, because Win32 never has that value.
 	or dword [esi-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_IMPORT+peidd.Size], byte -1
 	mov edx, [eax+spefofs.pehdr.AddressOfEntryPoint]
-	add edx, eax  ; dos_entry_point (EDX) := image_ptr+AddressOfEntryPoint.
+	_add edx, eax  ; dos_entry_point (EDX) := image_ptr+AddressOfEntryPoint.
 %endif
 	push edx  ; Save dos_entry_point (EDX). It will be put to [-pmodewe+_init_eip].
 %if SPERELOC  ; We push 3 dwords here, which will be popped at the beginning of .apply_relocations below.
 	mov edx, [eax+spefofs.pehdr.ImageBase]
-	sub edx, eax
+	_sub edx, eax
 	push edx  ; Save relocation delta.
 	mov edx, [esi-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC+peidd.VirtualAddress]
-	add edx, eax
+	_add edx, eax
 	push edx   ; Save linear address of relocation blocks.
 	add edx, [esi-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC+peidd.Size]
 	push edx  ; Save linear address of end of relocation blocks.
@@ -6402,22 +6402,22 @@ _loadSPE:
 	jmp short .maybe_next_relocation_block  ; We must jump here, in case there are no relocations at all, i.e. IMAGE_DIRECTORY_ENTRY_BASERELOC.Size == 0, thus ESI == EBP here.
 .relocation_block_loop:
 	mov edx, [esi]  ; EDX := PageRVA (EAX).
-	add edx, ebx
+	_add edx, ebx
 	mov ecx, [esi+4]  ; ECX := BlockSize (EAX).
 	; We assume that the block is not empty, i.e. ECX >= 12 here. This is documented in the LOADSPE comment.
-	add ecx, esi  ; ECX := linear address of end of the relocation block.
+	_add ecx, esi  ; ECX := linear address of end of the relocation block.
 	add esi, byte 8
 .relocation_entry_loop:
-	xor eax, eax  ; We set EAX := 0 because we need to set the high word of EAX := 0.
+	_xor eax, eax  ; We set EAX := 0 because we need to set the high word of EAX := 0.
 	a32 lodsw  ; AX := next relocation entry. We assume that either it's of type ABSOLUTE (== 0) or HIGHLOW (== 3). This is document in the LOADSPE comment.
 	sub ah, 0x30  ; Same size as the equivalent: sub ax, strict word 0x3000
 	jb short .relocation_entry_done
 	sub [eax+edx], edi  ; Apply relocation by adding relocation delta to the dword address to be relocated.
 .relocation_entry_done:
-	cmp esi, ecx
+	_cmp esi, ecx
 	jne short .relocation_entry_loop
 .maybe_next_relocation_block:
-	cmp esi, ebp
+	_cmp esi, ebp
 	jne short .relocation_block_loop
 .after_relocation_block_loop:
 %else
@@ -9135,7 +9135,7 @@ _openexe2:
 	mov ah, 3fh  ; Read from file using handle.
 	int 21h
 	jc short .j_loaderror
-	cmp ax, cx
+	_cmp ax, cx
 	jne short .j_loaderror
   %if CONFIGTYPE==2
 	mov di, spefofs.pmodew_config  ; 20h == 32.
@@ -9162,7 +9162,7 @@ _openexe2:
 	mov ah, 3fh  ; Read from file using handle.
 	int 21h
 	jc short .j_loaderror
-	cmp ax, cx
+	_cmp ax, cx
 	jne short .j_loaderror
   %elif CONFIGTYPE==1
 	mov si, spefofs.pmodew_config  ; Used by the `rep movsb' below.
