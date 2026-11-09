@@ -182,6 +182,13 @@ int strcmp(const char *s1, const char *s2);
 char *strcpy(char *dest, const char *src);
 size_t strlen(const char *s);
 
+/* --- Register usage of main1. */
+
+/* It must not modify `ebp', otherwise the OpenWatcom C compiler omits the
+ * `pop ebp' between the `mov esp, ebp' and the `ret'.
+ */
+#pragma aux main1 __modify [__eax __ebx __ecx __edx __esi __edi]
+
 /* --- Implementation of the main0() API.
  *
  * Some programs define main0() instead of main(...), and use it like this:
@@ -380,12 +387,6 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
 /* --- DOS implementation. Mostly dark magic in OpenWatcom C. */
 
 #ifdef __DOS__
-
-
-/* It must not modify `ebp', otherwise the OpenWatcom C compiler omits the
- * `pop ebp' between the `mov esp, ebp' and the `ret'.
- */
-#pragma aux main1 __modify [__eax __ebx __ecx __edx __esi __edi]
 
 static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
   cmdline[1 + *(unsigned char*)cmdline] = '\0';  /* Change CR to NUL. */
