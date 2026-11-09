@@ -1,15 +1,41 @@
 #! /bin/sh --
 #
-# dwlibcc: C compiler frontend for dwlibc
+# dwlibcc: C compiler driver for dwlibc, a toolchain to create stanalone, combined DOS--Win32 .exe programs
 # by pts@fazekas.hu at Sun Nov  8 16:20:04 CET 2026
 #
-# Example first-run compile: ./dwlibcc -bdos32 -s -Os -W -Wall -Wextra -Werror -std=c89 -o helldspe.exe helldspe.c
+# Example first-run compile: ./dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -o helldspe.exe helldspe.c
 #
 # Example compile of a larger project:
 #
 #   $ git clone https://github.com/pts/luuzcat
-#   $ (cd luuzcat && ../dwlibcc -bdos32 -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DLIBC_PREINCLUDED -o luuzcat.exe luuzcat.c unscolzh.c uncompact.c unopack.c unpack.c undeflate.c uncompress.c unfreeze.c)
+#   $ (cd luuzcat && ../dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DLIBC_PREINCLUDED -o luuzcat.exe luuzcat.c unscolzh.c uncompact.c unopack.c unpack.c undeflate.c uncompress.c unfreeze.c)
 #   $ ls -ld luuzcat/luuzcat.exe
+#
+# General usage of dwlibcc:
+#
+# * The dwlibcc command of dwlibcc is  a C compiler driver, which create
+#   stanalone, text-mode (console), combined DOS--Win32 .exe programs from C
+#   source. The same .exe runs on DOS (with a 80386 or later CPU), Windows
+#   (Win32 i386, also on 64-bit Intel Windows using WoW64), Windows
+#   emulators (such as Wine) and and OS/2 >=2.0 DOS window. There is no need
+#   to install anything or copy any other file (in addition to the program
+#   .exe file) to the target matchine, the generated program .exe file is
+#   standalone and self-contained.
+# * dwlibcc runs on Linux i386 (and amd64) only. That's partly restricted by
+#   the host systems the OpenWatcom v2 compiler supports. It would be
+#   possible to make it work on Win32 as well.
+# * dwlibcc accepts command-line flags and arguments just like the owcc C
+#   compiler driver in OpenWatcom v2, which is a bit similar to gcc. See
+#   example invocations above.
+# * dwlibcc uses owcc under the hood, it passes many flags to it by default,
+#   and after these dwlibcc-specific flags it passes almost all arguments
+#   the user has passed to dwlibcc.
+# * The dwlibcc-specific command-line flags must all be specified at the
+#   beginning of the dwlibcc command line (in any order). They are:
+#   * -bdoswin32 (default): Build combined DOS--Win32 .exe program file.
+#   * -bdos32: Build DOS-only .exe program file.
+#   * -bwin32: Build Win32-only .exe program file.
+#   * --nasm=...: NASM command name to build the PMODE/W DOS extender.
 #
 set -e
 unset LANG LANGUAGE
@@ -38,9 +64,8 @@ if ! test -f "$mydir"/pmodewd.exe; then  # Build the DOS extender DOS stub pmode
     nasm="$mydir"/tools/nasm-0.98.39.upx
     "$nasm" -v >/dev/null 2>&1 || nasm=nasm  # Use the system nasm if the bundled "$nasm" doesn't work.
   fi
-  # !! Consider -DLOGO=1 if it fits.
   set -x  # Enable echo of commands run.
-  (cd "$mydir" && "$nasm" -O32700 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DSIZEOPT=1 -DCONFIGTYPE=2 -DLOADSPE=3 -DLOADLE=0 -DLOADPMW1=0 -DEXCEPTIONS=1 -DINT3108FUNC=0 -DINT1B=2 -DINT33=0 -DINT31VENDOR=0 -DFREEMEMINFO=0 -DGETVERSION=0 -DABORTMSGTTY=1 -DEXITCODE=1 -DSHORTMSG=1 -o pmodewdu.exe pmodew.nasm) || exit "$?"
+  (cd "$mydir" && "$nasm" -O32700 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DSIZEOPT=1 -DCONFIGTYPE=2 -DLOADSPE=3 -DSPECUSTOMENTRY=2 -DLOADLE=0 -DLOADPMW1=0 -DEXCEPTIONS=1 -DINT3108FUNC=0 -DINT1B=2 -DINT33=0 -DINT31VENDOR=0 -DFREEMEMINFO=0 -DGETVERSION=0 -DABORTMSGTTY=1 -DEXITCODE=1 -DSHORTMSG=1 -o pmodewdu.exe pmodew.nasm) || exit "$?"
   (cd "$mydir" && "$nasm" -O0 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DCONFIGINEXEIMAGE=2 -DPM_SELECTORS=4 -o pmwca pmwcax.nasm) || exit "$?"
   chmod +x "$mydir"/pmwca
   (cd "$mydir" && ./pmwca pmodewdu.exe pmodewd.exe) || exit "$?"  # This runs on Linux i386, Linux amd64 and FreeBSD i386.
@@ -58,12 +83,18 @@ fi
 # !! Document how -Wl,op -Wl,st=8K can be overridden for a larger stack.
 # Here the -Wl,com st=8K is used for the stack size. !! Make the override consistent.
 # !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this? Patch it.
+# !! Also patch the PMODE/W and dwlibc logos in at file offset @0x18.
+# !! dwlibc_win32.link imports all the functions, even the unused ones. Provide a library instead.
+# !! Bundle owcc, wcc386 and wlink.
 if test "$target" = dos32; then
   # !! Patch 0x40 --> 0x41 in the PE header file offset header field at file offset @0x3c.
-  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"
+  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
 elif test "$target" = win32; then
-  export WLINK_LNK="$mydir"/dwlibc_win32.lnk  # !! This imports all the functions, even the unused ones. Provide a library instead.
-  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_                                      -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"
+  export WLINK_LNK="$mydir"/dwlibc_win32.lnk
+  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_                                      -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
+elif test "$target" = doswin32; then
+  export WLINK_LNK="$mydir"/dwlibc_win32.lnk
+  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__DOS__ "$@"
 else
   echo "$0: fatal: target not implemented: -b$target" >&2; exit 1
 fi

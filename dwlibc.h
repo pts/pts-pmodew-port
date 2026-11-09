@@ -1,9 +1,8 @@
 /*
- *
  * dwlibc.h: C header for libc to create combined DOS--Win32 .exe programs
  * by pts@fazekas.hu at Sun Nov  8 19:07:07 CET 2026
  *
- * Use the dwlibcc tool on Linux to build your programs using wdlibc. For
+ * Use the dwlibcc tool on Linux to build your programs using dwlibc. For
  * example, a hello-world C program:
  *
  *   #include <dwlibc.h>
@@ -16,11 +15,15 @@
  *
  * Compile it with:
  *
- *   ./dwlibcc -bdos32 -s -Os -W -Wall -Wextra -o prog.exe prog.c
+ *   ./dwlibcc -s -Os -W -Wall -Wextra -o prog.exe prog.c
  *
- * dwlibc uses OpenWatcom v2 C compiler (wcc386) and frontend (owcc) and
+ * The generated prog.exe will run on DOS (with a 80386 or later CPU),
+ * Windows (Win32 i386, also on 64-bit Intel Windows using WoW64), Windows
+ * emulators (such as Wine) and and OS/2 >=2.0 DOS window.
+ *
+ * dwlibc uses OpenWatcom v2 C compiler (wcc386) and frontend (owcc) and a
  * custom modified PMODE/W 1.33 DOS extender as the DOS stub to make the
- * program run on DOS with a 80386 or later CPU.
+ * program run on DOS.
  *
  * A slight change to make the source file portable to POSIX (and BSD) C:
  *
@@ -29,10 +32,12 @@
  *   #else
  *   #  include <string.h>
  *   #  include <unistd.h>
+ *   #  define main1(argspec) main(int argc, char **argv)
+ *   #  define main1_ignore_cmdline() (void)argc; (void)argv
  *   #endif
  *   void print(const char *msg) { (void)!write(1, msg, strlen(msg)); }
  *   int main1(const char *cmdline) {
- *     (void)cmdline;
+ *     main1_ignore_cmdline();
  *     print("Hello, World!\r\n");
  *     return 0;
  *   }
@@ -49,11 +54,7 @@
 #ifndef __386__
 #  error Need CPU __386__.
 #endif
-#ifdef __DOS__
-#  ifdef __NT__
-#    error Unexpected target both __DOS__ and __NT__.
-#  endif
-#else
+#ifndef __DOS__
 #  ifndef __NT__
 #    error Need target __DOS__ or __NT__.
 #  endif
@@ -138,9 +139,15 @@ typedef int off_t;
 #ifdef __NT__
 #  define __DWLIBCABI1 static __inline
 #  define __DWLIBCABI2 /*__declspec(dllimport)*/
+#  ifdef __DOS__  /* While still #ifdef __NT__. */
+#    define __DWLIBCABI3 static __inline
+#  else
+#    define __DWLIBCABI3
+#  endif
 #else
 #  define __DWLIBCABI1
 #  define __DWLIBCABI2
+#  define __DWLIBCABI3
 #endif
 
 /* --- Function declarations. */
@@ -150,6 +157,9 @@ typedef int off_t;
  * implement it instead of main(...).
  */
 int __watcall main1(const char *cmdline);
+
+/* Helper for standard C program, see example above. */
+#define main1_ignore_cmdline() (void)cmdline
 
 /* Only valid fd values are: STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO. */
 __DWLIBCABI1 ssize_t read(int fd, void *buf, size_t count);
@@ -162,8 +172,8 @@ __DWLIBCABI1 ssize_t write(int fd, const void *buf, size_t count);
  */
 __DWLIBCABI1 int isatty(int fd);
 
-__declspec(noreturn) void  exit(unsigned char exit_code);
-__declspec(noreturn) void _exit(unsigned char exit_code);
+__DWLIBCABI3 __declspec(noreturn) void  exit(unsigned char exit_code);
+__DWLIBCABI3 __declspec(noreturn) void _exit(unsigned char exit_code);
 
 int abs(int j);
 long labs(long j);
@@ -315,9 +325,55 @@ __DWLIBCABI2 DWORD __stdcall GetFileType(HANDLE hFile);
 
 extern HANDLE __dwlibc_std_handles[3];
 
-/* !! This included in the .o file even if unused, because of `call'. */
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  extern char __dwlibc_is_dos;
+#  define __DWLIBC_DEFINE_IS_DOS char __dwlibc_is_dos;
+#  define __DWLIBC_ASMB_EXIT __asm { jmp _exit }
+#  define __DWLIBC_ASMB_START \
+    /* cld shouldn't be need at Win32 entry. */ \
+    __asm { stc } __asm { clc } __asm { cld }  /* Signature. */ \
+    __asm { xor eax, eax }  /* DOS entry point is after this. */
+  ssize_t __dwlibc_dos_read(int fd, void *buf, size_t count);
+#  pragma aux __dwlibc_dos_read = \
+    "mov ah, 3fh"  "int 21h"  "jnc ok"  "sbb eax, eax"  "ok:" \
+    __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
+  ssize_t __dwlibc_dos_write(int fd, const void *buf, size_t count);
+#  pragma aux __dwlibc_dos_write = \
+    "xor eax, eax"  "jecxz ok"  "mov ah, 40h"  "int 21h" \
+    "jnc ok"  "sbb eax, eax"  "ok:"  \
+    __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
+  int __dwlibc_dos_isatty(int fd);
+#  pragma aux __dwlibc_dos_isatty = \
+     "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done"  \
+    "test dl, dl"  "jns done"  "inc eax"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __ebx __edx]
+  __declspec(noreturn) void __dwlibc_dos_exit(unsigned char exit_code);
+#  pragma aux __dwlibc_dos_exit = \
+    "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
+  static __inline __declspec(noreturn) void  exit(unsigned char exit_code) {
+    if (__dwlibc_is_dos) __dwlibc_dos_exit(exit_code);
+    ExitProcess(exit_code);
+  }
+  static __inline __declspec(noreturn) void _exit(unsigned char exit_code) {
+    if (__dwlibc_is_dos) __dwlibc_dos_exit(exit_code);
+    ExitProcess(exit_code);
+  }
+#else
+#  define __DWLIBC_DEFINE_IS_DOS
+#  define __DWLIBC_ASMB_EXIT \
+    __asm { movzx eax, al } __asm { push eax } __asm { call ExitProcess }
+#  define __DWLIBC_ASMB_START __asm { call GetCommandLineA }
+#  pragma aux  exit = "movzx eax, al"  "push eax" "call ExitProcess" \
+     __parm [__al] __modify __exact []
+#  pragma aux _exit = "movzx eax, al"  "push eax" "call ExitProcess" \
+     __parm [__al] __modify __exact []
+#endif
+
 __DWLIBCABI1 ssize_t read(int fd, void *buf, size_t count) {
   DWORD read_count;
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_read(fd, buf, count);
+#endif
   return ReadFile(__dwlibc_std_handles[fd], buf, count, &read_count, NULL) ?
       read_count : -1;
 }
@@ -325,6 +381,9 @@ __DWLIBCABI1 ssize_t read(int fd, void *buf, size_t count) {
 __DWLIBCABI1 ssize_t write(
     int fd, const void *buf, size_t count) {
   DWORD written_count;
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_write(fd, buf, count);
+#endif
   return WriteFile(__dwlibc_std_handles[fd], buf, count, &written_count, NULL)
       ? written_count : -1;
 }
@@ -333,16 +392,24 @@ __DWLIBCABI1 ssize_t write(
  * console).
  */
 __DWLIBCABI1 int isatty(int fd) {
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_isatty(fd);
+#endif
   return GetFileType(__dwlibc_std_handles[fd]) == FILE_TYPE_CHAR;
 }
 
-#pragma aux  exit = "movzx eax, al"  "push eax" "call ExitProcess" \
-     __parm [__al] __modify __exact []
-#pragma aux _exit = "movzx eax, al"  "push eax" "call ExitProcess" \
-     __parm [__al] __modify __exact []
-
 static __inline const char * __watcall __dwlibc_win32cmdline(
-    const char *cmdline) {
+    char *cmdline) {
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (cmdline) {
+    ++__dwlibc_is_dos;
+    cmdline += 0x80;  /* Skip first half of DOS PSP. */
+    cmdline[1 + *(unsigned char*)cmdline] = '\0';  /* Change CR to NUL. */
+    for (++cmdline; *cmdline == ' ' || *cmdline == '\t'; ++cmdline) {}
+    return cmdline;
+  }
+  cmdline = GetCommandLineA();
+#endif
   __dwlibc_std_handles[STDIN_FILENO ] = GetStdHandle(STD_INPUT_HANDLE );
   __dwlibc_std_handles[STDOUT_FILENO] = GetStdHandle(STD_OUTPUT_HANDLE);
   __dwlibc_std_handles[STDERR_FILENO] = GetStdHandle(STD_ERROR_HANDLE );
@@ -374,19 +441,16 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
  */
 #define main1(argspec1) \
     /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
-    __asm { cld }  /* Shouldn't be needed. */ \
-    __asm { call GetCommandLineA } \
-    __asm { call __dwlibc_win32cmdline } \
-    __asm { call main1 } \
-    __asm { movzx eax, al } __asm { push eax } __asm { call ExitProcess } } \
-    HANDLE __dwlibc_std_handles[3]; \
+    __DWLIBC_ASMB_START __asm { call __dwlibc_win32cmdline } \
+    __asm { call main1 } __DWLIBC_ASMB_EXIT } \
+    HANDLE __dwlibc_std_handles[3]; __DWLIBC_DEFINE_IS_DOS \
     int main1(argspec1)
 
 #endif  /* #ifdef __NT__ */
 
 /* --- DOS implementation. Mostly dark magic in OpenWatcom C. */
 
-#ifdef __DOS__
+#if defined(__DOS__) && !defined(__NT__)
 
 static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
   cmdline[1 + *(unsigned char*)cmdline] = '\0';  /* Change CR to NUL. */
@@ -411,7 +475,7 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
  */
 #define main1(argspec1) \
     /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
-    __asm { cld }  /* Shouldn't be needed. */ \
+    __asm { cld }  /* Not needed for regular PMODE/W. */ \
     __asm { sub eax, -80h }  /* EAX := DOS cmdline. */ \
     __asm { call __dwlibc_doscmdline } \
     __asm { call main1 } __asm { mov ah, 4ch } __asm { int 21h } } \
@@ -439,6 +503,6 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
     "test dl, dl"  "jns done"  "inc eax"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ebx __edx]
 
-#endif  /* #ifdef __DOS__ */
+#endif  /* #if defined(__DOS__) && !defined(__NT__) */
 
 #endif  /* #ifdef _DWLIBC_H */
