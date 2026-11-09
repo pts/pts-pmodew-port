@@ -238,7 +238,7 @@
 %endif
 
 %ifndef CONFIGTYPE  ; Can be specified on the command line.
-  %define CONFIGTYPE 0   ; Use ==1 if UNC==0 (default, for bytewise identical pmodew.exe), ==3 for UNC==1.
+  %define CONFIGTYPE 0   ; Use ==1 if UNC==0 (default, for bytewise identical pmodew.exe) or LOADSPE!=0, ==3 for UNC==1 and LOADSPE==0.
   ;%define CONFIGTYPE 1  ; When loading pmodew_config from beginning of the MZ .exe image, support 2 <= hdrsize <= 4. and the behavior is undefined if hdrsize is larger. It's for bytewise identical pmodew.exe. Most users should use ==2 or ==3 instead. Ignored if VARTYPE!=1 or LOADSPE>0.
   ;%define CONFIGTYPE 2  ; When loading pmodew_config from beginning of the MZ .exe image, support 2 <= hdrsize <= 30, and it fail cleanly for larger values. Ignored if VARTYPE!=1 or LOADSPE>0.
   ;%define CONFIGTYPE 3  ; When loading pmodew_config from beginning of the MZ .exe image, support 2 <= hdrsize <= 0xffff (unlimited), and  fail cleanly for larger values. Ignored if VARTYPE!=1 or LOADSPE>0.
@@ -247,14 +247,6 @@
 %else
   %assign CONFIGTYPE CONFIGTYPE  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
-%if CONFIGTYPE==0
-  %if UNC
-    %define CONFIGTYPE 3
-  %else
-    %define CONFIGTYPE 1  ; For bytewise identical pmodew.exe.
-  %endif
-%endif
-
 %ifndef SIZEOPT  ; Can be specified on the command line.
   %define SIZEOPT 0   ; Disable size optimizations. This is to reproduce a bitwise identical pmodewu.exe and pmodew.exe output.
   ;%define SIZEOPT 1  ; Enable  size optimizations to make pmodew.exe a few bytes (up to 10 bytes) shorter. It doesn't make it slower.
@@ -301,21 +293,22 @@
 %else
   %assign LOADSPE LOADSPE  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
+%if CONFIGTYPE==0
+  %if UNC==0 || LOADSPE
+    %define CONFIGTYPE 1  ; For bytewise identical pmodew.exe.
+  %else
+    %define CONFIGTYPE 3
+  %endif
+%endif
 ; The simple PE loader (with signature simPloEd) is not part of PMODE/W,
 ; it's an extension written by pts. It can load i386 PE .exe program
-; files, with the following restrictions:
+; files, with many limitations:
 ;
-; * The load-time configuration is loaded from file offset 20h.
-; * The PE header must start at file offset 40h. This is checked.
 ; * The PMODE/W stub with the simple PE loader is not able to load any other
 ;   file formats, i.e. LOADLE and LOADPMW1 must be 0. This is checked at
 ;   compile time.
-; * (The PMODE/W stub MZ .exe image must start at file offset 200h. This is
-;   checked.)
 ; * The data directory must have 16 entries, i.e. NumberOfRvaAndSizes must
 ;   be 16. This is checked.
-; * The PE section header must end at file offset 200h, i.e. SizeOfHeaders
-;   must be 200h. This is checked.
 ; * The number of PE sections must be between 1 and 5 inclusive, i.e.
 ;   NumberOfSections must be at least 1 and ant most 5. This is checked.
 ; * The simple PE loader allocates a static buffer of SizeOfStackCommit
@@ -324,9 +317,6 @@
 ; * The simple PE loader loads all PE sections to an arbitrary, page aligned
 ;   (linear address is a multiple of 1000h) memory location, not to
 ;   ImageBase.
-; * Before loading any section data, the simple PE loader loads the first
-;   0x200 bytes of the the .exe file to the memory location above. (This is
-;   compatible with how Win32 loads a PE .exe program file.)
 ; * The simple PE loader applies the PE relocations (in
 ;   IMAGE_DIRECTORY_ENTRY_BASERELOC) unless disabled with -DSPERELOC=0 at
 ;   compile time. The simple PE loader supports only the HIGHLOW and
@@ -347,7 +337,45 @@
 ;   -DSPECUSTOMENTRY=0, see below.
 ; * Minimum CPU requirement: 80386. Win32 and PMODE/W also need this.
 ;
-; Because of the restrictions above, the simple PE loader isn't suitable for
+; Limitations if CONFIGTYPE==2 (non-default, designed to be used as a DOS
+; stub embedded into the PE .exe file with OpenWatcom v2 `wlink format
+; windows nt option stub=pmodewd.exe'):
+;
+; * The load-time configuration is loaded from the beginning of the DOS MZ
+;   exe image, which is file offset 40h when created by wlink. The maximum
+;   allowed file offset ix 1eh (checked).
+; * The PE header can start at any file offset.
+; * The PE header must be at most 1c0h bytes long, i.e.
+; * MumberOfSections must be at most 5. This is checked.
+; * The simple PE loader treats the lowest bit of the PE header file offset
+;   (byte at file offset 3ch) as 0, even if that byte is odd. This is so
+;   that this bit can be intentionally set to 1 to prevent Win32 from
+;   loading an incompatible PE .exe. Please note that wlink always sets the
+;   bit to 0.
+; * Before loading any section data, the simple PE loader loads the first
+;   0x200 bytes of the the .exe file to the memory location above. Then it
+;   copies the 15h == 21 bytes of load-time configuration data to 20h == 32
+;   bytes after the memory location above. Then it loads the PE header (1c0h
+;   bytes, even if the PE header is shorter) to 40h == 64 bytes after the
+;   memory location above. Then it sets the lowest bit of byte offset 3ch
+;   after the memory location above (so that the program can detect that it
+;   is running on DOS rather than Win32). All this is different from how how
+;   Win32 loads the beginning of the PE .exe program file in front of the
+;   first section.
+;
+; Limitations if CONFIGTYPE!=2 (default):
+;
+; * The load-time configuration is loaded from file offset 20h.
+; * The PE header must start at file offset 40h. This is checked.
+; * (The PMODE/W stub MZ .exe image must start at file offset 200h. This is
+;   checked.)
+; * The PE section header must end at file offset 200h, i.e. SizeOfHeaders
+;   must be 200h. This is checked.
+; * Before loading any section data, the simple PE loader loads the first
+;   0x200 bytes of the the .exe file to the memory location above. (This is
+;   compatible with how Win32 loads a PE .exe program file.)
+;
+; Because of the limitations above, the simple PE loader isn't suitable for
 ; running existing Win32 programs on DOS. For that, use the HX DOS extender
 ; or WDOSX (after doing some conversion of the .exe file).
 ;
@@ -6206,6 +6234,7 @@ spefofs:
 .mzhdr.hdrsize: equ 8  ; dw.
 .pmodew_config: equ 20h  ; times 15h db.
 .pehdr_fofs_ptr: equ 3ch  ; dd.
+.pehdr: equ 40h
 .pehdr.Signature: equ 40h  ; dd.
 .pehdr.NumberOfSections: equ 46h  ; dw.
 .pehdr.AddressOfEntryPoint: equ 68h  ; dd RVA. Ignored iff SPECUSTOMENTRY.
@@ -6280,6 +6309,7 @@ _loadSPE:
 	push edi  ; Save.
 	rep a32 stosd  ; This zero-initializes BSS. Fill the entire image (including the stack (ECX dwords starting at ES:EDI) with NUL bytes. Also sets ECX := 0.
 .copy_hdr_to_base:
+	; !! TODO(pts): With CONFIGTYPE==2, load the entire header again (everything in front of the first section. not just 200h bytes), set the lowest bit at pefofs.pehdr_fofs_ptr to 1.
 	push gs
 	pop ds  ; DS := _selbuf == _dtabufptr containing the first 200h bytes of the .exe file.
 	xor esi, esi
@@ -9082,38 +9112,77 @@ _openexe2:
 	jc short .j_loaderror
 	cmp ax, cx
 	jne short .j_loaderror
+  %if CONFIGTYPE==2
+	mov di, spefofs.pmodew_config  ; 20h == 32.
+	cmp word  [di-spefofs.pmodew_config+spefofs.mzhdr.signature], 'MZ'
+	jne short .j_loaderror
+	push es  ; Save.
+	mov si, [di-spefofs.pmodew_config+spefofs.mzhdr.hdrsize]
+	cmp si, (200h-pmodew_config._size)>>4
+	ja short .j_loaderror
+	shl si, 4
+	push ds
+	pop es  ; ES := DS, for rep movsb below.
+	mov cx, pmodew_config._size  ; 15h == 21.
+	rep movsb
 	mov si, spefofs.pmodew_config  ; Used by the `rep movsb' below.
-%if LOADSPE==2  ; Omit the check below to mae pmodewu.exe and pmodew.exe shorter.
-%else
+	mov dx, [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr+0]
+	mov cx, [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr+2]  ; CX:DX == file offset of PE header.
+	and dl, ~1  ; Ignore the lowest bit (SPEDOSONLY) of the file offset of PE header.
+	mov ax, 4200h  ; Move file pointer using handle. whence (AL) := SEEK_SET (== 0).
+	int 21h
+	jc short .j_loaderror
+	mov dx, spefofs.pehdr
+	mov cx, 200h-spefofs.pehdr
+	mov ah, 3fh  ; Read from file using handle.
+	int 21h
+	jc short .j_loaderror
+	cmp ax, cx
+	jne short .j_loaderror
+  %elif CONFIGTYPE==1
+	mov si, spefofs.pmodew_config  ; Used by the `rep movsb' below.
+  %else
+    %error BAD_LOADSPE_CONFIGTYPE CONFIGTYPE
+  %endif
+  %if LOADSPE==2  ; Omit the check below to make pmodewu.exe and pmodew.exe shorter.
+  %else
+    %if CONFIGTYPE==2
+	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.Signature], 'PE'
+	jne short .j_loaderror
+	or byte [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 1
+    %else
 	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.signature], 'MZ'
 	jne short .j_loaderror
 	cmp word  [si-spefofs.pmodew_config+spefofs.mzhdr.hdrsize], (160h+0fh)>>4  ; IMAGE_SECTION_HEADER_1 == exe_header+160h.
 	jb short .j_loaderror
-%if SPEDOSONLY==2
+      %if SPEDOSONLY==2
 	or byte [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 1
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 41h
 	jne short .j_loaderror
-%else
-%if SPEDOSONLY
+      %else
+        %if SPEDOSONLY
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 41h
-%else
+        %else
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 40h
-%endif
+        %endif
 	jne short .j_loaderror
 	or byte [si-spefofs.pmodew_config+spefofs.pehdr_fofs_ptr], 1
-%endif
+      %endif
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.Signature], 'PE'
 	jne short .j_loaderror
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.SizeOfHeaders], 200h
 	jne short .j_loaderror
+    %endif
 	cmp dword [si-spefofs.pmodew_config+spefofs.pehdr.NumberOfRvaAndSizes], 16
 	jne short .j_loaderror
 	mov cx,   [si-spefofs.pmodew_config+spefofs.pehdr.NumberOfSections]  ; dw.
 	jcxz .j_loaderror
 	cmp cx, 5
 	ja short .j_loaderror
-%endif
-	push es
+  %endif  ; %else LOADSPE==2
+  %if CONFIGTYPE!=2
+	push es  ; Save.
+  %endif
 %elif CONFIGTYPE==3
 	mov cx, 200h  ; Must be at least 3ch, _loadexe uses dword [3ch] for the LE/PMW1 offset. Must be at most DTABUFSIZE == 200h.
 	mov ds, [-pmodewe+_int21lowdtaseg]
