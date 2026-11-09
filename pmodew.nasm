@@ -6197,7 +6197,7 @@ _nomeminit1:
 	push ss
 	pop ds                          ; DS = 32bit data selector
 %if 0  ; For debugging.
-	jmp _16biterror
+	jmp _descriptorerr
 %endif
 %if 0  ; For debugging.
 	mov ah, 40h  ; Write to file.
