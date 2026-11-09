@@ -86,6 +86,9 @@
 #ifdef __MINILIBC686__
 #  error Unexpected libc minilibc686 __MINILIBC686__.
 #endif
+#ifdef __DOSMC__
+#  error Unexpected libc dosmc __DOSMC__.
+#endif
 /* According to https://catfox.life/2022/04/16/the-musl-preprocessor-debate/
  * , musl libc doesn't define a preprocessor macro to identify it.
  */
