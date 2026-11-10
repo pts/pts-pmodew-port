@@ -1213,6 +1213,64 @@ static __inline int ftruncate(int fd, off_t size) {
 
 #if defined(__LINUX__) && !defined(__DOS__) && !defined(__NT__)
 
+#ifdef _LIBC_USE_MAIN1
+/* Returns the number of bytes needed by append_arg_quoted(arg).
+ * Based on
+ * https://learn.microsoft.com/en-us/archive/blogs/twistylittlepassagesallalike/everyone-quotes-command-line-arguments-the-wrong-way
+ */
+static __inline size_t __watcall __dwlibc_get_arg_quoted_size(
+    const char *arg) {
+  const char *p;
+  size_t size = 1;  /* It starts with space even if it's the first argument. */
+  size_t bsc;  /* Backslash count. */
+  for (p = arg; *p != '\0' && *p != ' ' && *p != '\t' && *p != '\n' &&
+                *p != '\v' && *p != '"'; ++p) {}
+  if (p != arg && *p == '\0') return size + (p - arg);  /* No need to quote. */
+  size += 2;  /* Two '"' quotes, one on each side. */
+  for (p = arg; ; ++p) {
+    for (bsc = 0; *p == '\\'; ++p, ++bsc) {}
+    if (*p == '\0') {
+      size += bsc << 1;
+      break;
+    }
+    if (*p == '"') bsc = (bsc << 1) + 1;
+    size += bsc + 1;
+  }
+  return size;
+}
+
+/* Appends the quoted (escaped) arg to pout, always starting with a space,
+ * and returns the new pout. Implements the inverse of parts of
+ * CommandLineToArgvW(...). Implementation corresponds to
+ * get_arg_quoted_size(arg). Based on
+ * https://learn.microsoft.com/en-us/archive/blogs/twistylittlepassagesallalike/everyone-quotes-command-line-arguments-the-wrong-way
+ */
+static __inline char * __watcall __dwlibc_append_arg_quoted(
+    char *pout, const char *arg) {
+  const char *p;
+  size_t bsc;  /* Backslash count. */
+  *pout++ = ' ';  /* It starts with space even if it's the first argument. */
+  for (p = arg; *p != '\0' && *p != ' ' && *p != '\t' && *p != '\n' &&
+                *p != '\v' && *p != '"'; ++p) {}
+  if (p != arg && *p == '\0') {  /* No need to quote. */
+    for (p = arg; *p != '\0'; *pout++ = *p++) {}
+    return pout;
+  }
+  *pout++ = '"';
+  for (p = arg; ; *pout++ = *p++) {
+    for (bsc = 0; *p == '\\'; ++p, ++bsc) {}
+    if (*p == '\0') {
+      for (bsc <<= 1; bsc != 0; --bsc, *pout++ = '\\') {}
+      break;
+    }
+    if (*p == '"') bsc = (bsc << 1) + 1;
+    for (; bsc != 0; --bsc, *pout++ = '\\') {}
+  }
+  *pout++ = '"';
+  return pout;
+}
+#endif /* #ifdef _LIBC_USE_MAIN1 */
+
 /* Actually, this defines the _dwlibcstart_ function. We do it using a macro
  * so that _dwlibcstart_ is only defined where the C source file defines
  * `int main1(const char *cmdline) { ... }'. The benefit is that the program
@@ -1243,8 +1301,35 @@ static __inline int ftruncate(int fd, off_t size) {
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       /*__asm { cld }*/  /* Not needed for Linux. */ \
       __asm { pop eax }  /* EAX := argc. */ \
-      __asm { mov edx, esp }  /* EDX := argv. */ \
-      __asm { call __dwlibc_linuxcmdline }  /* !! Implement it. */  \
+      __asm { test eax, eax } __asm { mov eax, esp }  /* EAX := argv. */\
+      __asm { db 74h, 3 }  /* jz short argv_ok */ \
+      __asm { add eax, 4 }  /* Skip argv[0]. */ \
+      /* Start of __dwlibc_quote_and_join_argv. */ \
+      __asm { arg_ok: mov esi, eax }  /* ESI := argv. */ \
+      __asm { xchg ecx, eax }  /* ECX := argv; EAX := junk. */ \
+      __asm { mov edx, 1+1+3 } \
+      __asm { measure_loop: lodsd } \
+      __asm { test eax, eax } \
+      __asm { db 74h, 9 }  /* jz short after_measure_loop */ \
+      __asm { call __dwlibc_get_arg_quoted_size } \
+      __asm { add edx, eax } \
+      __asm { db 0ebh, -14 }  /* jmp short measure_loop */ \
+      __asm { after_measure_loop: and edx, -4 }  /* Up dword, +3 above. */ \
+      __asm { sub esp, edx }  /* alloca() on the stack. */ \
+      __asm { mov eax, esp }  /* EAX := allocated cmdline. */ \
+      __asm { join_loop: mov edx, [ecx] } \
+      __asm { test edx, edx } \
+      __asm { db 74h, 10 }  /* jz short after_join_loop */ \
+      __asm { add ecx, 4 } \
+      __asm { call __dwlibc_append_arg_quoted } \
+      __asm { db 0ebh, -16 }  /* jmp short join_loop */ \
+      __asm { after_join_loop: cmp eax, esp } \
+      __asm { mov [eax], dl }  /* DL == 0. Trailing NUL. */ \
+      __asm { db 74h, 3 }  /* je short cmdline_ok */ \
+      __asm { mov eax, esp }  /* Restore return value: cmdline. */ \
+      __asm { inc eax }  /* Skip first space. */  \
+      __asm { cmdline_ok: } \
+      /* End of __dwlibc_quote_and_join_argv. */ \
       __asm { call main1 } \
       __asm { movzx ebx, al } __asm { xor eax, eax } __asm { inc eax } \
       __asm { int 80h } } \
