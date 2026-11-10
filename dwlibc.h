@@ -118,13 +118,16 @@ typedef unsigned long long uint64_t;
 
 typedef long off_t;
 
+/* Some well-known exit code arguments of _exit(...) and exit(...). */
 #define EXIT_SUCCESS 0
 #define EXIT_FAILURE 1
 
+/* Standard file descriptors (fd arguments). */
 #define STDIN_FILENO  0
 #define STDOUT_FILENO 1
 #define STDERR_FILENO 2
 
+/* whence arguments of lseek(...). */
 #define SEEK_SET 0
 #define SEEK_CUR 1
 #define SEEK_END 2
@@ -192,6 +195,14 @@ __DWLIBCABI1 ssize_t write(int fd, const void *buf, size_t count);
  * console).
  */
 __DWLIBCABI1 int isatty(int fd);
+
+/* If you seek beyond the end of the file, and you write something, the
+ * bytes in-between will be undefined (verified on MS-DOS 6.22 and Windows
+ * 95), because DOS and Windows 95--98--ME don't zero-initialize those bytes
+ * on disk. Windows NT and Unix-like systems do. but at this layer of
+ * abstraction this can't be guaranteed.
+  */
+__DWLIBCABI1 off_t lseek(int fd, off_t offset, int whence);
 
 __DWLIBCABI3 __declspec(noreturn) void  exit(unsigned char exit_code);
 __DWLIBCABI3 __declspec(noreturn) void _exit(unsigned char exit_code);
@@ -500,6 +511,11 @@ extern HANDLE __dwlibc_std_handles[3];
      "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done" \
     "test dl, dl"  "jns done"  "inc eax"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ebx __edx]
+  off_t __dwlibc_dos_lseek(int fd, off_t offset, int whence);
+#  pragma aux __dwlibc_dos_lseek = "mov ah, 42h"  "mov ecx, edx" \
+    "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
+    "mov dx, ax"  "mov ecx, edx"  "done: xchg eax, ecx" __value [__eax] \
+    __parm [__ebx] [__edx] [__eax] __modify __exact [__eax __ecx __edx]
   __declspec(noreturn) void __dwlibc_dos_exit(unsigned char exit_code);
 #  pragma aux __dwlibc_dos_exit = \
     "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
@@ -556,7 +572,7 @@ static __inline int close(int fd) {
       -1 : 0;
 }
 
-__DWLIBCABI1 ssize_t read(int fd, void *buf, size_t count) {
+static __inline ssize_t read(int fd, void *buf, size_t count) {
   DWORD read_count;
 #ifdef __DOS__  /* While still #ifdef __NT__. */
   if (__dwlibc_is_dos) return __dwlibc_dos_read(fd, buf, count);
@@ -566,7 +582,7 @@ __DWLIBCABI1 ssize_t read(int fd, void *buf, size_t count) {
       read_count : -1;
 }
 
-__DWLIBCABI1 ssize_t write(
+static __inline ssize_t write(
     int fd, const void *buf, size_t count) {
   DWORD written_count;
 #ifdef __DOS__  /* While still #ifdef __NT__. */
@@ -580,12 +596,21 @@ __DWLIBCABI1 ssize_t write(
 /* Returns bool indicating whether fd is a terminal (interactive text
  * console).
  */
-__DWLIBCABI1 int isatty(int fd) {
+static __inline int isatty(int fd) {
 #ifdef __DOS__  /* While still #ifdef __NT__. */
   if (__dwlibc_is_dos) return __dwlibc_dos_isatty(fd);
 #endif
   fd = (unsigned)fd < 3 ? (int)__dwlibc_std_handles[fd] : (unsigned)fd - 3;
   return GetFileType((HANDLE)fd) == FILE_TYPE_CHAR;
+}
+
+static __inline off_t lseek(int fd, off_t offset, int whence) {
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_lseek(fd, offset, whence);
+#endif
+  fd = (unsigned)fd < 3 ? (int)__dwlibc_std_handles[fd] : (unsigned)fd - 3;
+  /* SetFilePointer(...) returns (DWORD)-1 on error. Good. */
+  return (off_t)SetFilePointer((HANDLE)fd, offset, NULL, whence);
 }
 
 static __inline const char * __watcall __dwlibc_win32cmdline(
@@ -703,6 +728,11 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
 #pragma aux isatty = "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done" \
     "test dl, dl"  "jns done"  "inc eax"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ebx __edx]
+
+#pragma aux lseek = "mov ah, 42h"  "mov ecx, edx" \
+    "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
+    "mov dx, ax"  "mov ecx, edx"  "done: xchg eax, ecx" __value [__eax] \
+    __parm [__ebx] [__edx] [__eax] __modify __exact [__eax __ecx __edx]
 
 #endif  /* #if defined(__DOS__) && !defined(__NT__) */
 
