@@ -160,7 +160,10 @@ typedef long off_t;
 #  define O_APPEND ...  /* Value portable. */
 #endif
 
-/* --- Helper macros for function declarations. */
+#undef offsetof
+#define offsetof(type,member) ((size_t) &((type*)0)->member)
+
+/* --- Internal helper macros for function declarations. */
 
 #ifdef __NT__
 #  define __DWLIBCABI1 static __inline
