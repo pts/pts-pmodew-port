@@ -528,7 +528,7 @@ extern unsigned char *__dwlibc_alloc_end;
 
 /* --- Command-line argument parser. */
 
-#ifdef _LIBC_USE_MAIN
+#if defined(_LIBC_USE_MAIN) && (defined(__DOS__) || defined(__NT__))
 /* Parses the first argument of the Windows command-line (specified in EAX)
  * in place. Returns (in EAX) the pointer to the rest of the command-line.
  * The parsed argument will be available as NUL-terminated string at the
@@ -601,8 +601,9 @@ static __inline char * __watcall __dwlibc_parse_first_arg(char *pw) {
     }
   }
 }
-/* Actually, it takes the char *cmdline in EAX, and returns int argc in EAX
- * and char **argv in EDX. Actually it ruins all other registers.
+
+/* It takes the char *cmdline in EAX and the char *argv0 in EDX, and returns
+ * int argc in EAX and char **argv in EDX. It ruins EBX and ECX.
  *
  * It pushes the char *arg pointers to the stack,
  * and it will kep them there until it returns. It also modifies the cmdline
@@ -610,55 +611,40 @@ static __inline char * __watcall __dwlibc_parse_first_arg(char *pw) {
  *
  * !! TODO(pts): Apply some limit so that it doesn't overflow the stack.
  */
-void __dwlibc_cmdline_to_argv_low(char *cmdline, char *argv0);
-#pragma aux __dwlibc_cmdline_to_argv_low = \
-    "pop ebp"  /* EBP := return address. */ \
-    "push 0"  /* NULL marks end of argv array. */ \
-    "push edx"  /* Save EDX as argv[0]. */  \
-    "xor ecx, ecx" \
-    "inc ecx"  /* ECX := 1 (current argc). */ \
-    "argv_next:" \
-    "mov edx, eax"  /* Save EAX (remaining command line). */ \
-    "call __dwlibc_parse_first_arg"  /* !!! Don't include it. */ \
-    "cmp eax, edx" \
-    "je argv_end"  /* No more arguments in argv. */ \
-    "inc ecx"  /* argc += 1. */ \
-    "push edx"  /* Push argv[i]. */ \
-    "jmp argv_next" \
-    "argv_end:" \
-    "mov eax, esp" \
-    "push ecx"  /* Save argc. */ \
-    "reverse_ptrs:"  /* Reverse NULL-terminated char** list at EAX. */ \
-    /* "push edx"  ; No need to save. */ \
-    "lea edx, [eax-4]" \
-    "next1:" \
-    "add edx, 4" \
-    "cmp dword ptr [edx], 0" \
-    "jne short next1" \
-    "cmp edx, eax" \
-    "je short nothing" \
-    "sub edx, 4" \
-    "jmp short cmp2" \
-    "next2:" \
-    "mov ecx, [eax]" \
-    "xchg ecx, [edx]" \
-    "mov [eax], ecx" \
-    "add eax, 4" \
-    "sub edx, 4" \
-    "cmp2:" \
-    "cmp eax, edx" \
-    "jb short next2" \
-    "nothing:" \
-    /* "pop edx"  ; No need to restore. */ \
-    "reverse_ptrs_done:" \
-    "pop eax"  /* Restore EAX := argc. */ \
-    "mov edx, esp"  /* EDX := argv. */ \
-    "push ebp"  /* Save return addres (EBP) for subsequent ret. */ \
-    __parm [__eax] [__edx] __modify __exact []
-static __inline void __watcall __dwlibc_cmdline_to_argv(
-    char *cmdline, char *argv0) {
-  __dwlibc_cmdline_to_argv_low(cmdline, argv0);
-}
+#define __DWLIBC_ASMB_CMDLINE_TO_ARGV \
+    __asm { push 0 }  /* NULL marks end of argv array. */ \
+    __asm { push edx }  /* Save EDX as argv[0]. */  \
+    __asm { xor ecx, ecx } \
+    __asm { inc ecx }  /* ECX := 1 (current argc). */ \
+    __asm { argv_next: } \
+    __asm { mov edx, eax }  /* Save EAX (remaining command line). */ \
+    __asm { call __dwlibc_parse_first_arg } \
+    __asm { cmp eax, edx } \
+    __asm { db 74h, 4 }  /* je argv_end */  /* No more arguments in argv. */ \
+    __asm { inc ecx }  /* argc += 1. */ \
+    __asm { push edx }  /* Push argv[i]. */ \
+    __asm { db 0ebh, -15 }  /* jmp argv_next */ \
+    __asm { argv_end: mov eax, esp } \
+    __asm { push ecx }  /* Save argc. */ \
+    __asm { reverse_ptrs: }  /* Reverse NULL-terminated char** list at EAX. */ \
+    __asm { lea edx, [eax-4] } \
+    __asm { next1: add edx, 4 } \
+    __asm { cmp dword ptr [edx], 0 } \
+    __asm { db 075h, -8 }  /* jne short next1 */ \
+    __asm { cmp edx, eax } \
+    __asm { db 074h, 21 }  /* je short nothing */ \
+    __asm { sub edx, 4 } \
+    __asm { db 0ebh, 12 }  /* jmp short cmp2 */ \
+    __asm { next2: mov ecx, [eax] } \
+    __asm { xchg ecx, [edx] } \
+    __asm { mov [eax], ecx } \
+    __asm { add eax, 4 } \
+    __asm { sub edx, 4 } \
+    __asm { cmp2: cmp eax, edx } \
+    __asm { db 72h, -16 }  /* jb short next2 */ \
+    __asm { nothing: } \
+    __asm { reverse_ptrs_done: pop eax }  /* Restore EAX := argc. */ \
+    __asm { mov edx, esp }  /* EDX := argv. */
 #ifdef __DOS__
 #  define __DWLIBC_ASMS_DOS_GETARGV0 0x20  /* Size of the code below. */
 #  define __DWLIBC_ASMB_DOS_GETARGV0 \
@@ -674,7 +660,7 @@ static __inline void __watcall __dwlibc_cmdline_to_argv(
       __asm { lea edx, [edi+2] }  /* EDX := fully qualified argv[0]. */ \
       __asm { pop eax }
 #endif  /* #ifdef __DOS__ */
-#endif  /* #ifdef _LIBC_USE_MAIN */
+#endif  /* #if defined(_LIBC_USE_MAIN) && (defined(__DOS__) || defined(__NT__)) */
 
 /* --- Win32 implementation. Mostly dark magic in OpenWatcom C and inline
  * assembly.
@@ -1070,7 +1056,7 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
       __DWLIBC_ASMB_START __asm { mov edx, offset __dwlibc_module_fn } \
       __DWLIBC_ASMB_WIN32_GETARGV0 \
       __asm { argv0_ok: call __dwlibc_win32cmdline } \
-      __asm { call __dwlibc_cmdline_to_argv }  /* Takes EAX, EDX. */ \
+      __DWLIBC_ASMB_CMDLINE_TO_ARGV  /* Takes EAX, EDX. */ \
       __asm { call main } __DWLIBC_ASMB_EXIT } \
       HANDLE __dwlibc_std_handles[3]; __DWLIBC_DEFINE_IS_DOS \
       size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
@@ -1126,7 +1112,7 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
       __DWLIBC_ASMB_DOS_GETARGV0  /* EDX := argv[0]. */ \
       __asm { sub eax, -80h }  /* EAX := DOS cmdline. */ \
       __asm { call __dwlibc_doscmdline } \
-      __asm { call __dwlibc_cmdline_to_argv }  /* Takes EAX, EDX. */ \
+      __DWLIBC_ASMB_CMDLINE_TO_ARGV  /* Takes EAX, EDX. */ \
       __asm { call main } __asm { mov ah, 4ch } __asm { int 21h } } \
       size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
       unsigned char *__dwlibc_alloc_end; \
