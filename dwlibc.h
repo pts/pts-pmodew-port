@@ -392,6 +392,156 @@ int toupper(int c);
 extern size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize;
 extern unsigned char *__dwlibc_alloc_end;
 
+/* --- Command-line argument parser. */
+
+#ifdef _LIBC_USE_MAIN
+/* Parses the first argument of the Windows command-line (specified in EAX)
+ * in place. Returns (in EAX) the pointer to the rest of the command-line.
+ * The parsed argument will be available as NUL-terminated string at the
+ * same location as the input.
+ *
+ * Similar to CommandLineToArgvW(...) in SHELL32.DLL, but doesn't aim for
+ * 100% accuracy, especially that it doesn't support non-ASCII characters
+ * beyond ANSI well, and that other implementations are also buggy (in
+ * different ways).
+ *
+ * It treats only space and tab and a few others as whitespece. (The Wine
+ * version of CommandLineToArgvA.c treats only space and tab as whitespace).
+ *
+ * This is based on the incorrect and incomplete description in:
+ * https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-commandlinetoargvw
+ *
+ * See https://nullprogram.com/blog/2022/02/18/ for a more detailed writeup
+ * and a better installation.
+ *
+ * https://github.com/futurist/CommandLineToArgvA/blob/master/CommandLineToArgvA.c
+ * has the 3*n rule, which Wine 1.6.2 doesn't seem to have. It also has special
+ * parsing rules for argv[0] (the program name).
+ *
+ * There is the CommandLineToArgvW function in SHELL32.DLL available since
+ * Windows NT 3.5 (not in Windows NT 3.1). For alternative implementations,
+ * see:
+ *
+ * * https://github.com/futurist/CommandLineToArgvA
+ *   (including a copy from Wine sources).
+ * * http://alter.org.ua/en/docs/win/args/
+ * * http://alter.org.ua/en/docs/win/args_port/
+ */
+static __inline char * __watcall __dwlibc_parse_first_arg(char *pw) {
+  const char *p;
+  const char *q;
+  char c;
+  char is_quote = 0;
+  for (p = pw; c = *p, c == ' ' || c == '\t' || c == '\n' || c == '\v'; ++p) {}
+  if (*p == '\0') { *pw = '\0'; return pw; }
+  for (;;) {
+    if ((c = *p) == '\0') goto after_arg;
+    ++p;
+    if (c == '\\') {
+      for (q = p; c = *q, c == '\\'; ++q) {}
+      if (c == '"') {
+        for (; p < q; p += 2) {
+          *pw++ = '\\';
+        }
+        if (p != q) {
+          is_quote ^= 1;
+        } else {
+          *pw++ = '"';
+          ++p;  /* Skip over the '"'. */
+        }
+      } else {
+        *pw++ = '\\';
+        for (; p != q; ++p) {
+          *pw++ = '\\';
+        }
+      }
+    } else if (c == '"') {
+      is_quote ^= 1;
+    } else if (!is_quote && (c == ' ' || c == '\t' || c == '\n' || c == '\v')) {
+      if (p - 1 != pw) --p;  /* Don't clobber the rest with '\0' below. */
+     after_arg:
+      *pw = '\0';
+      return (char*)p;
+    } else {
+      *pw++ = c;  /* Overwrite in-place. */
+    }
+  }
+}
+/* Actually, it takes the char *cmdline in EAX, and returns int argc in EAX
+ * and char **argv in EDX. Actually it ruins all other registers.
+ *
+ * It pushes the char *arg pointers to the stack,
+ * and it will kep them there until it returns. It also modifies the cmdline
+ * string in place, replacing some whitespace characters with NULs.
+ *
+ * !! TODO(pts): Apply some limit so that it doesn't overflow the stack.
+ */
+void __dwlibc_cmdline_to_argv_low(char *cmdline, char *argv0);
+#pragma aux __dwlibc_cmdline_to_argv_low = \
+    "pop ebp"  /* EBP := return address. */ \
+    "push 0"  /* NULL marks end of argv array. */ \
+    "push edx"  /* Save EDX as argv[0]. */  \
+    "xor ecx, ecx" \
+    "inc ecx"  /* ECX := 1 (current argc). */ \
+    "argv_next:" \
+    "mov edx, eax"  /* Save EAX (remaining command line). */ \
+    "call __dwlibc_parse_first_arg" \
+    "cmp eax, edx" \
+    "je argv_end"  /* No more arguments in argv. */ \
+    "inc ecx"  /* argc += 1. */ \
+    "push edx"  /* Push argv[i]. */ \
+    "jmp argv_next" \
+    "argv_end:" \
+    "mov eax, esp" \
+    "push ecx"  /* Save argc. */ \
+    "reverse_ptrs:"  /* Reverse NULL-terminated char** list at EAX. */ \
+    /* "push edx"  ; No need to save. */ \
+    "lea edx, [eax-4]" \
+    "next1:" \
+    "add edx, 4" \
+    "cmp dword ptr [edx], 0" \
+    "jne short next1" \
+    "cmp edx, eax" \
+    "je short nothing" \
+    "sub edx, 4" \
+    "jmp short cmp2" \
+    "next2:" \
+    "mov ecx, [eax]" \
+    "xchg ecx, [edx]" \
+    "mov [eax], ecx" \
+    "add eax, 4" \
+    "sub edx, 4" \
+    "cmp2:" \
+    "cmp eax, edx" \
+    "jb short next2" \
+    "nothing:" \
+    /* "pop edx"  ; No need to restore. */ \
+    "reverse_ptrs_done:" \
+    "pop eax"  /* Restore EAX := argc. */ \
+    "mov edx, esp"  /* EDX := argv. */ \
+    "push ebp"  /* Save return addres (EBP) for subsequent ret. */ \
+    __parm [__eax] [__edx] __modify __exact []
+static __inline void __watcall __dwlibc_cmdline_to_argv(
+    char *cmdline, char *argv0) {
+  __dwlibc_cmdline_to_argv_low(cmdline, argv0);
+}
+#ifdef __DOS__
+#  define __DWLIBC_ASMS_DOS_GETARGV0 0x20  /* Size of the code below. */
+#  define __DWLIBC_ASMB_DOS_GETARGV0 \
+      __asm { mov ebx, [eax+2ch] }  /* BX := environment selector. */ \
+      __asm { push eax } __asm { mov ax, 6 }__asm { int 31h } \
+      __asm { shl ecx, 16 } __asm { movzx edi, dx } \
+      __asm { add edi, ecx }  /* EDI := first env var (NAME=value). */ \
+      __asm { or ecx, -1 }  /* Unlimited `repne scasb' below. */ \
+      __asm { mov al, 0 } \
+      __asm { skip_env_vars_loop: repne scasb }  /* Skip single env var. */ \
+      __asm { scasb } \
+      __asm { db 75h, -5 }  /* jne short skip_env_vars_loop */ \
+      __asm { lea edx, [edi+2] }  /* EDX := fully qualified argv[0]. */ \
+      __asm { pop eax }
+#endif  /* #ifdef __DOS__ */
+#endif  /* #ifdef _LIBC_USE_MAIN */
+
 /* --- Win32 implementation. */
 
 #ifdef __NT__
@@ -437,6 +587,7 @@ typedef long		LONG;
 typedef SHORT		*PSHORT;
 typedef LONG		*PLONG;
 typedef void		*HANDLE;
+typedef HANDLE          HMODULE;
 typedef HANDLE		*PHANDLE;
 typedef BYTE		FCHAR;
 typedef WORD		FSHORT;
@@ -480,6 +631,8 @@ __DWLIBCABI2 HANDLE __stdcall CreateFileA(
     LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
     LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition,
     DWORD dwFlagsAndAttributes, HANDLE hTemplateFile);
+__DWLIBCABI2 DWORD __stdcall GetModuleFileNameA(
+    HMODULE hModule, LPSTR lpFilename, DWORD nSize);
 
 /* nStdHandle for GetStdHandle(...): */
 #define STD_INPUT_HANDLE    ((DWORD)-10)
@@ -671,6 +824,10 @@ static __inline int unlink(const char *pathname) {
   return DeleteFileA(pathname) ? 0 : - 1;
 }
 
+#ifdef _LIBC_USE_MAIN
+  extern char __dwlibc_module_fn[0x110];
+#endif
+
 static __inline const char * __watcall __dwlibc_win32cmdline(
     char *cmdline) {
 #ifdef __DOS__  /* While still #ifdef __NT__. */
@@ -682,6 +839,9 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
     return cmdline;
   }
   cmdline = GetCommandLineA();
+#endif
+#ifdef _LIBC_USE_MAIN
+  GetModuleFileNameA(NULL, __dwlibc_module_fn, sizeof(__dwlibc_module_fn));
 #endif
   __dwlibc_std_handles[STDIN_FILENO ] = GetStdHandle(STD_INPUT_HANDLE );
   __dwlibc_std_handles[STDOUT_FILENO] = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -713,15 +873,25 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
  * main1(...) as the exit code. BSS is already zero-initialized.
  */
 #ifdef _LIBC_USE_MAIN
+#  ifdef __DOS__  /* While still #ifdef __NT__. */
+#    define __DWLIBC_ASMB_WIN32_GETARGV0 \
+        __asm { test eax, eax } \
+        __asm { db 74h, __DWLIBC_ASMS_DOS_GETARGV0 }  /* Skip next line. */ \
+        __DWLIBC_ASMB_DOS_GETARGV0  /* EDX := argv0 on DOS. */
+#  else
+#    define __DWLIBC_ASMB_WIN32_GETARGV0
+#  endif
 #  define main(argspec1, argspec2) \
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
-      __DWLIBC_ASMB_START __asm { call __dwlibc_win32cmdline } \
-      __asm { push 0 } __asm { push eax } __asm { push eax } \
-      __asm { mov eax, 2 } __asm { mov edx, esp }  /* !!! */ \
+      __DWLIBC_ASMB_START __asm { mov edx, offset __dwlibc_module_fn } \
+      __DWLIBC_ASMB_WIN32_GETARGV0 \
+      __asm { argv0_ok: call __dwlibc_win32cmdline } \
+      __asm { call __dwlibc_cmdline_to_argv }  /* Takes EAX, EDX. */ \
       __asm { call main } __DWLIBC_ASMB_EXIT } \
       HANDLE __dwlibc_std_handles[3]; __DWLIBC_DEFINE_IS_DOS \
       size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
       unsigned char *__dwlibc_alloc_end; \
+      char __dwlibc_module_fn[0x110]; \
       void *cstart_; int _argc;  /* Pacify wlink. */ \
       int main(argspec1, argspec2)
 #else
@@ -766,10 +936,10 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
 #  define main(argspec1, argspec2) \
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       __asm { cld }  /* Not needed for regular PMODE/W. */ \
+      __DWLIBC_ASMB_DOS_GETARGV0  /* EDX := argv[0]. */ \
       __asm { sub eax, -80h }  /* EAX := DOS cmdline. */ \
       __asm { call __dwlibc_doscmdline } \
-      __asm { push 0 } __asm { push eax } __asm { push eax } \
-      __asm { mov eax, 2 } __asm { mov edx, esp }  /* !!! */ \
+      __asm { call __dwlibc_cmdline_to_argv }  /* Takes EAX, EDX. */ \
       __asm { call main } __asm { mov ah, 4ch } __asm { int 21h } } \
       size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
       unsigned char *__dwlibc_alloc_end; \

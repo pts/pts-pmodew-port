@@ -4,6 +4,7 @@ import '_DeleteFileA@4' 'kernel32.dll'.DeleteFileA
 import '_ExitProcess@4' 'kernel32.dll'.ExitProcess
 import '_GetCommandLineA@0' 'kernel32.dll'.GetCommandLineA
 import '_GetFileType@4' 'kernel32.dll'.GetFileType
+import '_GetModuleFileNameA@12' 'kernel32.dll'.GetModuleFileNameA
 import '_GetStdHandle@4' 'kernel32.dll'.GetStdHandle
 import '_ReadFile@20' 'kernel32.dll'.ReadFile
 import '_SetFilePointer@16' 'kernel32.dll'.SetFilePointer
