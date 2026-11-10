@@ -205,7 +205,8 @@ typedef long off_t;
 #ifdef _LIBC_USE_MAIN  /* Can be defined by the user. */
   int __watcall main(int argc, char **argv);
 #else
-  /* The entire command-line is passed without leading whitespace. The
+  /* The entire command line is passed without leading whitespace (space or
+   * TAB == '\t') and without the program command name (argv[0]). The
    * program has to split it to individual arguments. The program has to
    * implement it instead of main(...).
    */
@@ -353,12 +354,13 @@ static __inline void qsort(
 
 /* --- Register usage of main and main1. */
 
+/* It must not modify `ebp', otherwise the OpenWatcom C compiler omits the
+ * `pop ebp' between the `mov esp, ebp' and the `ret'.
+ */
 #ifdef _LIBC_USE_MAIN
 #  pragma aux main  __modify [__eax __ebx __ecx __edx __esi __edi]
-#else
-  /* It must not modify `ebp', otherwise the OpenWatcom C compiler omits the
-   * `pop ebp' between the `mov esp, ebp' and the `ret'.
-   */
+#endif
+#ifdef _LIBC_USE_MAIN1
 #  pragma aux main1 __modify [__eax __ebx __ecx __edx __esi __edi]
 #endif
 
@@ -380,7 +382,8 @@ static __inline void qsort(
 #  define main0_exit0() return EXIT_SUCCESS
 #  define main0_exit(exit_code) return (exit_code)
 #  define main0_is_progarg_null(arg) ((arg) == NULL)
-#else
+#endif
+#ifdef _LIBC_USE_MAIN1
 #  define main0() int main1(const char *__main0_cmdline)
 #  define main0_argv1() __main0_cmdline
 #  define main0_exit0() do { return 0; } while (0)
@@ -656,7 +659,6 @@ static __inline void __watcall __dwlibc_cmdline_to_argv(
       __asm { lea edx, [edi+2] }  /* EDX := fully qualified argv[0]. */ \
       __asm { pop eax }
 #endif  /* #ifdef __DOS__ */
-
 #endif  /* #ifdef _LIBC_USE_MAIN */
 
 /* --- Win32 implementation. Mostly dark magic in OpenWatcom C and inline
@@ -1061,7 +1063,8 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
       char __dwlibc_module_fn[0x110]; \
       void *cstart_; int _argc;  /* Pacify wlink. */ \
       int main(argspec1, argspec2)
-#else
+#endif
+#ifdef _LIBC_USE_MAIN1
 #  define main1(argspec1) \
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       __DWLIBC_ASMB_START __asm { call __dwlibc_win32cmdline } \
@@ -1114,7 +1117,8 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
       unsigned char *__dwlibc_alloc_end; \
       void *cstart_; int _argc;  /* Pacify wlink. */ \
       int main(argspec1, argspec2)
-#else
+#endif
+#ifdef _LIBC_USE_MAIN1
 #  define main1(argspec1) \
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       __asm { cld }  /* Not needed for regular PMODE/W. */ \
@@ -1232,7 +1236,8 @@ static __inline int ftruncate(int fd, off_t size) {
       unsigned char *__dwlibc_alloc_end; \
       void *cstart_; int _argc;  /* Pacify wlink. */ \
       int main(argspec1, argspec2)
-#else
+#endif
+#ifdef _LIBC_USE_MAIN1
 #  define main1(argspec1) \
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       /*__asm { cld }*/  /* Not needed for Linux. */ \
