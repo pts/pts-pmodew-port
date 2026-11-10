@@ -1271,6 +1271,30 @@ static __inline char * __watcall __dwlibc_append_arg_quoted(
 }
 #endif /* #ifdef _LIBC_USE_MAIN1 */
 
+extern char _edata[], _end[];  /* Populated by wlink. */
+
+/* It is the responsibility of the kernel to fill the entire BSS with NUL
+ * bytes. However, some early Linux kernels (such as 1.0 and 1.0.4, but not
+ * 5.4.0) fail to do so for first last page of _BSS (i.e. the page which
+ * overlaps with _TEXT) if an overlay (i.e. resource data) is present in the
+ * file. Hence we fill it manually.
+ *
+ * This doesn't work if _BSS is empty (because wlink generates _end == 0
+ * then), but for us it's never empty, it always has e.g.
+ * __dwlibc_alloc_end.
+ */
+#define __DWLIBC_ASMB_FILLBSSPAGE1 \
+    __asm { mov esi, offset _end   }  /* End of _BSS.  */ \
+    __asm { mov edi, offset _edata }  /* End of _DATA. */ \
+    __asm { mov ecx, edi } \
+    __asm { add ecx,  1000h-1 } \
+    __asm { and ecx, -1000h }  /* Round up to i386 page boundary. */ \
+    __asm { cmp ecx, esi } \
+    __asm { db 76h, 2 }  /* jna short have_end_in_ecx */ \
+    __asm { mov ecx, esi }  /* Stop at end of _BSS, within first page. */ \
+    __asm { have_end_in_ecx: sub ecx, edi } \
+    __asm { xor eax, eax } __asm { rep stosb }
+
 /* Actually, this defines the _dwlibcstart_ function. We do it using a macro
  * so that _dwlibcstart_ is only defined where the C source file defines
  * `int main1(const char *cmdline) { ... }'. The benefit is that the program
@@ -1286,6 +1310,7 @@ static __inline char * __watcall __dwlibc_append_arg_quoted(
 #  define main(argspec1, argspec2) \
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       /*__asm { cld }*/  /* Not needed for Linux. */ \
+      __DWLIBC_ASMB_FILLBSSPAGE1 \
       __asm { pop eax }  /* EAX := argc. */ \
       __asm { mov edx, esp }  /* EDX := argv. */ \
       __asm { call main }  /* Takes EAX, EDX. */ \
@@ -1300,6 +1325,7 @@ static __inline char * __watcall __dwlibc_append_arg_quoted(
 #  define main1(argspec1) \
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       /*__asm { cld }*/  /* Not needed for Linux. */ \
+      __DWLIBC_ASMB_FILLBSSPAGE1 \
       __asm { pop eax }  /* EAX := argc. */ \
       __asm { test eax, eax } __asm { mov eax, esp }  /* EAX := argv. */\
       __asm { db 74h, 3 }  /* jz short argv_ok */ \
