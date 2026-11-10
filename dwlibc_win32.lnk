@@ -1,3 +1,5 @@
+import '_CloseHandle@4' 'kernel32.dll'.CloseHandle
+import '_CreateFileA@28' 'kernel32.dll'.CreateFileA
 import '_ExitProcess@4' 'kernel32.dll'.ExitProcess
 import '_GetCommandLineA@0' 'kernel32.dll'.GetCommandLineA
 import '_GetFileType@4' 'kernel32.dll'.GetFileType

@@ -155,6 +155,9 @@ typedef long off_t;
 
 /* --- Function declarations. */
 
+#define _LIBC_HAVE_OPEN00  /* Similar to https://github.com/pts/ssmcc */
+#define _LIBC_HAVE_CREAT1
+
 /* The entire command-line is passed without leading whitespace. The
  * program has to split it to individual arguments. The program has to
  * implement it instead of main(...).
@@ -164,10 +167,25 @@ int __watcall main1(const char *cmdline);
 /* Helper for standard C program, see example above. */
 #define main1_ignore_cmdline() (void)cmdline
 
-/* Only valid fd values are: STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO. */
+/* Equivalent to open(pathname, O_RDONLY | O_BINARY), but a full-fledged
+ * open(2) is not provided by dwlibc . Returns -1 on error. Unlike in
+ * regular libcs, the retuned file descriptor can be negative and still be
+ * valid.
+ */
+__DWLIBCABI1 int open00(const char *pathname);
+
+/* Almost equivalent to creat(pathname, 0666), except for O_BINARY.
+ * Equivalent to open(pathname, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,
+ * 0666), but a full-fledged open(2) or create(2) are not provided by
+ * dwlibc. Returns -1 on error. Unlike in regular libcs, the retuned file
+ * descriptor can be negative and still be valid.
+ */
+__DWLIBCABI1 int creat1(const char *pathname);
+
+__DWLIBCABI1 int close(int fd);
+
 __DWLIBCABI1 ssize_t read(int fd, void *buf, size_t count);
 
-/* Only valid fd values are: STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO. */
 __DWLIBCABI1 ssize_t write(int fd, const void *buf, size_t count);
 
 /* Returns bool indicating whether fd is a terminal (interactive text
@@ -398,14 +416,25 @@ typedef struct _SECURITY_ATTRIBUTES *LPSECURITY_ATTRIBUTES;
 __DWLIBCABI2 __declspec(noreturn) void __stdcall ExitProcess(
     UINT uExitCode);
 __DWLIBCABI2 HANDLE __stdcall GetStdHandle(DWORD nStdHandle);
-__DWLIBCABI2 BOOL   __stdcall WriteFile(
+__DWLIBCABI2 BOOL __stdcall WriteFile(
     HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite,
     LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped);
-__DWLIBCABI2 BOOL   __stdcall ReadFile(
+__DWLIBCABI2 BOOL __stdcall ReadFile(
     HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead,
     LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped);
-__DWLIBCABI2 LPSTR  __stdcall GetCommandLineA(void);
+__DWLIBCABI2 LPSTR __stdcall GetCommandLineA(void);
 __DWLIBCABI2 DWORD __stdcall GetFileType(HANDLE hFile);
+__DWLIBCABI2 LPVOID __stdcall VirtualAlloc(LPVOID lpAddress,
+    SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect);
+__DWLIBCABI2 BOOL __stdcall DeleteFileA(LPCSTR lpFileName);
+__DWLIBCABI2 BOOL __stdcall CloseHandle(HANDLE hObject);
+__DWLIBCABI2 DWORD __stdcall SetFilePointer(HANDLE hFile,
+    LONG lDinstanceToMove, PLONG *lpDistanceToMoveHigh,
+    DWORD dwMoveMethod);
+__DWLIBCABI2 HANDLE __stdcall CreateFileA(
+    LPCSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode,
+    LPSECURITY_ATTRIBUTES lpSecurityAttributes, DWORD dwCreationDisposition,
+    DWORD dwFlagsAndAttributes, HANDLE hTemplateFile);
 
 /* nStdHandle for GetStdHandle(...): */
 #define STD_INPUT_HANDLE    ((DWORD)-10)
@@ -415,6 +444,26 @@ __DWLIBCABI2 DWORD __stdcall GetFileType(HANDLE hFile);
 #define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)
 
 #define FILE_TYPE_CHAR ((DWORD)2)
+
+/* deDesiredAccess for CreateFileA(...) (bitfield): */
+#define GENERIC_READ  0x80000000L
+#define GENERIC_WRITE 0x40000000L
+
+/* dwCreationDisposition for CreateFileA(...): */
+#define CREATE_NEW          1L
+#define CREATE_ALWAYS       2L
+#define OPEN_EXISTING       3L
+#define OPEN_ALWAYS         4L
+#define TRUNCATE_EXISTING   5L
+
+/* dwFlagsAndAttributes for CreateFileA(...): */
+#define FILE_ATTRIBUTE_NORMAL 0x00000080L
+
+/* dwShareMode for CreateFileA(...) (bitfield): */
+#define FILE_SHARE_READ     0x00000001L
+#define FILE_SHARE_WRITE    0x00000002L
+#define FILE_SHARE_DELETE   0x00000004L
+
 
 extern HANDLE __dwlibc_std_handles[3];
 
@@ -426,6 +475,17 @@ extern HANDLE __dwlibc_std_handles[3];
     /* cld shouldn't be need at Win32 entry. */ \
     __asm { stc } __asm { clc } __asm { cld }  /* Signature. */ \
     __asm { xor eax, eax }  /* DOS entry point is after this. */
+  int __dwlibc_dos_open00(const char *pathname);
+#  pragma aux __dwlibc_dos_open00 = "mov ax, 3d00h"  "int 21h" \
+    "jnc ok"  "sbb eax, eax"  "ok:" \
+    __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
+  int __dwlibc_dos_creat1(const char *pathname);
+#  pragma aux __dwlibc_dos_creat1 = "mov ah, 3ch"  "xor ecx, ecx"  "int 21h" \
+    "jnc ok"  "sbb eax, eax"  "ok:" \
+    __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
+  int __dwlibc_dos_close(int fd);
+#  pragma aux __dwlibc_dos_close = "mov ah, 3eh"  "int 21h"  "sbb eax, eax" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax]
   ssize_t __dwlibc_dos_read(int fd, void *buf, size_t count);
 #  pragma aux __dwlibc_dos_read = \
     "mov ah, 3fh"  "int 21h"  "jnc ok"  "sbb eax, eax"  "ok:" \
@@ -462,12 +522,47 @@ extern HANDLE __dwlibc_std_handles[3];
      __parm [__al] __modify __exact []
 #endif
 
+static __inline int open00(const char *pathname) {
+  /* !! DOS */
+  int fd;
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_open00(pathname);
+#endif
+  if ((fd = (int)CreateFileA(pathname,
+      GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL)) !=
+      -1  /* (int)INVALID_HANDLE_VALUE */) fd += 3;
+  return fd;
+}
+
+static __inline int creat1(const char *pathname) {
+  /* !! DOS */
+  int fd;
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_creat1(pathname);
+#endif
+  if ((fd = (int)CreateFileA(pathname,
+      GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL)) !=
+      -1 /* INVALID_HANDLE_VALUE */) fd += 3;
+  return fd;
+}
+
+static __inline int close(int fd) {
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_close(fd);
+#endif
+  return ((unsigned)fd >= 3 && !CloseHandle((HANDLE)((unsigned)fd - 3))) ?
+      -1 : 0;
+}
+
 __DWLIBCABI1 ssize_t read(int fd, void *buf, size_t count) {
   DWORD read_count;
 #ifdef __DOS__  /* While still #ifdef __NT__. */
   if (__dwlibc_is_dos) return __dwlibc_dos_read(fd, buf, count);
 #endif
-  return ReadFile(__dwlibc_std_handles[fd], buf, count, &read_count, NULL) ?
+  fd = (unsigned)fd < 3 ? (int)__dwlibc_std_handles[fd] : (unsigned)fd - 3;
+  return ReadFile((HANDLE)fd, buf, count, &read_count, NULL) ?
       read_count : -1;
 }
 
@@ -477,7 +572,8 @@ __DWLIBCABI1 ssize_t write(
 #ifdef __DOS__  /* While still #ifdef __NT__. */
   if (__dwlibc_is_dos) return __dwlibc_dos_write(fd, buf, count);
 #endif
-  return WriteFile(__dwlibc_std_handles[fd], buf, count, &written_count, NULL)
+  fd = (unsigned)fd < 3 ? (int)__dwlibc_std_handles[fd] : (unsigned)fd - 3;
+  return WriteFile((HANDLE)fd, buf, count, &written_count, NULL)
       ? written_count : -1;
 }
 
@@ -488,7 +584,8 @@ __DWLIBCABI1 int isatty(int fd) {
 #ifdef __DOS__  /* While still #ifdef __NT__. */
   if (__dwlibc_is_dos) return __dwlibc_dos_isatty(fd);
 #endif
-  return GetFileType(__dwlibc_std_handles[fd]) == FILE_TYPE_CHAR;
+  fd = (unsigned)fd < 3 ? (int)__dwlibc_std_handles[fd] : (unsigned)fd - 3;
+  return GetFileType((HANDLE)fd) == FILE_TYPE_CHAR;
 }
 
 static __inline const char * __watcall __dwlibc_win32cmdline(
@@ -576,6 +673,17 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
 
 #pragma aux  exit = "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
 #pragma aux _exit = "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
+
+#pragma aux open00 = "mov ax, 3d00h"  "int 21h" \
+    "jnc ok"  "sbb eax, eax"  "ok:" \
+    __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
+
+#pragma aux creat1 = "mov ah, 3ch"  "xor ecx, ecx"  "int 21h" \
+    "jnc ok"  "sbb eax, eax"  "ok:" \
+    __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
+
+#pragma aux close = "mov ah, 3eh"  "int 21h"  "sbb eax, eax" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax]
 
 #pragma aux read = "mov ah, 3fh"  "int 21h"  "jnc ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
