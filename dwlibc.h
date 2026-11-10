@@ -204,6 +204,11 @@ __DWLIBCABI1 int isatty(int fd);
   */
 __DWLIBCABI1 off_t lseek(int fd, off_t offset, int whence);
 
+/* remove(...) and unlink(...) are equivalent. */
+__DWLIBCABI1 int remove(const char *pathname);
+__DWLIBCABI1 int unlink(const char *pathname);
+
+/* exit(...) and _exit(...) are equivalent in dwlibc. */
 __DWLIBCABI3 __declspec(noreturn) void  exit(unsigned char exit_code);
 __DWLIBCABI3 __declspec(noreturn) void _exit(unsigned char exit_code);
 
@@ -516,6 +521,9 @@ extern HANDLE __dwlibc_std_handles[3];
     "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
     "mov dx, ax"  "mov ecx, edx"  "done: xchg eax, ecx" __value [__eax] \
     __parm [__ebx] [__edx] [__eax] __modify __exact [__eax __ecx __edx]
+  int __dwlibc_dos_remove(const char *pathname);
+#  pragma aux __dwlibc_dos_remove = "mov ah, 41h"  "int 21h"  "sbb eax, eax" \
+    __value [__eax] __parm [__edx] __modify __exact [__eax]
   __declspec(noreturn) void __dwlibc_dos_exit(unsigned char exit_code);
 #  pragma aux __dwlibc_dos_exit = \
     "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
@@ -611,6 +619,20 @@ static __inline off_t lseek(int fd, off_t offset, int whence) {
   fd = (unsigned)fd < 3 ? (int)__dwlibc_std_handles[fd] : (unsigned)fd - 3;
   /* SetFilePointer(...) returns (DWORD)-1 on error. Good. */
   return (off_t)SetFilePointer((HANDLE)fd, offset, NULL, whence);
+}
+
+static __inline int remove(const char *pathname) {
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_remove(pathname);
+#endif
+  return DeleteFileA(pathname) ? 0 : - 1;
+}
+
+static __inline int unlink(const char *pathname) {
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_remove(pathname);
+#endif
+  return DeleteFileA(pathname) ? 0 : - 1;
 }
 
 static __inline const char * __watcall __dwlibc_win32cmdline(
@@ -733,6 +755,11 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
     "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
     "mov dx, ax"  "mov ecx, edx"  "done: xchg eax, ecx" __value [__eax] \
     __parm [__ebx] [__edx] [__eax] __modify __exact [__eax __ecx __edx]
+
+#pragma aux remove = "mov ah, 41h"  "int 21h"  "sbb eax, eax" \
+    __value [__eax] __parm [__edx] __modify __exact [__eax]
+#pragma aux unlink = "mov ah, 41h"  "int 21h"  "sbb eax, eax" \
+    __value [__eax] __parm [__edx] __modify __exact [__eax]
 
 #endif  /* #if defined(__DOS__) && !defined(__NT__) */
 
