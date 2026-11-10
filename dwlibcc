@@ -44,6 +44,10 @@
 #   * -bdos32: Build DOS-only .exe program file.
 #   * -bwin32: Build Win32-only .exe program file.
 #   * -blinux: Build Linux i386 ELF-32 executable program file.
+#   * -bany: Build system-independent object files. All system-specific
+#     declarations (including I/O functions such as write(...)) will be
+#     hidden in <dwlibc.h>, and linking (if attempted) will fail with
+#     undefined symbols.
 #   * --nasm=...: NASM command name to build the PMODE/W DOS extender.
 #
 # Limitations of dwlibc:
@@ -96,6 +100,7 @@ while ! test "$target"; do
    -bwin32) shift; target=win32 ;;
    -bdoswin32) shift; target=doswin32 ;;
    -blinux) shift; target=linux ;;
+   -bany | -banyos) shift; target=any ;;  # Similar to `minicc -bany' in https://github.com/pts/minilibc686 , but here system-specific and I/O functions (e.g. write(...)) won't even be declared.
    *) target=doswin32 ;;
   esac
 done
@@ -141,6 +146,8 @@ elif test "$target" = linux; then
   # !! Apply sstrip.ml to make it even smaller.
   # !! Apply the FreeBSD EI_BRAND to make it run on FreeBSD i386 3.0.
   exec owcc -bbegin -Wc,-bt=linux -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=16                                                                                    -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
+elif test "$target" = any; then
+  exec owcc -bbegin -Wc,-bt=anyos -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=16                                                                                    -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
 else
   echo "$0: fatal: target not implemented: -b$target" >&2; exit 1
 fi
