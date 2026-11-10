@@ -68,7 +68,9 @@
 #ifndef __DOS__
 #  ifndef __NT__
 #    ifndef __LINUX__
-#      error Need target __DOS__ or __NT__ or __LINUX__.
+#      ifndef __ANYOS__
+#        error Need target __DOS__ or __NT__, __LINUX__ or __ANYOS__.
+#      endif
 #    endif
 #  endif
 #endif
@@ -78,6 +80,17 @@
 #  endif
 #  ifdef __NT__
 #    error Conflict between __LINUX__ and __NT__.
+#  endif
+#endif
+#ifdef __ANYOS__
+#  ifdef __LINUX__
+#    error Conflict between __ANYOS__ and __LINUX__.
+#  endif
+#  ifdef __DOS__
+#    error Conflict between __ANYOS__ and __DOS__.
+#  endif
+#  ifdef __NT__
+#    error Conflict between __ANYOS__ and __NT__.
 #  endif
 #endif
 #ifdef __BEGIN__
@@ -220,6 +233,7 @@ typedef long off_t;
 #  define main1_ignore_cmdline() (void)cmdline
 #endif
 
+#ifndef __ANYOS__
 /* Equivalent to open(pathname, O_RDONLY | O_BINARY), but a full-fledged
  * open(2) is not provided by dwlibc . Returns -1 on error. Unlike in
  * regular libcs, the retuned file descriptor can be negative and still be
@@ -274,6 +288,7 @@ static __inline void *malloc(size_t size);
 /* exit(...) and _exit(...) are equivalent in dwlibc. */
 __DWLIBCABI3 __declspec(noreturn) void  exit(unsigned char exit_code);
 __DWLIBCABI3 __declspec(noreturn) void _exit(unsigned char exit_code);
+#endif  /* #ifndef __ANYOS__ */
 
 int abs(int j);
 long labs(long j);
@@ -604,7 +619,7 @@ void __dwlibc_cmdline_to_argv_low(char *cmdline, char *argv0);
     "inc ecx"  /* ECX := 1 (current argc). */ \
     "argv_next:" \
     "mov edx, eax"  /* Save EAX (remaining command line). */ \
-    "call __dwlibc_parse_first_arg" \
+    "call __dwlibc_parse_first_arg"  /* !!! Don't include it. */ \
     "cmp eax, edx" \
     "je argv_end"  /* No more arguments in argv. */ \
     "inc ecx"  /* argc += 1. */ \
@@ -1430,6 +1445,7 @@ static __inline int ftruncate(int fd, off_t size) {
     __value [__eax] __parm [__eax] __modify __exact [__eax __ebx]
 #endif
 
+#ifndef __ANYOS__
 static __inline void *malloc(size_t size) {
   unsigned char *p;
   size_t bsize;
@@ -1463,8 +1479,13 @@ static __inline void *malloc(size_t size) {
 #else
 #  ifdef __DOS__
     p = __dwlibc_dpmi_alloc(bsize);
-#  else  /* #ifdef __LINUX__ */
+#  else
+#    ifdef __LINUX__
     p = __dwlibc_mmap_alloc(bsize);
+#    else
+#      error Unknown system for malloc(...).
+    p = NULL;
+#    endif
 #  endif
 #endif
     if (p) break;
@@ -1476,5 +1497,6 @@ static __inline void *malloc(size_t size) {
   __dwlibc_alloc_remaining = bsize - size;
   return (void*)p;
 }
+#endif  /* #ifndef __ANYOS__ */
 
 #endif  /* #ifdef _DWLIBC_H */
