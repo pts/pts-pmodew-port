@@ -208,6 +208,12 @@ __DWLIBCABI1 off_t lseek(int fd, off_t offset, int whence);
 __DWLIBCABI1 int remove(const char *pathname);
 __DWLIBCABI1 int unlink(const char *pathname);
 
+/* Returns NULL iff the passed size is 0 or if there is not enough memory.
+ * Otherwise it returns a pointer which is aligned to a multiple of 4 bytes.
+ * dwlibc doesn't support freeing memory, only malloc is supported.
+ */
+static __inline void *malloc(size_t size);
+
 /* exit(...) and _exit(...) are equivalent in dwlibc. */
 __DWLIBCABI3 __declspec(noreturn) void  exit(unsigned char exit_code);
 __DWLIBCABI3 __declspec(noreturn) void _exit(unsigned char exit_code);
@@ -363,6 +369,9 @@ int toupper(int c);
 #pragma intrinsic(strcpy)
 #pragma intrinsic(strlen)  /* No error if function not available. */
 
+extern size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize;
+extern unsigned char *__dwlibc_alloc_end;
+
 /* --- Win32 implementation. */
 
 #ifdef __NT__
@@ -480,6 +489,13 @@ __DWLIBCABI2 HANDLE __stdcall CreateFileA(
 #define FILE_SHARE_WRITE    0x00000002L
 #define FILE_SHARE_DELETE   0x00000004L
 
+/* flAllocationType for VirtualAlloc(...). */
+#define MEM_COMMIT  0x1000L
+#define MEM_RESERVE 0x2000L
+
+/* flProtect for VirtualAlloc(...). */
+#define PAGE_READWRITE         0x04L
+#define PAGE_EXECUTE_READWRITE 0x40L
 
 extern HANDLE __dwlibc_std_handles[3];
 
@@ -681,6 +697,8 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
     __DWLIBC_ASMB_START __asm { call __dwlibc_win32cmdline } \
     __asm { call main1 } __DWLIBC_ASMB_EXIT } \
     HANDLE __dwlibc_std_handles[3]; __DWLIBC_DEFINE_IS_DOS \
+    size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+    unsigned char *__dwlibc_alloc_end; \
     int main1(argspec1)
 
 #endif  /* #ifdef __NT__ */
@@ -716,6 +734,8 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
     __asm { sub eax, -80h }  /* EAX := DOS cmdline. */ \
     __asm { call __dwlibc_doscmdline } \
     __asm { call main1 } __asm { mov ah, 4ch } __asm { int 21h } } \
+    size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+    unsigned char *__dwlibc_alloc_end; \
     int main1(argspec1)
 
 #pragma aux  exit = "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
@@ -762,5 +782,66 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
     __value [__eax] __parm [__edx] __modify __exact [__eax]
 
 #endif  /* #if defined(__DOS__) && !defined(__NT__) */
+
+/* --- Memory allocator. */
+
+#ifdef __DOS__
+  /* Allocates bsize bytes using DPMI and returns the starting address.
+   * Returns NULL iff bsize is 0 or if there is not enough memory.
+   * According to https://www.delorie.com/djgpp/doc/dpmi/api/310501.html ,
+   * but not the DPMI specification
+   * (https://www.phatcode.net/res/262/files/dpmi09.html#13.2), the returned
+   * pointer will be aligned to a multiple of 16 bytes (paragraph).
+   */
+  void *__dwlibc_dpmi_alloc(size_t bsize);
+#  pragma aux __dwlibc_dpmi_alloc = "xor eax, eax"  "jecxz done"  "push eax" \
+    "shld ebx, ecx, 16"  "mov ax, 501h"  "int 31h"  "pop eax"  "jc done" \
+    "xchg eax, ebx"  "shl eax, 16"  "xchg ax, cx"  "done:" \
+    __value [__eax] __parm [__ecx] \
+    __modify __exact [__eax __ebx __ecx __esi __edi]
+#endif
+
+static __inline void *malloc(size_t size) {
+  unsigned char *p;
+  size_t bsize;
+  if ((int)size <= 0) return NULL;
+  size = (size + 3) & ~3;  /* Force alignment of everything to 4. */
+  /* We don't allocate a new block for each malloc(...) call so that we
+   * don't risk running out of XMS handles on some DPMI hosts. Instead of
+   * that we allocate large blocks (starting at 256 KiB and doubling it each
+   * time), and portion them out here.
+   */
+  if (size <= __dwlibc_alloc_remaining) {  /* Take from current block. */
+    p = __dwlibc_alloc_end - __dwlibc_alloc_remaining;
+    __dwlibc_alloc_remaining -= size;
+    return (void*)p;
+  }
+  /* At this point we will allocate a new block, and effectively waste the
+   * remaining __dwlibc_alloc_remaining bytes in the current block.
+   */
+  if (!(bsize = __dwlibc_alloc_next_bsize)) bsize = 1 << 18;  /* 256 KiB. */
+  while (bsize < size) {  /* At least size rounded to the next power of 2. */
+    if ((int)(bsize <<= 1) <= 0) return NULL;
+  }
+  for (;;) {
+#ifdef __NT__
+#  ifdef __DOS__  /* While still #ifdef __NT__. */
+    p = (__dwlibc_is_dos) ? __dwlibc_dpmi_alloc(bsize) :
+        VirtualAlloc(NULL, bsize, MEM_COMMIT, PAGE_READWRITE);
+#  else  /* VirtualAlloc(...) returns a page-aligned (4 KiB) pointer. */
+    p = VirtualAlloc(NULL, bsize, MEM_COMMIT, PAGE_READWRITE);
+#  endif
+#else
+    p = __dwlibc_dpmi_alloc(bsize);
+#endif
+    if (p) break;
+    /* Minimum bsize is 4 KiB. */
+    if ((bsize >>= 1) < (1 << 12) || bsize < size) return NULL;
+  }
+  __dwlibc_alloc_next_bsize = ((int)(bsize << 1) > 0) ? bsize << 1 : bsize;
+  __dwlibc_alloc_end = p + bsize;
+  __dwlibc_alloc_remaining = bsize - size;
+  return (void*)p;
+}
 
 #endif  /* #ifdef _DWLIBC_H */

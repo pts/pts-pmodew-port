@@ -7,4 +7,5 @@ import '_GetFileType@4' 'kernel32.dll'.GetFileType
 import '_GetStdHandle@4' 'kernel32.dll'.GetStdHandle
 import '_ReadFile@20' 'kernel32.dll'.ReadFile
 import '_SetFilePointer@16' 'kernel32.dll'.SetFilePointer
+import '_VirtualAlloc@16' 'kernel32.dll'.VirtualAlloc
 import '_WriteFile@20' 'kernel32.dll'.WriteFile
