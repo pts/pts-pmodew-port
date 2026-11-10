@@ -1,6 +1,6 @@
 #! /bin/sh --
 #
-# dwlibcc: C compiler driver for dwlibc, a toolchain to create stanalone, combined DOS--Win32 .exe programs
+# dwlibcc: C compiler driver for dwlibc, a toolchain to create stanalone, combined DOS--Win32 .exe programs and Linux i386 ELF-32 programs
 # by pts@fazekas.hu at Sun Nov  8 16:20:04 CET 2026
 #
 # Example first-run compile: ./dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -o helldspe.exe helldspe.c
@@ -8,14 +8,16 @@
 # Example compile of a larger project:
 #
 #   $ git clone https://github.com/pts/luuzcat
-#   $ (cd luuzcat && ../dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DLIBC_PREINCLUDED -D_LIBC_USE_MAIN1 -o luuzcat.exe luuzcat.c unscolzh.c uncompact.c unopack.c unpack.c undeflate.c uncompress.c unfreeze.c)
-#   $ ls -ld luuzcat/luuzcat.exe
+#   $ (cd luuzcat && ../dwlibcc         -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DLIBC_PREINCLUDED -D_LIBC_USE_MAIN1 -o luuzcat.exe luuzcat.c unscolzh.c uncompact.c unopack.c unpack.c undeflate.c uncompress.c unfreeze.c)
+#   $ (cd luuzcat && ../dwlibcc -blinux -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DLIBC_PREINCLUDED -D_LIBC_USE_MAIN1 -o luuzcat     luuzcat.c unscolzh.c uncompact.c unopack.c unpack.c undeflate.c uncompress.c unfreeze.c)
+#   $ ls -ld luuzcat/luuzcat luuzcat/luuzcat.exe
 #
 # Example compile of a larger project using more libc functions:
 #
 #   $ git clone https://github.com/pts/mininasm
-#   $ (cd mininasm && ../dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DCONFIG_SKIP_LIBC -o mininasm.exe mininasm.c)
-#   $ ls -ld mininasm/mininasm.exe
+#   $ (cd mininasm && ../dwlibcc         -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DCONFIG_SKIP_LIBC -o mininasm.exe mininasm.c)
+#   $ (cd mininasm && ../dwlibcc -blinux -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DCONFIG_SKIP_LIBC -o mininasm     mininasm.c)
+#   $ ls -ld mininasm/mininasm mininasm/mininasm.exe
 #
 # General usage of dwlibcc:
 #
@@ -41,6 +43,7 @@
 #   * -bdoswin32 (default): Build combined DOS--Win32 .exe program file.
 #   * -bdos32: Build DOS-only .exe program file.
 #   * -bwin32: Build Win32-only .exe program file.
+#   * -blinux: Build Linux i386 ELF-32 executable program file.
 #   * --nasm=...: NASM command name to build the PMODE/W DOS extender.
 #
 # Limitations of dwlibc:
@@ -91,12 +94,13 @@ while ! test "$target"; do
    --nasm=*) nasm="${1#*=}"; shift ;;
    -bdos | -bdos32 | -bpmodew) shift; target=dos32 ;;
    -bwin32) shift; target=win32 ;;
-   -bdoswin32) target=doswin32; shift ;;
+   -bdoswin32) shift; target=doswin32 ;;
+   -blinux) shift; target=linux ;;
    *) target=doswin32 ;;
   esac
 done
 
-if ! test -f "$mydir"/pmodewd.exe; then  # Build the DOS extender DOS stub pmodewd.exe upon first run.
+if test "$target" != linux && ! test -f "$mydir"/pmodewd.exe; then  # Build the DOS extender DOS stub pmodewd.exe upon first run.
   if ! test "$nasm"; then
     nasm="$mydir"/tools/nasm-0.98.39.upx
     "$nasm" -v >/dev/null 2>&1 || nasm=nasm  # Use the system nasm if the bundled "$nasm" doesn't work.
@@ -125,13 +129,18 @@ fi
 # !! Bundle owcc, wcc386 and wlink.
 if test "$target" = dos32; then
   # !! Patch 0x40 --> 0x41 in the PE header file offset header field at file offset @0x3c.
-  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
+  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,stub="$mydir"/pmodewd.exe -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
 elif test "$target" = win32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_                                      -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
+  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K                                      -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
 elif test "$target" = doswin32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,op -Wl,stub="$mydir"/pmodewd.exe -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__DOS__ "$@"
+  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,stub="$mydir"/pmodewd.exe -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__DOS__ "$@"
+elif test "$target" = linux; then
+  # FYI `op exportall' is not specified.
+  # !! Apply sstrip.ml to make it even smaller.
+  # !! Apply the FreeBSD EI_BRAND to make it run on FreeBSD i386 3.0.
+  exec owcc -bbegin -Wc,-bt=linux -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=16                                                                                    -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
 else
   echo "$0: fatal: target not implemented: -b$target" >&2; exit 1
 fi

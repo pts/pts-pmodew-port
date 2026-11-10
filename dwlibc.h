@@ -1,5 +1,6 @@
 /*
  * dwlibc.h: C header for libc to create combined DOS--Win32 .exe programs
+ *     and Linux i386 ELF-32 programs
  * by pts@fazekas.hu at Sun Nov  8 19:07:07 CET 2026
  *
  * Use the dwlibcc tool on Linux to build your programs using dwlibc. For
@@ -66,7 +67,17 @@
 #endif
 #ifndef __DOS__
 #  ifndef __NT__
-#    error Need target __DOS__ or __NT__.
+#    ifndef __LINUX__
+#      error Need target __DOS__ or __NT__ or __LINUX__.
+#    endif
+#  endif
+#endif
+#ifdef __LINUX__
+#  ifdef __DOS__
+#    error Conflict between __LINUX__ and __DOS__.
+#  endif
+#  ifdef __NT__
+#    error Conflict between __LINUX__ and __NT__.
 #  endif
 #endif
 #ifdef __BEGIN__
@@ -77,9 +88,6 @@
 #endif
 #ifdef __COM__
 #  error Unexpected target __COM__.
-#endif
-#ifdef __LINUX__
-#  error Unexpected target __LINUX__.
 #endif
 #ifdef _WCDATA  /* Defined in h/_comdef.h and lh/_comdef.h */
 #  error Unexpected libc OpenWatcom _WCDATA.
@@ -186,7 +194,7 @@ typedef long off_t;
 
 #ifdef _LIBC_USE_MAIN  /* Can be defined by the user. */
 #  ifdef _LIBC_USE_MAIN1  /* Can be defined by the user. */
-#    error Conflict between _LIBC_USE_MAIN and _LIBC_USE_MAIN1
+#    error Conflict between _LIBC_USE_MAIN and _LIBC_USE_MAIN1.
 #  endif
 #else
 #  ifndef _LIBC_USE_MAIN1
@@ -651,9 +659,11 @@ static __inline void __watcall __dwlibc_cmdline_to_argv(
 
 #endif  /* #ifdef _LIBC_USE_MAIN */
 
-/* --- Win32 implementation. */
+/* --- Win32 implementation. Mostly dark magic in OpenWatcom C and inline
+ * assembly.
+ */
 
-#ifdef __NT__
+#if defined(__NT__) && !defined(__LINUX__)
 
 /* TODO(pts): Hide these implementation details from the C program source. */
 
@@ -1064,9 +1074,11 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
 
 #endif  /* #ifdef __NT__ */
 
-/* --- DOS implementation. Mostly dark magic in OpenWatcom C. */
+/* --- DOS implementation. Mostly dark magic in OpenWatcom C and inline
+ * assembly.
+ */
 
-#if defined(__DOS__) && !defined(__NT__)
+#if defined(__DOS__) && !defined(__NT__) && !defined(__LINUX__)
 
 static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
   cmdline[1 + *(unsigned char*)cmdline] = '\0';  /* Change CR to NUL. */
@@ -1190,7 +1202,111 @@ static __inline int ftruncate(int fd, off_t size) {
 #pragma aux unlink = "mov ah, 41h"  "int 21h"  "sbb eax, eax" \
     __value [__eax] __parm [__edx] __modify __exact [__eax]
 
-#endif  /* #if defined(__DOS__) && !defined(__NT__) */
+#endif  /* #if defined(__DOS__) && !defined(__NT__) && !defined(__LINUX__) */
+
+/* --- Linux i386 implementation. */
+
+#if defined(__LINUX__) && !defined(__DOS__) && !defined(__NT__)
+
+/* Actually, this defines the _dwlibcstart_ function. We do it using a macro
+ * so that _dwlibcstart_ is only defined where the C source file defines
+ * `int main1(const char *cmdline) { ... }'. The benefit is that the program
+ * can be split to multiple C source files, and only one of them will define
+ * _dwlibcstart_ and thus the `redefinition of _dwlibcstart_' error by wlink
+ * is avoided. As a negative side effect of this hack, it is not possible to
+ * reference main1 anywhere else in the source C file.
+ *
+ * This implements the 32-bit i386 program entry point the Linux kernel
+ * jumps to.
+ */
+#ifdef _LIBC_USE_MAIN
+#  define main(argspec1, argspec2) \
+      /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
+      /*__asm { cld }*/  /* Not needed for Linux. */ \
+      __asm { pop eax }  /* EAX := argc. */ \
+      __asm { mov edx, esp }  /* EDX := argv. */ \
+      __asm { call main }  /* Takes EAX, EDX. */ \
+      __asm { movzx ebx, al } __asm { xor eax, eax } __asm { inc eax } \
+      __asm { int 80h } } \
+      size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+      unsigned char *__dwlibc_alloc_end; \
+      void *cstart_; int _argc;  /* Pacify wlink. */ \
+      int main(argspec1, argspec2)
+#else
+#  define main1(argspec1) \
+      /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
+      /*__asm { cld }*/  /* Not needed for Linux. */ \
+      __asm { pop eax }  /* EAX := argc. */ \
+      __asm { mov edx, esp }  /* EDX := argv. */ \
+      __asm { call __dwlibc_linuxcmdline }  /* !! Implement it. */  \
+      __asm { call main1 } \
+      __asm { movzx ebx, al } __asm { xor eax, eax } __asm { inc eax } \
+      __asm { int 80h } } \
+      size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+      unsigned char *__dwlibc_alloc_end; \
+      int main1(argspec1)
+#endif
+
+#pragma aux  exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "int 80h"  \
+    __parm [__al] __modify __exact []
+#pragma aux _exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "int 80h"  \
+    __parm [__al] __modify __exact []
+
+#pragma aux open00 = "push 5"  "pop eax"  "push 0"  "pop ecx" \
+    "int 80h"  "test eax, eax"  "jns done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx]
+
+/* !! Call creat(2) instead. */
+#pragma aux creat1 = "push 5"  "pop eax"  "mov ecx, 241h"  "mov edx, 666q" \
+    "int 80h"  "test eax, eax"  "jns done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
+
+#pragma aux close = "push 6"  "pop eax"  "int 80h"  "test eax, eax"  \
+    "jns done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax]
+
+#pragma aux read = "push 3"  "pop eax"  "int 80h"  "test eax, eax"  \
+    "jns done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
+
+#pragma aux write = "push 4"  "pop eax"  "int 80h"  "test eax, eax"  \
+    "jns done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
+
+/* Does `return ioctl(fd, TCGETS, buf_0x24) == 0;'. */
+#pragma aux isatty = "push 54"  "pop eax"  "sub esp, 24h"  "mov ecx, 5401h" \
+    "mov edx, esp"  "int 80h"  "add esp, 24h"  "cmp eax, 1"  "sbb eax, eax" \
+    "neg eax" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
+
+#pragma aux lseek = "push 19"  "pop eax"  "int 80h"  "test eax, eax"  \
+    "jns done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
+
+#pragma aux ftruncate_here = "push 19"  "pop eax"  "xor ecx, ecx" \
+    "xor edx, edx"  "inc edx"  "int 80h"  "js error"  "xchg ecx, eax" \
+    "push 93"  "pop eax"  "int 80h"  "test eax, eax"  "jns done" \
+    "error: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
+
+int __dwlibc_ftruncate_low(int fd, off_t size);
+#pragma aux __dwlibc_ftruncate_low = "push ebx"  "xchg ebx, eax" \
+    "xchg ecx, edx"  "push 93"  "pop eax"  "int 80h" "xchg ecx, edx" \
+    "pop ebx"  "test eax, eax"  "jns done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__eax __edx] __modify __exact [__eax]
+
+static __inline int ftruncate(int fd, off_t size) {
+  return __dwlibc_ftruncate_low(fd, size);
+}
+
+#pragma aux remove = "push 10"  "pop eax"  "int 80h"  "test eax, eax"  \
+    "jns done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax]
+#pragma aux unlink = "push 10"  "pop eax"  "int 80h"  "test eax, eax"  \
+    "jns done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax]
+
+#endif  /* #if defined(__LINUX__) && !defined(__DOS__) && !defined(__NT__) */
 
 /* --- Memory allocator. */
 
@@ -1208,6 +1324,19 @@ static __inline int ftruncate(int fd, off_t size) {
     "xchg eax, ebx"  "shl eax, 16"  "xchg ax, cx"  "done:" \
     __value [__eax] __parm [__ecx] \
     __modify __exact [__eax __ebx __ecx __esi __edi]
+#endif
+
+#ifdef __LINUX__
+  void *__dwlibc_mmap_alloc(size_t bsize);
+  /* 0x22 == (MAP.PRIVATE|MAP.ANONYMOUS_LINUX).
+   * 3 == (PROT_READ|PROT_WRITE).
+   * 90 == SYS_Linux.ioctl.
+   */
+#  pragma aux __dwlibc_mmap_alloc = "xor ebx, ebx"  "push ebx"  "push ebx" \
+    "push ebx"  "push -1"  "push 22h"  "push 3"  "push eax"  "push ebx" \
+    "mov ebx, esp"  "push 90"  "pop eax"  "int 0x80"  "add esp, 8*4" \
+    "cmp eax, -255"  "jb done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax __ebx]
 #endif
 
 static __inline void *malloc(size_t size) {
@@ -1241,7 +1370,11 @@ static __inline void *malloc(size_t size) {
     p = VirtualAlloc(NULL, bsize, MEM_COMMIT, PAGE_READWRITE);
 #  endif
 #else
+#  ifdef __DOS__
     p = __dwlibc_dpmi_alloc(bsize);
+#  else  /* #ifdef __LINUX__ */
+    p = __dwlibc_mmap_alloc(bsize);
+#  endif
 #endif
     if (p) break;
     /* Minimum bsize is 4 KiB. */
