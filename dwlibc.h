@@ -161,14 +161,22 @@ typedef long off_t;
 #define _LIBC_HAVE_OPEN00  /* Similar to https://github.com/pts/ssmcc */
 #define _LIBC_HAVE_CREAT1
 
-/* The entire command-line is passed without leading whitespace. The
- * program has to split it to individual arguments. The program has to
- * implement it instead of main(...).
- */
-int __watcall main1(const char *cmdline);
+#ifdef _LIBC_USE_MAIN  /* Can be defined by the user. */
+  int __watcall main(int argc, char **argv);
+#else
+  /* The entire command-line is passed without leading whitespace. The
+   * program has to split it to individual arguments. The program has to
+   * implement it instead of main(...).
+   */
+  int __watcall main1(const char *cmdline);
+#endif
 
 /* Helper for standard C program, see example above. */
-#define main1_ignore_cmdline() (void)cmdline
+#ifdef _LIBC_USE_MAIN
+#  define main1_ignore_cmdline() do { (void)argc; (void)argv; } while (0)
+#else
+#  define main1_ignore_cmdline() (void)cmdline
+#endif
 
 /* Equivalent to open(pathname, O_RDONLY | O_BINARY), but a full-fledged
  * open(2) is not provided by dwlibc . Returns -1 on error. Unlike in
@@ -263,12 +271,16 @@ int toupper(int c);
 #  define va_end(ap) /*((ap) = 0, (void)0)*/  /* Same as with the `= 0'. */
 #endif
 
-/* --- Register usage of main1. */
+/* --- Register usage of main and main1. */
 
-/* It must not modify `ebp', otherwise the OpenWatcom C compiler omits the
- * `pop ebp' between the `mov esp, ebp' and the `ret'.
- */
-#pragma aux main1 __modify [__eax __ebx __ecx __edx __esi __edi]
+#ifdef _LIBC_USE_MAIN
+#  pragma aux main  __modify [__eax __ebx __ecx __edx __esi __edi]
+#else
+  /* It must not modify `ebp', otherwise the OpenWatcom C compiler omits the
+   * `pop ebp' between the `mov esp, ebp' and the `ret'.
+   */
+#  pragma aux main1 __modify [__eax __ebx __ecx __edx __esi __edi]
+#endif
 
 /* --- Implementation of the main0() API.
  *
@@ -282,11 +294,19 @@ int toupper(int c);
  * }
  */
 
-#define main0() int main1(const char *__main0_cmdline)
-#define main0_argv1() __main0_cmdline
-#define main0_exit0() do { return 0; } while (0)
-#define main0_exit(exit_code) _exit(exit_code)
-#define main0_is_progarg_null(arg) 0  /* Size optimization, never NULL. */
+#ifdef _LIBC_USE_MAIN
+#  define main0() int main(int argc, char **argv)
+#  define main0_argv1() ((void)argc, argv[0] ? argv[1] : NULL)
+#  define main0_exit0() return EXIT_SUCCESS
+#  define main0_exit(exit_code) return (exit_code)
+#  define main0_is_progarg_null(arg) ((arg) == NULL)
+#else
+#  define main0() int main1(const char *__main0_cmdline)
+#  define main0_argv1() __main0_cmdline
+#  define main0_exit0() do { return 0; } while (0)
+#  define main0_exit(exit_code) _exit(exit_code)
+#  define main0_is_progarg_null(arg) 0  /* Size optimization, never NULL. */
+#endif
 
 /* --- Implementation of system-agnostic functions. */
 
@@ -692,14 +712,28 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
  * string, calls main1(cmdline), and exits to Win32 with the return value of
  * main1(...) as the exit code. BSS is already zero-initialized.
  */
-#define main1(argspec1) \
-    /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
-    __DWLIBC_ASMB_START __asm { call __dwlibc_win32cmdline } \
-    __asm { call main1 } __DWLIBC_ASMB_EXIT } \
-    HANDLE __dwlibc_std_handles[3]; __DWLIBC_DEFINE_IS_DOS \
-    size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
-    unsigned char *__dwlibc_alloc_end; \
-    int main1(argspec1)
+#ifdef _LIBC_USE_MAIN
+#  define main(argspec1, argspec2) \
+      /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
+      __DWLIBC_ASMB_START __asm { call __dwlibc_win32cmdline } \
+      __asm { push 0 } __asm { push eax } __asm { push eax } \
+      __asm { mov eax, 2 } __asm { mov edx, esp }  /* !!! */ \
+      __asm { call main } __DWLIBC_ASMB_EXIT } \
+      HANDLE __dwlibc_std_handles[3]; __DWLIBC_DEFINE_IS_DOS \
+      size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+      unsigned char *__dwlibc_alloc_end; \
+      void *cstart_; int _argc;  /* Pacify wlink. */ \
+      int main(argspec1, argspec2)
+#else
+#  define main1(argspec1) \
+      /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
+      __DWLIBC_ASMB_START __asm { call __dwlibc_win32cmdline } \
+      __asm { call main1 } __DWLIBC_ASMB_EXIT } \
+      HANDLE __dwlibc_std_handles[3]; __DWLIBC_DEFINE_IS_DOS \
+      size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+      unsigned char *__dwlibc_alloc_end; \
+      int main1(argspec1)
+#endif
 
 #endif  /* #ifdef __NT__ */
 
@@ -728,15 +762,30 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
  * selectors. Also ES == DS, and PSP is at DS:EAX. BSS is already
  * zero-initialized.
  */
-#define main1(argspec1) \
-    /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
-    __asm { cld }  /* Not needed for regular PMODE/W. */ \
-    __asm { sub eax, -80h }  /* EAX := DOS cmdline. */ \
-    __asm { call __dwlibc_doscmdline } \
-    __asm { call main1 } __asm { mov ah, 4ch } __asm { int 21h } } \
-    size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
-    unsigned char *__dwlibc_alloc_end; \
-    int main1(argspec1)
+#ifdef _LIBC_USE_MAIN
+#  define main(argspec1, argspec2) \
+      /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
+      __asm { cld }  /* Not needed for regular PMODE/W. */ \
+      __asm { sub eax, -80h }  /* EAX := DOS cmdline. */ \
+      __asm { call __dwlibc_doscmdline } \
+      __asm { push 0 } __asm { push eax } __asm { push eax } \
+      __asm { mov eax, 2 } __asm { mov edx, esp }  /* !!! */ \
+      __asm { call main } __asm { mov ah, 4ch } __asm { int 21h } } \
+      size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+      unsigned char *__dwlibc_alloc_end; \
+      void *cstart_; int _argc;  /* Pacify wlink. */ \
+      int main(argspec1, argspec2)
+#else
+#  define main1(argspec1) \
+      /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
+      __asm { cld }  /* Not needed for regular PMODE/W. */ \
+      __asm { sub eax, -80h }  /* EAX := DOS cmdline. */ \
+      __asm { call __dwlibc_doscmdline } \
+      __asm { call main1 } __asm { mov ah, 4ch } __asm { int 21h } } \
+      size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+      unsigned char *__dwlibc_alloc_end; \
+      int main1(argspec1)
+#endif
 
 #pragma aux  exit = "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
 #pragma aux _exit = "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []

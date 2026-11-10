@@ -1,9 +1,4 @@
-#ifdef __DWLIBC__ 
-#  include "dwlibc.h"
-#else
-#  include <string.h>
-#  include <unistd.h>
-#endif
+#include <dwlibc.h>
 
 /* Poor man's printf(3). It's unbuffered. */
 static void print(const char *msg) {
