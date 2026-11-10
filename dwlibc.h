@@ -150,6 +150,16 @@ typedef long off_t;
 
 #define EOF -1  /* Indicates end-of-file (EOF) or error. */
 
+#if 0  /* For 2-argument and 3-argument open(...), which we don't provide. */
+#  define O_RDONLY 0  /* flags bitfield value below. */
+#  define O_WRONLY 1
+#  define O_RDWR   2
+#  define O_BINARY 0  /* All I/O is binary, no CTRF-to-LF conversion. */
+#  define O_CREAT  ...  /* Value portable. */
+#  define O_TRUNC  ...  /* Value portable. */
+#  define O_APPEND ...  /* Value portable. */
+#endif
+
 /* --- Helper macros for function declarations. */
 
 #ifdef __NT__
