@@ -7,8 +7,8 @@
  *
  *   #include <dwlibc.h>
  *   void print(const char *msg) { (void)!write(1, msg, strlen(msg)); }
- *   int main1(const char *cmdline) {
- *     (void)cmdline;
+ *   int main(int argc, char **argv) {
+ *     (void)argc; (void)argv;
  *     print("Hello, World!\r\n");
  *     return 0;
  *   }
@@ -32,12 +32,22 @@
  *   #else
  *   #  include <string.h>
  *   #  include <unistd.h>
- *   #  define main1(argspec) main(int argc, char **argv)
- *   #  define main1_ignore_cmdline() (void)argc; (void)argv
  *   #endif
  *   void print(const char *msg) { (void)!write(1, msg, strlen(msg)); }
+ *   int main(int argc, char **argv) {
+ *     (void)argc; (void)argv;
+ *     print("Hello, World!\r\n");
+ *     return 0;
+ *   }
+ *
+ * An alternative which avoids parsing the command-line string, thus it is
+ * using main1(...) instead of main(...):
+ *
+ *   #define _LIBC_USE_MAIN1
+ *   #include <dwlibc.h>
+ *   void print(const char *msg) { (void)!write(1, msg, strlen(msg)); }
  *   int main1(const char *cmdline) {
- *     main1_ignore_cmdline();
+ *     (void)cmdline;
  *     print("Hello, World!\r\n");
  *     return 0;
  *   }
@@ -160,6 +170,16 @@ typedef long off_t;
 
 #define _LIBC_HAVE_OPEN00  /* Similar to https://github.com/pts/ssmcc */
 #define _LIBC_HAVE_CREAT1
+
+#ifdef _LIBC_USE_MAIN  /* Can be defined by the user. */
+#  ifdef _LIBC_USE_MAIN1  /* Can be defined by the user. */
+#    error Conflict between _LIBC_USE_MAIN and _LIBC_USE_MAIN1
+#  endif
+#else
+#  ifndef _LIBC_USE_MAIN1
+#    define _LIBC_USE_MAIN  /* main(...) is the default, not main1(...). */
+#  endif
+#endif
 
 #ifdef _LIBC_USE_MAIN  /* Can be defined by the user. */
   int __watcall main(int argc, char **argv);

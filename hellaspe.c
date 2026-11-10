@@ -1,6 +1,4 @@
-#undef _LIBC_USE_MAIN
 #ifdef __DWLIBC__ 
-#  define _LIBC_USE_MAIN
 #  include "dwlibc.h"
 #else
 #  include <string.h>

@@ -1,3 +1,4 @@
+#define _LIBC_USE_MAIN1
 #include <dwlibc.h>
 
 /* Poor man's printf(3). It's unbuffered. */

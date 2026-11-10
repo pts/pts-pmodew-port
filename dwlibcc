@@ -8,8 +8,14 @@
 # Example compile of a larger project:
 #
 #   $ git clone https://github.com/pts/luuzcat
-#   $ (cd luuzcat && ../dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DLIBC_PREINCLUDED -o luuzcat.exe luuzcat.c unscolzh.c uncompact.c unopack.c unpack.c undeflate.c uncompress.c unfreeze.c)
+#   $ (cd luuzcat && ../dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DLIBC_PREINCLUDED -D_LIBC_USE_MAIN1 -o luuzcat.exe luuzcat.c unscolzh.c uncompact.c unopack.c unpack.c undeflate.c uncompress.c unfreeze.c)
 #   $ ls -ld luuzcat/luuzcat.exe
+#
+# Example compile of a larger project using more libc functions:
+#
+#   $ git clone https://github.com/pts/mininasm
+#   $ (cd mininasm && ../dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DCONFIG_SKIP_LIBC -o mininasm.exe mininasm.c)
+#   $ ls -ld mininasm/mininasm.exe
 #
 # General usage of dwlibcc:
 #
