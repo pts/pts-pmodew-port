@@ -814,7 +814,7 @@ extern HANDLE __dwlibc_std_handles[3];
 #  pragma aux __dwlibc_dos_isatty = \
      "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done" \
     "test dl, dl"  "jns done"  "inc eax"  "done:" \
-    __value [__eax] __parm [__ebx] __modify __exact [__eax __ebx __edx]
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __edx]
   off_t __dwlibc_dos_lseek(int fd, off_t offset, int whence);
 #  pragma aux __dwlibc_dos_lseek = "mov ah, 42h"  "mov ecx, edx" \
     "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
@@ -1145,7 +1145,7 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
  */
 #pragma aux isatty = "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done" \
     "test dl, dl"  "jns done"  "inc eax"  "done:" \
-    __value [__eax] __parm [__ebx] __modify __exact [__eax __ebx __edx]
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __edx]
 
 #pragma aux lseek = "mov ah, 42h"  "mov ecx, edx" \
     "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
