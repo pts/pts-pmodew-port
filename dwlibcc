@@ -43,6 +43,37 @@
 #   * -bwin32: Build Win32-only .exe program file.
 #   * --nasm=...: NASM command name to build the PMODE/W DOS extender.
 #
+# Limitations of dwlibc:
+#
+# * It supports creating text-mode (console) programs only, it doesn't
+#   support any GUI.
+# * It provides only a few functions:
+#   * File (and console) I/O: open00, create1, close, read, write, lseek,
+#     isatty, rename == unlink.
+#   * Process management: exit == _exit.
+#   * Dynamic memory: malloc only (no relloc, no free).
+#   * Integer helpers: abs, labs, _rotl, _rotr, _lrotl, _lrotr.
+#   * Strings: memchr, memcmp, memcpy, memset, strcat, strchr, strcmp,
+#     strcpy, strlen.
+#   * ASCII character classes: isalnum, isalpha, isascii, isdigit, islower,
+#     isprint, isspace, isupper, isxdigit.
+#   * ASCII character transformation: tolower, toupper.
+#   * No buffered file I/O, i.e. no printf, fwrite, putchar, scanf, fread.
+#   * (More functions can be added as needed.)
+# * All libc functions are inlined, so the more function call code locations
+#   you have, the larger your output .exe becomes. (This could be fixed by
+#   a redesign from header-only to .obj-in-.lib.)
+# * It doesn't do any CRLF-to-LF trasnlation, all I/O is binary. It supports
+#   8 bits (i.e. the ANSI encodings) in characters in filenames, on the
+#   command line and on the console.
+# * It doesn't support multithreaded programs.
+# * It doesn't support long filenames on DOS. (It could be added, first
+#   PMODE/W, then to the libx.)
+# * It doesn't support command-line strings longer than 126 bytes on DOS.
+# * The -bwin32 and -bdoswin32 .exe imports even those Win32 functions
+#   from kernel32.dll which it doesn't use. (This could be fixed by
+#   running wlink twice, and creating a shorter .lnk file in-between.)
+
 set -e
 unset LANG LANGUAGE
 export LC_ALL=C  # For reproducible builds.
@@ -90,7 +121,7 @@ fi
 # Here the -Wl,com st=8K is used for the stack size. !! Make the override consistent.
 # !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this? Patch it.
 # !! Also patch the PMODE/W and dwlibc logos in at file offset @0x18.
-# !! dwlibc_win32.link imports all the functions, even the unused ones. Provide a library instead.
+# !! dwlibc_win32.lnk imports all the functions, even the unused ones. Provide a library instead.
 # !! Bundle owcc, wcc386 and wlink.
 if test "$target" = dos32; then
   # !! Patch 0x40 --> 0x41 in the PE header file offset header field at file offset @0x3c.
