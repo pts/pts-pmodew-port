@@ -232,6 +232,13 @@ __DWLIBCABI1 int isatty(int fd);
   */
 __DWLIBCABI1 off_t lseek(int fd, off_t offset, int whence);
 
+static __inline int ftruncate(int fd, off_t size);
+
+/* Same as: ftruncate(fd, lseek(fd, 0, SEEK_CUR)). This is not a standard C
+ * or POSIX function.
+ */
+__DWLIBCABI1 int ftruncate_here(int fd);
+
 /* remove(...) and unlink(...) are equivalent. */
 __DWLIBCABI1 int remove(const char *pathname);
 __DWLIBCABI1 int unlink(const char *pathname);
@@ -560,6 +567,7 @@ static __inline void __watcall __dwlibc_cmdline_to_argv(
       __asm { lea edx, [edi+2] }  /* EDX := fully qualified argv[0]. */ \
       __asm { pop eax }
 #endif  /* #ifdef __DOS__ */
+
 #endif  /* #ifdef _LIBC_USE_MAIN */
 
 /* --- Win32 implementation. */
@@ -653,6 +661,7 @@ __DWLIBCABI2 HANDLE __stdcall CreateFileA(
     DWORD dwFlagsAndAttributes, HANDLE hTemplateFile);
 __DWLIBCABI2 DWORD __stdcall GetModuleFileNameA(
     HMODULE hModule, LPSTR lpFilename, DWORD nSize);
+__DWLIBCABI2 BOOL __stdcall SetEndOfFile(HANDLE hFile);
 
 /* nStdHandle for GetStdHandle(...): */
 #define STD_INPUT_HANDLE    ((DWORD)-10)
@@ -730,6 +739,10 @@ extern HANDLE __dwlibc_std_handles[3];
     "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
     "mov dx, ax"  "mov ecx, edx"  "done: xchg eax, ecx" __value [__eax] \
     __parm [__ebx] [__edx] [__eax] __modify __exact [__eax __ecx __edx]
+  int __dwlibc_dos_ftruncate_here(int fd);
+#  pragma aux __dwlibc_dos_ftruncate_here = \
+    "xor ecx, ecx"  "mov ah, 40h"  "int 21h" "sbb eax, eax" \
+    __parm [__ebx] __value [__eax] __modify __exact [__eax __ecx]
   int __dwlibc_dos_remove(const char *pathname);
 #  pragma aux __dwlibc_dos_remove = "mov ah, 41h"  "int 21h"  "sbb eax, eax" \
     __value [__eax] __parm [__edx] __modify __exact [__eax]
@@ -828,6 +841,50 @@ static __inline off_t lseek(int fd, off_t offset, int whence) {
   fd = (unsigned)fd < 3 ? (int)__dwlibc_std_handles[fd] : (unsigned)fd - 3;
   /* SetFilePointer(...) returns (DWORD)-1 on error. Good. */
   return (off_t)SetFilePointer((HANDLE)fd, offset, NULL, whence);
+}
+
+static __inline int ftruncate_here(int fd) {
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_ftruncate_here(fd);
+#endif
+  fd = (unsigned)fd < 3 ? (int)__dwlibc_std_handles[fd] : (unsigned)fd - 3;
+  return SetEndOfFile((HANDLE)fd) ? 0 : -1;
+}
+
+static __inline int ftruncate(int fd, off_t size) {
+  off_t old_fpos, got_fpos;
+  int got_trunc;
+#ifdef __DOS__
+  if (!__dwlibc_is_dos)
+#endif
+     fd = (unsigned)fd < 3 ? (int)__dwlibc_std_handles[fd] : (unsigned)fd - 3;
+  old_fpos =
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+      (__dwlibc_is_dos) ? __dwlibc_dos_lseek(fd, 0, SEEK_CUR) :
+#endif
+      (off_t)SetFilePointer((HANDLE)fd, 0, NULL, SEEK_CUR);
+  if (old_fpos == -1) return -1;
+  got_fpos =
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+      (__dwlibc_is_dos) ? __dwlibc_dos_lseek(fd, size, SEEK_SET) :
+#endif
+      (off_t)SetFilePointer((HANDLE)fd, size, NULL, SEEK_SET);
+  if (got_fpos != size) return -1;
+  got_trunc =
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+      (__dwlibc_is_dos) ? __dwlibc_dos_ftruncate_here(fd) :
+#endif
+      SetEndOfFile((HANDLE)fd) ? 0 : -1;
+  got_fpos =
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+      (__dwlibc_is_dos) ? __dwlibc_dos_lseek(fd, old_fpos, SEEK_SET) :
+#endif
+      (off_t)SetFilePointer((HANDLE)fd, old_fpos, NULL, SEEK_SET);
+  /* This leaves the file pointer at the wrong laction if the last lseek
+   * (to old_fpos) has failed, which is very unlikely, because lseek
+   * fails very rarely.
+   */
+  return (got_fpos != old_fpos || got_trunc) ? -1 : 0;
 }
 
 static __inline int remove(const char *pathname) {
@@ -1014,6 +1071,39 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
     "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
     "mov dx, ax"  "mov ecx, edx"  "done: xchg eax, ecx" __value [__eax] \
     __parm [__ebx] [__edx] [__eax] __modify __exact [__eax __ecx __edx]
+
+#pragma aux ftruncate_here = \
+    "xor ecx, ecx"  "mov ah, 40h"  "int 21h"  "sbb eax, eax" \
+    __parm [__ebx] __value [__eax] __modify __exact [__eax __ecx]
+
+#if 0  /* Similar implementation, different error handling. */
+  int ftruncate_alt(int fd, off_t size) {
+#  pragma aux ftruncate_alt =  "mov esi, edx"  /* Save argument size. */ \
+    "xchg ebx, eax"  /* EBX := EAX (filehandle); EBX := junk. */ \
+    "mov ax, 4201h"  /* SEEK_CUR. */ \
+    "xor ecx, ecx"  "xor edx, edx"  "int 21h"  "jc done" \
+    "xchg edx, eax"  /* DX := AX (low word); EAX := junk. */ \
+    "xchg ecx, eax"  /* CX := AX (high word); EAX := junk. */ \
+    "push ecx"  "push edx"  "mov edx, esi"  "mov ecx, esi"  "shr ecx, 16" \
+    "mov ax, 4200h"  /* SEEK_SET to ESI. */ \
+    "int 21h"  "jc done"  "mov ah, 40h"  "xor ecx, ecx" \
+    "int 21h"  /* Truncate. */ \
+    "jc done"  "pop edx"  "pop ecx"  "mov ax, 4200h"  /* SEEK_SET back. */ \
+    "int 21h"  "done:"  "sbb eax, eax" \
+    __value [__eax] __parm [__eax] [__edx] __modify __exact [__ebx __ecx __esi]
+#endif
+
+static __inline int ftruncate(int fd, off_t size) {
+  off_t old_fpos;
+  if ((old_fpos = lseek(fd, 0, SEEK_CUR)) == -1) return -1;
+  if (lseek(fd, size, SEEK_SET) != size) return -1;
+  size = ftruncate_here(fd);
+  /* This leaves the file pointer at the wrong location if the last lseek
+   * (to old_fpos) has failed, which is very unlikely, because lseek
+   * fails very rarely.
+   */
+  return (lseek(fd, old_fpos, SEEK_SET) != old_fpos || size) ? -1 : 0;
+}
 
 #pragma aux remove = "mov ah, 41h"  "int 21h"  "sbb eax, eax" \
     __value [__eax] __parm [__edx] __modify __exact [__eax]
