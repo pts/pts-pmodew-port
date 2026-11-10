@@ -296,6 +296,16 @@ int isxdigit(int c);
 int tolower(int c);
 int toupper(int c);
 
+/* Swaps the corresponding bytes in the specified regions. Not a standard
+ * C function, but useful.
+  */
+void memswap(void *a, void *b, size_t size);
+
+/* Swaps the corresponding 32-words in the specified regions. Not a standard
+ * C function, but useful.
+  */
+void memswap32(void *a, void *b, size_t count);
+
 #ifndef __GNUC__
    /* For this to work with __GNUC__, we muset make sure that if the
     * function taking the `...' arguments is __attribute__((noinline)).
@@ -428,6 +438,14 @@ int toupper(int c);
 #pragma intrinsic(strcmp)
 #pragma intrinsic(strcpy)
 #pragma intrinsic(strlen)  /* No error if function not available. */
+
+#pragma aux memswap = "jecxz done"  "again: mov al, [edi]"  "xchg al, [edx]" \
+    "stosb"  "inc edx"  "loop again"  "done:" __parm [__edi] [__edx] [__ecx] \
+    __modify __exact [__al __edi __edx __ecx]
+
+#pragma aux memswap32 = "jecxz done"  "again: mov eax, [edi]" \
+    "xchg eax, [edx]"  "stosd"  "add edx, 4"  "loop again"  "done:" \
+    __parm [__edi] [__edx] [__ecx] __modify __exact [__al __edi __edx __ecx]
 
 extern size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize;
 extern unsigned char *__dwlibc_alloc_end;
