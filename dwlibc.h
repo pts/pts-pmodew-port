@@ -137,6 +137,10 @@
 #endif
 #define __DWLIBC__ 1
 
+#ifndef _ALL_LIBC_INCLUDED
+#  define _ALL_LIBC_INCLUDED 1  /* Indicate to C source files that no further `#include <....h>' is needed, because all the libc in already included. */
+#endif
+
 /* --- Public macros, to be used in C files. */
 
 typedef char int8_t;
