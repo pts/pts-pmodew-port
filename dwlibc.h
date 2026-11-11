@@ -212,8 +212,13 @@ typedef unsigned mode_t;
 
 /* --- Function declarations. */
 
-#define _LIBC_HAVE_OPEN00  /* Similar to https://github.com/pts/ssmcc */
-#define _LIBC_HAVE_CREAT1
+#define _LIBC_HAVE_OPEN00 1  /* Similar to https://github.com/pts/ssmcc */
+#define _LIBC_HAVE_CREAT1 1
+/* open00(...), creat(...) and creat1(...) can return a valid and negative
+ * file descriptor.
+ */
+#define _LIBC_OPEN_NEGFD  1
+#define _LIBC_HAS_OPEN_FAILED(fd_result) ((fd_result) == -1)
 
 #ifdef _LIBC_USE_MAIN  /* Can be defined by the user. */
 #  ifdef _LIBC_USE_MAIN1  /* Can be defined by the user. */
@@ -245,9 +250,11 @@ typedef unsigned mode_t;
 
 #ifndef __ANYOS__
 /* Equivalent to open(pathname, O_RDONLY | O_BINARY), but a full-fledged
- * open(2) is not provided by dwlibc . Returns -1 on error. Unlike in
- * regular libcs, the retuned file descriptor can be negative and still be
- * valid.
+ * open(2) is not provided by dwlibc . Returns -1 on error.
+ *
+ * Unlike in regular libc, the retuned file descriptor can be negative and
+ * still be valid. Use _LIBC_HAS_OPEN_FAILED(...) to check the result.
+ *
  */
 __DWLIBCABI1 int open00(const char *pathname);
 
@@ -258,8 +265,10 @@ __DWLIBCABI1 int open00(const char *pathname);
 /* Almost equivalent to regular libc creat(pathname, mode), except for
  * O_BINARY. Equivalent to open(pathname, O_WRONLY | O_CREAT | O_TRUNC |
  * O_BINARY, mode), but full-fledged open(...) or creat(...) are not
- * provided by dwlibc. Returns -1 on error. Unlike in regular libcs, the
- * retuned file descriptor can be negative and still be valid.
+ * provided by dwlibc. Returns -1 on error.
+ *
+ * Unlike in regular libc, the retuned file descriptor can be negative and
+ * still be valid. Use _LIBC_HAS_OPEN_FAILED(...) to check the result.
  *
  * Argument mode is ignord on DOS and Win32.
  */
@@ -268,8 +277,11 @@ __DWLIBCABI1 int creat(const char *pathname, mode_t mode);
 /* Almost equivalent to creat(pathname, 0666), except for O_BINARY.
  * Equivalent to open(pathname, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,
  * 0666), but full-fledged open(...) or create(...) are not provided by
- * dwlibc. Returns -1 on error. Unlike in regular libcs, the retuned file
- * descriptor can be negative and still be valid.
+ * dwlibc. Returns -1 on error.
+ *
+ * Unlike in regular libc, the retuned file descriptor can be negative and
+ * still be valid. Use _LIBC_HAS_OPEN_FAILED(...) to check the result.
+ *
  */
 __DWLIBCABI1 int creat1(const char *pathname);
 
