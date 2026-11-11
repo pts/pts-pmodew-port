@@ -312,6 +312,7 @@ int strcmp(const char *s1, const char *s2);
 char *strcpy(char *dest, const char *src);
 size_t strlen(const char *s);
 int strncmp(const char *s1, const char *s2, size_t n);
+char *strrchr(const char *s, int c);  /* BSD has rindex(...). */
 
 int isalnum(int c);
 int isalpha(int c);
@@ -498,6 +499,11 @@ static __inline void qsort(
     "test al, al"  "jz equal"  "loop next"  "equal: xor eax, eax"  "done:" \
     __value [__eax] __parm [__esi] [__edi] [__ecx] \
     __modify __exact [__eax __ecx __esi __edx]
+
+#pragma aux strrchr = "mov ah, al"  "xor edx, edx"  "next: lodsb" \
+    "cmp al, ah"  "jne different"  "lea edx, [esi-1]"  "different:" \
+    "test al, al"  "jnz next"  "xchg eax, edx"  __value [__eax] \
+    __parm [__esi] [__eax] __modify __exact [__eax __esi __edx]
 
 #pragma aux memswap = "jecxz done"  "again: mov al, [edi]"  "xchg al, [edx]" \
     "stosb"  "inc edx"  "loop again"  "done:" __parm [__edi] [__edx] [__ecx] \
