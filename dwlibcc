@@ -47,11 +47,16 @@
 # * The dwlibcc-specific command-line flags must all be specified at the
 #   beginning of the dwlibcc command line (in any order). They are:
 #   * -bdoswin32 (default): Build combined DOS--Win32 .exe program file.
-#   * -bdos32: Build DOS-only .exe program file.
-#   * -bwin32: Build Win32-only .exe program file.
-#   * -blinux: Build Linux i386 ELF-32 executable program file.
+#   * -bdos32: Build DOS-only .exe program file. It works on DOS >=2.0.
+#     It needs a 80386 or later CPU. If the program doesn't call
+#     malloc(...), it works even with just 640 KiB of RAM.
+#   * -bwin32: Build Win32-only .exe program file. It works on Windows NT
+#     3.1 (1993) or later, and Windows 95 (1995), even on Windows 10 and
+#     Windows 11.
+#   * -blinux: Build Linux i386 ELF-32 executable program file. It works
+#     on Linux kernel >=1.0.
 #   * -bfreebsdx: Build combined Linux--FreeBSD i386 ELF-32 executable
-#     program file.
+#     program file. It works on Linux kernel >=1.0 and FreeBSD >=3.0.
 #   * -bany: Build system-independent object files. All system-specific
 #     declarations (including I/O functions such as write(...)) will be
 #     hidden in <dwlibc.h>, and linking (if attempted) will fail with
