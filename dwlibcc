@@ -19,6 +19,12 @@
 #   $ (cd mininasm && ../dwlibcc -blinux -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DCONFIG_SKIP_LIBC -o mininasm     mininasm.c)
 #   $ ls -ld mininasm/mininasm mininasm/mininasm.exe
 #
+# Example compile of a larger project using even more libc functions:
+#
+#   $ git clone https://github.com/pts/minixbcc
+#   $ minixbcc/cross.sh --no-cc --no-cpp "$PWD"/dwlibcc -bfreebsd -include dwlibc.h -s -Os -W -Wall -Wextra -Werror -std=c89 -D_LIBC_USE_FAKE_FREE -DLIBCH -DNOEXECUTABLE
+#   $ ls -ld minixbcc/libexec/* minixbcc/*/*.a
+#
 # General usage of dwlibcc:
 #
 # * The dwlibcc command of dwlibcc is  a C compiler driver, which create
