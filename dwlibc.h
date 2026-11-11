@@ -322,6 +322,11 @@ __DWLIBCABI1 int unlink(const char *pathname);
  */
 static __inline void *malloc(size_t size);
 
+#ifdef _LIBC_USE_FAKE_FREE  /* Can be defined by the user. */
+  /* It doesn't actually free anything, it leaks memory. */
+  static __inline void free(void *ptr);
+#endif
+
 /* exit(...) and _exit(...) are equivalent in dwlibc. */
 __DWLIBCABI3 __declspec(noreturn) void  exit(unsigned char exit_code);
 __DWLIBCABI3 __declspec(noreturn) void _exit(unsigned char exit_code);
@@ -1784,6 +1789,9 @@ static __inline void *malloc(size_t size) {
   __dwlibc_alloc_remaining = bsize - size;
   return (void*)p;
 }
+#ifdef _LIBC_USE_FAKE_FREE  /* Can be defined by the user. */
+static __inline void free(void *ptr) { (void)ptr; }
+#endif
 #endif  /* #ifndef __ANYOS__ */
 
 #endif  /* #ifdef _DWLIBC_H */
