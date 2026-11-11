@@ -174,7 +174,7 @@ typedef long off_t;
 #  define NULL ((void*)0)
 #endif
 
-#define EOF -1  /* Indicates end-of-file (EOF) or error. */
+#define EOF (-1)  /* Indicates end-of-file (EOF) or error. */
 
 #if 0  /* For 2-argument and 3-argument open(...), which we don't provide. */
 #  define O_RDONLY 0  /* flags bitfield value below. */
