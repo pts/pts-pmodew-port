@@ -449,7 +449,8 @@ static __inline void qsort(
 /* static __inline int isalnum(int c) { return (c >= 'A' && c <= 'Z') ||
  *     (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'); }
  */
-#pragma aux isalnum = "sub al, 48"  "cmp al, 10"  "jc @$1"  "add al, 48" \
+#pragma aux isalnum = "sub al, 48"  "cmp al, 10"  "jc short @$1" \
+    "add al, 48" \
     "or al, 32"  "sub al, 97"  "cmp al, 26"  "@$1: sbb eax, eax" \
     "neg eax"  __value [__eax] __parm [__eax] __modify __exact [__eax]
 
@@ -525,15 +526,16 @@ static __inline void qsort(
 #pragma intrinsic(strcpy)
 #pragma intrinsic(strlen)  /* No error if function not available. */
 
-#pragma aux strncmp = "jecxz equal"  "next: lodsb"  "scasb"  "je same_char" \
-    "sbb eax, eax"  "sbb eax, -1"  "jmp short done"  "same_char:" \
-    "test al, al"  "jz equal"  "loop next"  "equal: xor eax, eax"  "done:" \
+#pragma aux strncmp = "jecxz equal"  "next: lodsb"  "scasb" \
+    "je short same_char"  "sbb eax, eax"  "sbb eax, -1"  "jmp short done" \
+    "same_char: test al, al"  "jz short equal"  "loop next" \
+    "equal: xor eax, eax"  "done:" \
     __value [__eax] __parm [__esi] [__edi] [__ecx] \
     __modify __exact [__eax __ecx __esi __edx]
 
 #pragma aux strrchr = "mov ah, al"  "xor edx, edx"  "next: lodsb" \
-    "cmp al, ah"  "jne different"  "lea edx, [esi-1]"  "different:" \
-    "test al, al"  "jnz next"  "xchg eax, edx"  __value [__eax] \
+    "cmp al, ah"  "jne short different"  "lea edx, [esi-1]"  "different:" \
+    "test al, al"  "jnz short next"  "xchg eax, edx"  __value [__eax] \
     __parm [__esi] [__eax] __modify __exact [__eax __esi __edx]
 
 #pragma aux memswap = "jecxz done"  "again: mov al, [edi]"  "xchg al, [edx]" \
@@ -854,32 +856,32 @@ extern HANDLE __dwlibc_std_handles[3];
     __asm { xor eax, eax }  /* DOS entry point is after this. */
   int __dwlibc_dos_open00(const char *pathname);
 #  pragma aux __dwlibc_dos_open00 = "mov ax, 3d00h"  "int 21h" \
-    "jnc ok"  "sbb eax, eax"  "ok:" \
+    "jnc short ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
   int __dwlibc_dos_creat1(const char *pathname);
 #  pragma aux __dwlibc_dos_creat1 = "mov ah, 3ch"  "xor ecx, ecx"  "int 21h" \
-    "jnc ok"  "sbb eax, eax"  "ok:" \
+    "jnc short ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
   int __dwlibc_dos_close(int fd);
 #  pragma aux __dwlibc_dos_close = "mov ah, 3eh"  "int 21h"  "sbb eax, eax" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax]
   ssize_t __dwlibc_dos_read(int fd, void *buf, size_t count);
 #  pragma aux __dwlibc_dos_read = \
-    "mov ah, 3fh"  "int 21h"  "jnc ok"  "sbb eax, eax"  "ok:" \
+    "mov ah, 3fh"  "int 21h"  "jnc short ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
   ssize_t __dwlibc_dos_write(int fd, const void *buf, size_t count);
 #  pragma aux __dwlibc_dos_write = \
     "xor eax, eax"  "jecxz ok"  "mov ah, 40h"  "int 21h" \
-    "jnc ok"  "sbb eax, eax"  "ok:" \
+    "jnc short ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
   int __dwlibc_dos_isatty(int fd);
 #  pragma aux __dwlibc_dos_isatty = \
-     "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done" \
-    "test dl, dl"  "jns done"  "inc eax"  "done:" \
+     "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc short done" \
+    "test dl, dl"  "jns short done"  "inc eax"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __edx]
   off_t __dwlibc_dos_lseek(int fd, off_t offset, int whence);
 #  pragma aux __dwlibc_dos_lseek = "mov ah, 42h"  "mov ecx, edx" \
-    "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
+    "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc short done"  "shl edx, 16" \
     "mov dx, ax"  "mov ecx, edx"  "done: xchg eax, ecx" __value [__eax] \
     __parm [__ebx] [__edx] [__eax] __modify __exact [__eax __ecx __edx]
   int __dwlibc_dos_ftruncate_here(int fd);
@@ -912,7 +914,6 @@ extern HANDLE __dwlibc_std_handles[3];
 #endif
 
 static __inline int open00(const char *pathname) {
-  /* !! DOS */
   int fd;
 #ifdef __DOS__  /* While still #ifdef __NT__. */
   if (__dwlibc_is_dos) return __dwlibc_dos_open00(pathname);
@@ -925,7 +926,6 @@ static __inline int open00(const char *pathname) {
 }
 
 static __inline int creat(const char *pathname, mode_t mode) {
-  /* !! DOS */
   int fd;
   (void)mode;
 #ifdef __DOS__  /* While still #ifdef __NT__. */
@@ -939,7 +939,6 @@ static __inline int creat(const char *pathname, mode_t mode) {
 }
 
 static __inline int creat1(const char *pathname) {
-  /* !! DOS */
   int fd;
 #ifdef __DOS__  /* While still #ifdef __NT__. */
   if (__dwlibc_is_dos) return __dwlibc_dos_creat1(pathname);
@@ -1199,25 +1198,26 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
 #pragma aux _exit = "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
 
 #pragma aux open00 = "mov ax, 3d00h"  "int 21h" \
-    "jnc ok"  "sbb eax, eax"  "ok:" \
+    "jnc short ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
 
 #pragma aux creat = "mov ah, 3ch"  "xor ecx, ecx"  "int 21h" \
-    "jnc ok"  "sbb eax, eax"  "ok:" \
+    "jnc short ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__edx] [__ecx] __modify __exact [__eax __ecx]
 
 #pragma aux creat1 = "mov ah, 3ch"  "xor ecx, ecx"  "int 21h" \
-    "jnc ok"  "sbb eax, eax"  "ok:" \
+    "jnc short ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
 
 #pragma aux close = "mov ah, 3eh"  "int 21h"  "sbb eax, eax" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax]
 
-#pragma aux read = "mov ah, 3fh"  "int 21h"  "jnc ok"  "sbb eax, eax"  "ok:" \
+#pragma aux read = "mov ah, 3fh"  "int 21h"  "jnc short ok"  "sbb eax, eax" \
+    "ok:" \
     __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
 
 #pragma aux write = "xor eax, eax"  "jecxz ok"  "mov ah, 40h"  "int 21h" \
-    "jnc ok"  "sbb eax, eax"  "ok:" \
+    "jnc short ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__ebx] [__edx] [__ecx] __modify __exact [__eax]
 
 /* Just returns whether fd is a character device. (On Unix, there are
@@ -1228,12 +1228,12 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
  * https://github.com/open-watcom/open-watcom-v2/blob/2d1ea451c2dbde4f1efd26e14c6dea3b15a1b42b/bld/clib/environ/c/isatt.c#L58C10-L59
  * ).
  */
-#pragma aux isatty = "mov ax, 4400h"  "int 21h"  "mov eax, 0"  "jc done" \
-    "test dl, dl"  "jns done"  "inc eax"  "done:" \
+#pragma aux isatty = "mov ax, 4400h"  "int 21h"  "mov eax, 0" \
+    "jc short done"  "test dl, dl"  "jns done"  "inc eax"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __edx]
 
-#pragma aux lseek = "mov ah, 42h"  "mov ecx, edx" \
-    "shr ecx, 16"  "int 21h"  "sbb ecx, ecx"  "jc done"  "shl edx, 16" \
+#pragma aux lseek = "mov ah, 42h"  "mov ecx, edx" "shr ecx, 16"  "int 21h" \
+    "sbb ecx, ecx"  "jc short done"  "shl edx, 16" \
     "mov dx, ax"  "mov ecx, edx"  "done: xchg eax, ecx" __value [__eax] \
     __parm [__ebx] [__edx] [__eax] __modify __exact [__eax __ecx __edx]
 
@@ -1246,14 +1246,15 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
 #  pragma aux ftruncate_alt =  "mov esi, edx"  /* Save argument size. */ \
     "xchg ebx, eax"  /* EBX := EAX (filehandle); EBX := junk. */ \
     "mov ax, 4201h"  /* SEEK_CUR. */ \
-    "xor ecx, ecx"  "xor edx, edx"  "int 21h"  "jc done" \
+    "xor ecx, ecx"  "xor edx, edx"  "int 21h"  "jc short done" \
     "xchg edx, eax"  /* DX := AX (low word); EAX := junk. */ \
     "xchg ecx, eax"  /* CX := AX (high word); EAX := junk. */ \
     "push ecx"  "push edx"  "mov edx, esi"  "mov ecx, esi"  "shr ecx, 16" \
     "mov ax, 4200h"  /* SEEK_SET to ESI. */ \
-    "int 21h"  "jc done"  "mov ah, 40h"  "xor ecx, ecx" \
+    "int 21h"  "jc short done"  "mov ah, 40h"  "xor ecx, ecx" \
     "int 21h"  /* Truncate. */ \
-    "jc done"  "pop edx"  "pop ecx"  "mov ax, 4200h"  /* SEEK_SET back. */ \
+    "jc short done"  "pop edx"  "pop ecx" \
+    "mov ax, 4200h"  /* SEEK_SET back. */ \
     "int 21h"  "done:"  "sbb eax, eax" \
     __value [__eax] __parm [__eax] [__edx] __modify __exact [__ebx __ecx __esi]
 #endif
@@ -1459,8 +1460,6 @@ extern char _edata[], _end[];  /* Populated by wlink. */
     __parm [__al] __modify __exact []
 #pragma aux _exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "int 80h" \
     __parm [__al] __modify __exact []
-
-/* !!! Add j... short everywhere, even above. */
 
 #pragma aux open00 = "push 5"  "pop eax"  "push 0"  "pop ecx" \
     "int 80h"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
