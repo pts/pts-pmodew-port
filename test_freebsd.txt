@@ -1,0 +1,98 @@
+Test for dwlibc on FreeBSD.
+
+
+First test:
+
+$ (d="$PWD" && cd ~/prg/luuzcat && "$d"/dwlibcc -bfreebsd -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DLIBC_PREINCLUDED -o "$d"/luuzcat luuzcat.c unscolzh.c uncompact.c unopack.c unpack.c undeflate.c uncompress.c unfreeze.c)
+$ ./dwlibcc -bfreebsd -s -Os -W -Wall -Wextra -Werror -std=c89 -include dwlibc.h -DCONFIG_SKIP_LIBC -o mininasm ~/prg/mininasm/mininasm.c
+$ cp -a ~/prg/mininasm/minnnasm.nasm ~/prg/mininasm/my.nas ./
+$ rm -f minnnasm.cho && ./mininasm -O9 -o minnnasm.cho minnnasm.nasm && cmp -l ~/prg/mininasm/minnnasm.com.good minnnasm.cho && echo OK
+$ rm -f minnnasm.chl && ./mininasm -O9 -o minnnasm.chl my.nas
+my.nas:3: error: Unknown preprocessor directive: %error
+my.nas:4: error: Unsupported .bss instrucction: db
+$ rm -f pmodewd.exe && ./dwlibcc -bfreebsd -s -Os -W -Wall -Wextra -Werror -std=c89 -o helldspe helldspe.c && ./helldspe green; echo $?
+Hello, World!
+green
+You've got the green flag!
+0
+$ rm -f pmodewd.exe && ./dwlibcc -bfreebsd -s -Os -W -Wall -Wextra -Werror -std=c89 -o hellaspe hellaspe.c && ./hellaspe red green "blue sky" here; echo $?
+Hello, World!
+./hellaspe
+red
+green
+You've got the green flag!
+blue sky
+here
+5
+$ ls mininasm helldspe hellaspe minnnasm.nasm minnnasm.cho my.nas luuzcat | cpio -oc >hello.img && truncate -s 1440K hello.img
+#$ qemu-system-x86_64 -M pc-1.0 -m 64 -cdrom ~/Downloads/freebsd/3.5.1-install.iso -drive file=hello.img,format=raw,if=floppy -net user -boot d -enable-kvm -debugcon stdio
+$ qemu-system-x86_64 -M pc-1.0 -m 64 -cdrom ~/Downloads/freebsd/3.5.1-install.iso -drive file=hello.img,format=raw,if=floppy -net user -boot d -eanble-kvm &
+  <Enter> to boot the kernel
+  <Enter> or <Q> to skip kernel configuration
+  ...
+  (>20s wait time after the `wdc1 at ' line; be patient)
+  ...
+  <F> <Enter> for menu item Fixit
+  <4> <Enter> to start a shell
+  click on the QEMU window to prevent the Alt-<F4> below from closing the window
+  Alt-<F4>
+  (no need to do this:
+    Ctrl-Alt-<2>
+    type: sendkey alt-f4 <Enter>
+    Ctrl-Alt-<1>
+  )
+  # cpio -imd </dev/fd0
+  # echo *
+  # ./helldspe green; echo $?
+  Hello, World!
+  green
+  You've got the green flag!
+  0
+  # ./hellaspe red green "blue sky" here; echo $?
+  Hello, World!
+  ./hellaspe
+  red
+  green
+  You've got the green flag!
+  blue sky
+  here
+  5
+  # ./mininasm -O9 -o minnnasm.com minnnasm.nasm
+  # ./mininasm -O9 -o t my.nas
+  my.nas:3: error: Unknown preprocessor directive: %error
+  my.nas:4: error: Unsupported .bss instrucction: db
+  # echo minnnasm.com | cpio -oc >/dev/fd0
+  # ./luuzcat
+  (We test isatty(...) using this run.)
+  Usage: luuzcat [-][r][m] <input.gz >output
+  https://github.com/pts/luuzcat
+  # ./luuzcat -
+  (Tries to read from stdin, press Ctrl-<D> to exit.)
+  # ./luuzcat </dev/fd0
+  (We test isatty(...) using this run.)
+  compressed input expected
+  # sync
+  sync: not found
+  (but it syncs in a few seconds)
+$ rm -f minnnasm.com && cpio -imd <hello.img && cmp minnnasm.cho minnnasm.com && echo OK
+OK
+
+--- Don't do it:
+
+Second test, for sys_lseek_U:
+
+$ ls tasm32x tcput.asm pmodewe.asm decode.asm | cpio -oc >hello.img && truncate -s 1440K hello.img
+$ qemu-system-x86_64 -M pc-1.0 -m 64 -cdrom ~/Downloads/freebsd/3.5.1-install.iso -drive file=hello.img,format=raw,if=floppy -net user -boot d &
+  ...
+  # cpio -imd </dev/fd0
+  # ./tasm32x /ml /m2 /zn // tcput + -q tcput + pmodewe
+  # (echo tcput.obj; echo pmodewe.obj) | cpio -oc >/dev/fd0
+  # sync
+  sync: not found
+  (but it syncs in a few seconds)
+  (close the window)
+rm -f tcput.obj pmodewe.obj
+cpio -imd <hello.img  # Creates tcput.obj and pmodewe.obj
+cmp tcput.obj.good tcput.obj && cmp pmodewe.obj.1 pmodewe.obj && echo OK
+
+__END__
