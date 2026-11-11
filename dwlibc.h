@@ -157,6 +157,7 @@ typedef long long int64_t;
 typedef unsigned long long uint64_t;
 
 typedef long off_t;
+typedef unsigned mode_t;
 
 /* Some well-known exit code arguments of _exit(...) and exit(...). */
 #define EXIT_SUCCESS 0
@@ -250,9 +251,23 @@ typedef long off_t;
  */
 __DWLIBCABI1 int open00(const char *pathname);
 
+/* !! add: __DWLIBCABI1 int open(const char *pathname, int flags); for
+ * flags <= 2 only, i.e. file creation not supported.
+ */
+
+/* Almost equivalent to regular libc creat(pathname, mode), except for
+ * O_BINARY. Equivalent to open(pathname, O_WRONLY | O_CREAT | O_TRUNC |
+ * O_BINARY, mode), but full-fledged open(...) or creat(...) are not
+ * provided by dwlibc. Returns -1 on error. Unlike in regular libcs, the
+ * retuned file descriptor can be negative and still be valid.
+ *
+ * Argument mode is ignord on DOS and Win32.
+ */
+__DWLIBCABI1 int creat(const char *pathname, mode_t mode);
+
 /* Almost equivalent to creat(pathname, 0666), except for O_BINARY.
  * Equivalent to open(pathname, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,
- * 0666), but a full-fledged open(2) or create(2) are not provided by
+ * 0666), but full-fledged open(...) or create(...) are not provided by
  * dwlibc. Returns -1 on error. Unlike in regular libcs, the retuned file
  * descriptor can be negative and still be valid.
  */
@@ -897,6 +912,20 @@ static __inline int open00(const char *pathname) {
   return fd;
 }
 
+static __inline int creat(const char *pathname, mode_t mode) {
+  /* !! DOS */
+  int fd;
+  (void)mode;
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_creat1(pathname);
+#endif
+  if ((fd = (int)CreateFileA(pathname,
+      GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL)) !=
+      -1 /* INVALID_HANDLE_VALUE */) fd += 3;
+  return fd;
+}
+
 static __inline int creat1(const char *pathname) {
   /* !! DOS */
   int fd;
@@ -1160,6 +1189,10 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
     "jnc ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
 
+#pragma aux creat = "mov ah, 3ch"  "xor ecx, ecx"  "int 21h" \
+    "jnc ok"  "sbb eax, eax"  "ok:" \
+    __value [__eax] __parm [__edx] [__ecx] __modify __exact [__eax __ecx]
+
 #pragma aux creat1 = "mov ah, 3ch"  "xor ecx, ecx"  "int 21h" \
     "jnc ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
@@ -1420,7 +1453,14 @@ extern char _edata[], _end[];  /* Populated by wlink. */
     "int 80h"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx]
 
-/* !! Call creat(2) instead. */
+/* SYS_creat == 8 is also available on Linux, but we use SYS_open == 2
+ * for consistency with open0(...).
+ */
+#pragma aux creat = "push 5"  "pop eax"  "mov ecx, 241h" \
+    "int 80h"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__edx] \
+    __modify __exact [__eax __ecx __edx]
+
 #pragma aux creat1 = "push 5"  "pop eax"  "mov ecx, 241h"  "mov edx, 666q" \
     "int 80h"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
@@ -1564,6 +1604,14 @@ extern char __dwlibc_is_freebsd;
     "freebsd: push 0"  "push ebx"  "push eax"  "int 80h" \
     "lea esp, [esp+3*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx]
+
+#pragma aux creat = "push 5"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" "mov ecx, 241h" \
+    "int 80h"  "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push edx"  "push 601h"  "push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+4*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__edx] \
+    __modify __exact [__eax __ecx __edx]
 
 #pragma aux creat1 = "push 5"  "pop eax" \
     "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" \
