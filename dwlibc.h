@@ -307,10 +307,11 @@ int memcmp(const void *s1, const void *s2, size_t n);
 void *memcpy(void *dest, const void *src, size_t n);
 void *memset(void *s, int c, size_t n);
 char *strcat(char *dest, const char *src);
-char *strchr(const char *s, int c);
+char *strchr(const char *s, int c);  /* BSD has index(...). */
 int strcmp(const char *s1, const char *s2);
 char *strcpy(char *dest, const char *src);
 size_t strlen(const char *s);
+int strncmp(const char *s1, const char *s2, size_t n);
 
 int isalnum(int c);
 int isalpha(int c);
@@ -491,6 +492,12 @@ static __inline void qsort(
 #pragma intrinsic(strcmp)
 #pragma intrinsic(strcpy)
 #pragma intrinsic(strlen)  /* No error if function not available. */
+
+#pragma aux strncmp = "jecxz equal"  "next: lodsb"  "scasb"  "je same_char" \
+    "sbb eax, eax"  "sbb eax, -1"  "jmp short done"  "same_char:" \
+    "test al, al"  "jz equal"  "loop next"  "equal: xor eax, eax"  "done:" \
+    __value [__eax] __parm [__esi] [__edi] [__ecx] \
+    __modify __exact [__eax __ecx __esi __edx]
 
 #pragma aux memswap = "jecxz done"  "again: mov al, [edi]"  "xchg al, [edx]" \
     "stosb"  "inc edx"  "loop again"  "done:" __parm [__edi] [__edx] [__ecx] \
