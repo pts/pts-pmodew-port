@@ -74,6 +74,11 @@
 #    endif
 #  endif
 #endif
+#ifdef __FREEBSD__
+#  ifndef __LINUX__
+#    error Missing __LINUX__ for __FREEBSD__.
+#  endif
+#endif
 #ifdef __LINUX__
 #  ifdef __DOS__
 #    error Conflict between __LINUX__ and __DOS__.
@@ -648,17 +653,17 @@ static __inline char * __watcall __dwlibc_parse_first_arg(char *pw) {
 #ifdef __DOS__
 #  define __DWLIBC_ASMS_DOS_GETARGV0 0x20  /* Size of the code below. */
 #  define __DWLIBC_ASMB_DOS_GETARGV0 \
-      __asm { mov ebx, [eax+2ch] }  /* BX := environment selector. */ \
-      __asm { push eax } __asm { mov ax, 6 }__asm { int 31h } \
-      __asm { shl ecx, 16 } __asm { movzx edi, dx } \
-      __asm { add edi, ecx }  /* EDI := first env var (NAME=value). */ \
-      __asm { or ecx, -1 }  /* Unlimited `repne scasb' below. */ \
-      __asm { mov al, 0 } \
-      __asm { skip_env_vars_loop: repne scasb }  /* Skip single env var. */ \
-      __asm { scasb } \
-      __asm { db 75h, -5 }  /* jne short skip_env_vars_loop */ \
-      __asm { lea edx, [edi+2] }  /* EDX := fully qualified argv[0]. */ \
-      __asm { pop eax }
+    __asm { mov ebx, [eax+2ch] }  /* BX := environment selector. */ \
+    __asm { push eax } __asm { mov ax, 6 }__asm { int 31h } \
+    __asm { shl ecx, 16 } __asm { movzx edi, dx } \
+    __asm { add edi, ecx }  /* EDI := first env var (NAME=value). */ \
+    __asm { or ecx, -1 }  /* Unlimited `repne scasb' below. */ \
+    __asm { mov al, 0 } \
+    __asm { skip_env_vars_loop: repne scasb }  /* Skip single env var. */ \
+    __asm { scasb } \
+    __asm { db 75h, -5 }  /* jne short skip_env_vars_loop */ \
+    __asm { lea edx, [edi+2] }  /* EDX := fully qualified argv[0]. */ \
+    __asm { pop eax }
 #endif  /* #ifdef __DOS__ */
 #endif  /* #if defined(_LIBC_USE_MAIN) && (defined(__DOS__) || defined(__NT__)) */
 
@@ -1076,7 +1081,7 @@ static __inline const char * __watcall __dwlibc_win32cmdline(
       int main1(argspec1)
 #endif
 
-#endif  /* #ifdef __NT__ */
+#endif  /* #if defined(__NT__) && !defined(__LINUX__) */
 
 /* --- DOS implementation. Mostly dark magic in OpenWatcom C and inline
  * assembly.
@@ -1209,7 +1214,23 @@ static __inline int ftruncate(int fd, off_t size) {
 
 #endif  /* #if defined(__DOS__) && !defined(__NT__) && !defined(__LINUX__) */
 
-/* --- Linux i386 implementation. */
+#if defined(__DOS__) && !defined(__LINUX__)
+/* Allocates bsize bytes using DPMI and returns the starting address.
+ * Returns NULL iff bsize is 0 or if there is not enough memory.
+ * According to https://www.delorie.com/djgpp/doc/dpmi/api/310501.html ,
+ * but not the DPMI specification
+ * (https://www.phatcode.net/res/262/files/dpmi09.html#13.2), the returned
+ * pointer will be aligned to a multiple of 16 bytes (paragraph).
+ */
+void *__dwlibc_dpmi_alloc(size_t bsize);
+#pragma aux __dwlibc_dpmi_alloc = "xor eax, eax"  "jecxz done"  "push eax" \
+    "shld ebx, ecx, 16"  "mov ax, 501h"  "int 31h"  "pop eax" \
+    "jc short done"  "xchg eax, ebx"  "shl eax, 16"  "xchg ax, cx"  "done:" \
+    __value [__eax] __parm [__ecx] \
+    __modify __exact [__eax __ebx __ecx __esi __edi]
+#endif  /* #ifdef __DOS__ */
+
+/* --- Common parts of the Linux i386 and FreeBSD i386 implementations. */
 
 #if defined(__LINUX__) && !defined(__DOS__) && !defined(__NT__)
 
@@ -1294,6 +1315,42 @@ extern char _edata[], _end[];  /* Populated by wlink. */
     __asm { mov ecx, esi }  /* Stop at end of _BSS, within first page. */ \
     __asm { have_end_in_ecx: sub ecx, edi } \
     __asm { xor eax, eax } __asm { rep stosb }
+#define __DWLIBC_ASMB_GET_ARGV \
+    __asm { pop eax }  /* EAX := argc. */ \
+    __asm { test eax, eax } __asm { mov eax, esp }  /* EAX := argv. */\
+    __asm { db 74h, 3 }  /* jz short argv_ok */ \
+    __asm { add eax, 4 }  /* Skip argv[0]. */ __asm { argv_ok: }
+#define __DWLIBC_ASMB_ARGV_TO_CMDLINE \
+    __asm { mov esi, eax }  /* ESI := argv. */ \
+    __asm { xchg ecx, eax }  /* ECX := argv; EAX := junk. */ \
+    __asm { mov edx, 1+1+3 } \
+    __asm { measure_loop: lodsd } \
+    __asm { test eax, eax } \
+    __asm { db 74h, 9 }  /* jz short after_measure_loop */ \
+    __asm { call __dwlibc_get_arg_quoted_size } \
+    __asm { add edx, eax } \
+    __asm { db 0ebh, -14 }  /* jmp short measure_loop */ \
+    __asm { after_measure_loop: and edx, -4 }  /* Up dword, +3 above. */ \
+    __asm { sub esp, edx }  /* alloca() on the stack. */ \
+    __asm { mov eax, esp }  /* EAX := allocated cmdline. */ \
+    __asm { join_loop: mov edx, [ecx] } \
+    __asm { test edx, edx } \
+    __asm { db 74h, 10 }  /* jz short after_join_loop */ \
+    __asm { add ecx, 4 } \
+    __asm { call __dwlibc_append_arg_quoted } \
+    __asm { db 0ebh, -16 }  /* jmp short join_loop */ \
+    __asm { after_join_loop: cmp eax, esp } \
+    __asm { mov [eax], dl }  /* DL == 0. Trailing NUL. */ \
+    __asm { db 74h, 3 }  /* je short cmdline_ok */ \
+    __asm { mov eax, esp }  /* Restore return value: cmdline. */ \
+    __asm { inc eax }  /* Skip first space. */  \
+    __asm { cmdline_ok: }
+
+#endif  /* #if defined(__LINUX__) && !defined(__DOS__) && !defined(__NT__) */
+
+/* --- Linux i386 implementation. */
+
+#if defined(__LINUX__) && !defined(__FREEBSD__) && !defined(__DOS__) && !defined(__NT__)
 
 /* Actually, this defines the _dwlibcstart_ function. We do it using a macro
  * so that _dwlibcstart_ is only defined where the C source file defines
@@ -1326,36 +1383,7 @@ extern char _edata[], _end[];  /* Populated by wlink. */
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       /*__asm { cld }*/  /* Not needed for Linux. */ \
       __DWLIBC_ASMB_FILLBSSPAGE1 \
-      __asm { pop eax }  /* EAX := argc. */ \
-      __asm { test eax, eax } __asm { mov eax, esp }  /* EAX := argv. */\
-      __asm { db 74h, 3 }  /* jz short argv_ok */ \
-      __asm { add eax, 4 }  /* Skip argv[0]. */ \
-      /* Start of __dwlibc_quote_and_join_argv. */ \
-      __asm { arg_ok: mov esi, eax }  /* ESI := argv. */ \
-      __asm { xchg ecx, eax }  /* ECX := argv; EAX := junk. */ \
-      __asm { mov edx, 1+1+3 } \
-      __asm { measure_loop: lodsd } \
-      __asm { test eax, eax } \
-      __asm { db 74h, 9 }  /* jz short after_measure_loop */ \
-      __asm { call __dwlibc_get_arg_quoted_size } \
-      __asm { add edx, eax } \
-      __asm { db 0ebh, -14 }  /* jmp short measure_loop */ \
-      __asm { after_measure_loop: and edx, -4 }  /* Up dword, +3 above. */ \
-      __asm { sub esp, edx }  /* alloca() on the stack. */ \
-      __asm { mov eax, esp }  /* EAX := allocated cmdline. */ \
-      __asm { join_loop: mov edx, [ecx] } \
-      __asm { test edx, edx } \
-      __asm { db 74h, 10 }  /* jz short after_join_loop */ \
-      __asm { add ecx, 4 } \
-      __asm { call __dwlibc_append_arg_quoted } \
-      __asm { db 0ebh, -16 }  /* jmp short join_loop */ \
-      __asm { after_join_loop: cmp eax, esp } \
-      __asm { mov [eax], dl }  /* DL == 0. Trailing NUL. */ \
-      __asm { db 74h, 3 }  /* je short cmdline_ok */ \
-      __asm { mov eax, esp }  /* Restore return value: cmdline. */ \
-      __asm { inc eax }  /* Skip first space. */  \
-      __asm { cmdline_ok: } \
-      /* End of __dwlibc_quote_and_join_argv. */ \
+      __DWLIBC_ASMB_GET_ARGV __DWLIBC_ASMB_ARGV_TO_CMDLINE \
       __asm { call main1 } \
       __asm { movzx ebx, al } __asm { xor eax, eax } __asm { inc eax } \
       __asm { int 80h } } \
@@ -1364,30 +1392,32 @@ extern char _edata[], _end[];  /* Populated by wlink. */
       int main1(argspec1)
 #endif
 
-#pragma aux  exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "int 80h"  \
+#pragma aux  exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "int 80h" \
     __parm [__al] __modify __exact []
-#pragma aux _exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "int 80h"  \
+#pragma aux _exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "int 80h" \
     __parm [__al] __modify __exact []
 
+/* !!! Add j... short everywhere, even above. */
+
 #pragma aux open00 = "push 5"  "pop eax"  "push 0"  "pop ecx" \
-    "int 80h"  "test eax, eax"  "jns done"  "or eax, -1"  "done:" \
+    "int 80h"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx]
 
 /* !! Call creat(2) instead. */
 #pragma aux creat1 = "push 5"  "pop eax"  "mov ecx, 241h"  "mov edx, 666q" \
-    "int 80h"  "test eax, eax"  "jns done"  "or eax, -1"  "done:" \
+    "int 80h"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
 
-#pragma aux close = "push 6"  "pop eax"  "int 80h"  "test eax, eax"  \
-    "jns done"  "or eax, -1"  "done:" \
+#pragma aux close = "push 6"  "pop eax"  "int 80h"  "test eax, eax" \
+    "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax]
 
-#pragma aux read = "push 3"  "pop eax"  "int 80h"  "test eax, eax"  \
-    "jns done"  "or eax, -1"  "done:" \
+#pragma aux read = "push 3"  "pop eax"  "int 80h"  "test eax, eax" \
+    "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
 
-#pragma aux write = "push 4"  "pop eax"  "int 80h"  "test eax, eax"  \
-    "jns done"  "or eax, -1"  "done:" \
+#pragma aux write = "push 4"  "pop eax"  "int 80h"  "test eax, eax" \
+    "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
 
 /* Does `return ioctl(fd, TCGETS, buf_0x24) == 0;'. */
@@ -1396,65 +1426,234 @@ extern char _edata[], _end[];  /* Populated by wlink. */
     "neg eax" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
 
-#pragma aux lseek = "push 19"  "pop eax"  "int 80h"  "test eax, eax"  \
-    "jns done"  "or eax, -1"  "done:" \
+#pragma aux lseek = "push 19"  "pop eax"  "int 80h"  "test eax, eax" \
+    "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
 
 #pragma aux ftruncate_here = "push 19"  "pop eax"  "xor ecx, ecx" \
-    "xor edx, edx"  "inc edx"  "int 80h"  "js error"  "xchg ecx, eax" \
-    "push 93"  "pop eax"  "int 80h"  "test eax, eax"  "jns done" \
+    "xor edx, edx"  "inc edx"  "int 80h"  "js short error"  "xchg ecx, eax" \
+    "push 93"  "pop eax"  "int 80h"  "test eax, eax"  "jns short done" \
     "error: or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
 
 int __dwlibc_ftruncate_low(int fd, off_t size);
 #pragma aux __dwlibc_ftruncate_low = "push ebx"  "xchg ebx, eax" \
     "xchg ecx, edx"  "push 93"  "pop eax"  "int 80h" "xchg ecx, edx" \
-    "pop ebx"  "test eax, eax"  "jns done"  "or eax, -1"  "done:" \
+    "pop ebx"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__eax __edx] __modify __exact [__eax]
 
 static __inline int ftruncate(int fd, off_t size) {
   return __dwlibc_ftruncate_low(fd, size);
 }
 
-#pragma aux remove = "push 10"  "pop eax"  "int 80h"  "test eax, eax"  \
-    "jns done"  "or eax, -1"  "done:" \
+#pragma aux remove = "push 10"  "pop eax"  "int 80h"  "test eax, eax" \
+    "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax]
-#pragma aux unlink = "push 10"  "pop eax"  "int 80h"  "test eax, eax"  \
-    "jns done"  "or eax, -1"  "done:" \
+#pragma aux unlink = "push 10"  "pop eax"  "int 80h"  "test eax, eax" \
+    "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax]
 
-#endif  /* #if defined(__LINUX__) && !defined(__DOS__) && !defined(__NT__) */
+void *__dwlibc_mmap_alloc(size_t bsize);
+/* 0x22 == (MAP.PRIVATE|MAP.ANONYMOUS_LINUX).
+ * 3 == (PROT_READ|PROT_WRITE).
+ * 90 == SYS_Linux.ioctl.
+ */
+#pragma aux __dwlibc_mmap_alloc = "xor ebx, ebx" \
+    "push ebx"  "push -1"  "push 22h"  "push 3"  "push eax"  "push ebx" \
+    "mov ebx, esp"  "push 90"  "pop eax"  "int 80h"  "add esp, 6*4" \
+    "cmp eax, -255"  "jb short done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax __ebx]
+
+#endif  /* #if defined(__LINUX__) && !defined(__FREEBSD__) && !defined(__DOS__) && !defined(__NT__) */
+
+/* --- Combined Linux--FreeBSD i386 implementation. */
+
+#if defined(__FREEBSD__) && !defined(__DOS__) && !defined(__NT__)
+
+extern char __dwlibc_is_freebsd;
+
+/*
+ * We detect FreeBSD (and set __dwlibc_is_freebsd) like this: pass a
+ * negative fd to SYS_write, and we are running on FreeBSD if the result in
+ * EAX is positive (i.e. errno); otherwise it's Linux (i.e. -errno).
+ *
+ * The previous detection used SYS_getpid and checked CF after `int 80h'.
+ * This worked on modern Linux kernels (who don't change CF, but FreeBSD
+ * i386 sets CF=0 upon success), but `int 80h' Linux 1.0.4 sets CF=0, so it
+ * didn't work. Checking the sign of the errno return value is more robust.
+ */
+#define __DWLIBC_ASMB_DETECT_FREEBSD \
+    __asm { xor edx, edx }  __asm { xor ecx, ecx } __asm { or ebx, -1 } \
+    __asm { push 4 } __asm { pop eax } __asm { push edx } __asm { push ecx } \
+    __asm { push ebx } __asm { push eax } __asm { int 80h } \
+    __asm { add esp, 4*4 } __asm { not eax } __asm { shr eax, 31 } \
+    __asm { mov [__dwlibc_is_freebsd], al }
+
+/* Actually, this defines the _dwlibcstart_ function. We do it using a macro
+ * so that _dwlibcstart_ is only defined where the C source file defines
+ * `int main1(const char *cmdline) { ... }'. The benefit is that the program
+ * can be split to multiple C source files, and only one of them will define
+ * _dwlibcstart_ and thus the `redefinition of _dwlibcstart_' error by wlink
+ * is avoided. As a negative side effect of this hack, it is not possible to
+ * reference main1 anywhere else in the source C file.
+ *
+ * This implements the 32-bit i386 program entry point the Linux kernel or
+ * the FreeBSD jumps to.
+ */
+#ifdef _LIBC_USE_MAIN
+#  define main(argspec1, argspec2) \
+      /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
+      /*__asm { cld }*/  /* Not needed for Linux. */ \
+      __DWLIBC_ASMB_DETECT_FREEBSD \
+      __DWLIBC_ASMB_FILLBSSPAGE1 \
+      __asm { pop eax }  /* EAX := argc. */ \
+      __asm { mov edx, esp }  /* EDX := argv. */ \
+      __asm { call main }  /* Takes EAX, EDX. */ \
+      __asm { movzx ebx, al } __asm { xor eax, eax } __asm { inc eax } \
+      __asm { push ebx } __asm { push ebx } __asm { int 80h } } \
+      char __dwlibc_is_freebsd; \
+      size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+      unsigned char *__dwlibc_alloc_end; \
+      void *cstart_; int _argc;  /* Pacify wlink. */ \
+      int main(argspec1, argspec2)
+#endif
+#ifdef _LIBC_USE_MAIN1
+#  define main1(argspec1) \
+      /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
+      /*__asm { cld }*/  /* Not needed for Linux. */ \
+      __DWLIBC_ASMB_DETECT_FREEBSD \
+      __DWLIBC_ASMB_FILLBSSPAGE1 \
+      __DWLIBC_ASMB_GET_ARGV __DWLIBC_ASMB_ARGV_TO_CMDLINE \
+      __DWLIBC_ASMB_INIT_STACKLOWNEG  /* Ruins EBX. */ \
+      __asm { call main1 } \
+      __asm { movzx ebx, al } __asm { xor eax, eax } __asm { inc eax } \
+      __asm { push ebx } __asm { push ebx } __asm { int 80h } } \
+      char __dwlibc_is_freebsd; \
+      size_t __dwlibc_alloc_remaining, __dwlibc_alloc_next_bsize; \
+      unsigned char *__dwlibc_alloc_end; \
+      __DWLIBC_DEFINE_STACKLOWNEG \
+      int main1(argspec1)
+#endif
+
+#pragma aux  exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "push ebx" \
+    "push ebx"  "int 80h" __parm [__al] __modify __exact []
+#pragma aux _exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "push ebx" \
+    "push ebx"  "int 80h" __parm [__al] __modify __exact []
+
+#pragma aux open00 = "push 5"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" \
+    "push 0"  "pop ecx"  "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push 0"  "push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+3*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx]
+
+#pragma aux creat1 = "push 5"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" \
+    "mov ecx, 241h"  "mov edx, 666q"  "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push 666q"  "push 601h"  "push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+4*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
+
+#pragma aux close = "push 6"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+2*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax]
+
+#pragma aux read = "push 3"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push edx"  "push ecx"  "push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+4*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
+
+#pragma aux write = "push 4"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push edx"  "push ecx"  "push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+4*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
+
+/* Does `return ioctl(fd, TCGETS//TIOCGETA, buf_0x2c) == 0;'. */
+#pragma aux isatty = "push 54"  "pop eax"  "sub esp, 2ch"  "mov edx, esp" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" \
+    "mov ecx, 5401h"  "int 80h"  "jmp short got" \
+    "freebsd: push edx"  "push 402c7413h"  "push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+4*4]"  "jnc short got"  "sbb eax, eax" \
+    "got: add esp, 2ch"  "cmp eax, 1"  "sbb eax, eax"  "neg eax" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
+
+#pragma aux lseek = "push 19"  "pop eax"  \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push edx"  "xchg eax, ecx"  "cdq"  "push edx"  "push eax" \
+    "push eax"  "push ebx"  "push eax"  "xor eax, eax"  "mov al, 199"  \
+    "int 80h" \
+    "lea esp, [esp+6*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
+
+/* !! Test this on both Linux and FreeBSD. */
+#pragma aux ftruncate_here = "push 19"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd"  "xor ecx, ecx" \
+    "xor edx, edx"  "inc edx"  "int 80h"  "js short bad"  "xchg ecx, eax" \
+    "push 93"  "pop eax"  "int 80h"  "test eax, eax"  "jns short done" \
+    "jmp short bad"  "freebsd: mov al, 199"  "push 1"  "push 0"  "push 0" \
+    "push eax"  "push ebx"  "push eax"  "lea esp, [esp+6*4]"  "jc short bad" \
+    "push edx"  "push eax"  "xor eax, eax"  "mov al, 201" \
+    "push eax"  "push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+5*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
+
+/* !! Test this on both Linux and FreeBSD. */
+int __dwlibc_ftruncate_low(int fd, off_t size);
+#pragma aux __dwlibc_ftruncate_low = "push ebx"  "xchg ebx, eax" \
+    "xchg ecx, edx"  "push 93"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push edx"  "mov al, 201"  "xchg eax, ecx"  "cdq"  "push edx" \
+    "push eax"  "push eax"  "push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+5*4]"  "pop edx"  "jnc short done"  "bad: or eax, -1" \
+    "done: pop ebx"  "xchg ecx, edx" \
+    __value [__eax] __parm [__eax __edx] __modify __exact [__eax]
+static __inline int ftruncate(int fd, off_t size) {
+  return __dwlibc_ftruncate_low(fd, size);
+}
+
+#pragma aux remove = "push 10"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+2*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax]
+#pragma aux unlink = "push 10"  "pop eax" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+2*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] __modify __exact [__eax]
+
+void *__dwlibc_mmap_alloc(size_t bsize);
+/* 0x22 == (MAP.PRIVATE|MAP.ANONYMOUS_LINUX).
+ * 0x1002 == (MAP.PRIVATE|MAP.ANONYMOUS_FREEBSD).
+ * 3 == (PROT_READ|PROT_WRITE).
+ * 90 == SYS_Linux.ioctl.
+ */
+#pragma aux __dwlibc_mmap_alloc = "xor ebx, ebx"  "push ebx"  "push ebx" \
+    "push ebx"  "push -1"  "push 22h"  "push 3"  "push eax"  "push ebx" \
+    "cmp [__dwlibc_is_freebsd], bl"  "jne short freebsd" \
+    "mov ebx, esp"  "push 90"  "pop eax"  "int 80h" \
+    "cmp eax, -255"  "jb short done"  "or eax, -1"  "jmp short done" \
+    "freebsd: mov word ptr [esp+3*4], 1002h"  "mov bl, 197"  "xchg eax, ebx" \
+    "push eax"  "int 80h"  "pop ebx" \
+    "jnc short done"  "sbb eax, eax"  "done: add esp, 8*4" \
+    __value [__eax] __parm [__eax] __modify __exact [__eax __ebx]
+
+#endif  /* #if defined(__FREEBSD__) && !defined(__DOS__) && !defined(__NT__) */
 
 /* --- Memory allocator. */
-
-#ifdef __DOS__
-  /* Allocates bsize bytes using DPMI and returns the starting address.
-   * Returns NULL iff bsize is 0 or if there is not enough memory.
-   * According to https://www.delorie.com/djgpp/doc/dpmi/api/310501.html ,
-   * but not the DPMI specification
-   * (https://www.phatcode.net/res/262/files/dpmi09.html#13.2), the returned
-   * pointer will be aligned to a multiple of 16 bytes (paragraph).
-   */
-  void *__dwlibc_dpmi_alloc(size_t bsize);
-#  pragma aux __dwlibc_dpmi_alloc = "xor eax, eax"  "jecxz done"  "push eax" \
-    "shld ebx, ecx, 16"  "mov ax, 501h"  "int 31h"  "pop eax"  "jc done" \
-    "xchg eax, ebx"  "shl eax, 16"  "xchg ax, cx"  "done:" \
-    __value [__eax] __parm [__ecx] \
-    __modify __exact [__eax __ebx __ecx __esi __edi]
-#endif
-
-#ifdef __LINUX__
-  void *__dwlibc_mmap_alloc(size_t bsize);
-  /* 0x22 == (MAP.PRIVATE|MAP.ANONYMOUS_LINUX).
-   * 3 == (PROT_READ|PROT_WRITE).
-   * 90 == SYS_Linux.ioctl.
-   */
-#  pragma aux __dwlibc_mmap_alloc = "xor ebx, ebx"  "push ebx"  "push ebx" \
-    "push ebx"  "push -1"  "push 22h"  "push 3"  "push eax"  "push ebx" \
-    "mov ebx, esp"  "push 90"  "pop eax"  "int 0x80"  "add esp, 8*4" \
-    "cmp eax, -255"  "jb done"  "or eax, -1"  "done:" \
-    __value [__eax] __parm [__eax] __modify __exact [__eax __ebx]
-#endif
 
 #ifndef __ANYOS__
 static __inline void *malloc(size_t size) {

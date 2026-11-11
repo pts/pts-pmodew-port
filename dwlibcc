@@ -1,6 +1,6 @@
 #! /bin/sh --
 #
-# dwlibcc: C compiler driver for dwlibc, a toolchain to create stanalone, combined DOS--Win32 .exe programs and Linux i386 ELF-32 programs
+# dwlibcc: C compiler driver for dwlibc, a toolchain to create stanalone, combined DOS--Win32 .exe programs and combined Linux--FreeBSD i386 ELF-32 programs
 # by pts@fazekas.hu at Sun Nov  8 16:20:04 CET 2026
 #
 # Example first-run compile: ./dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -o helldspe.exe helldspe.c
@@ -44,11 +44,14 @@
 #   * -bdos32: Build DOS-only .exe program file.
 #   * -bwin32: Build Win32-only .exe program file.
 #   * -blinux: Build Linux i386 ELF-32 executable program file.
+#   * -bfreebsdx: Build combined Linux--FreeBSD i386 ELF-32 executable
+#     program file.
 #   * -bany: Build system-independent object files. All system-specific
 #     declarations (including I/O functions such as write(...)) will be
 #     hidden in <dwlibc.h>, and linking (if attempted) will fail with
 #     undefined symbols.
-#   * --nasm=...: NASM command name to build the PMODE/W DOS extender.
+#   * --nasm=...: NASM command name to build the PMODE/W DOS extender
+#     for -bdoswin32 and -bdos.
 #
 # Limitations of dwlibc:
 #
@@ -67,6 +70,8 @@
 #   * ASCII character transformation: tolower, toupper.
 #   * No buffered file I/O, i.e. no printf, fwrite, putchar, scanf, fread.
 #   * (More functions can be added as needed.)
+# * It doesn't support function error codes (errno).
+# * It doesn't pass the environment variables (environ) to the program.
 # * All libc functions are inlined, so the more function call code locations
 #   you have, the larger your output .exe becomes. (This could be fixed by
 #   a redesign from header-only to .obj-in-.lib.)
@@ -91,6 +96,7 @@ test "$0" = "${0%/*}" || mydir="${0%/*}"
 unset INC LIB LIBDIR WLINK_LNK WATCOM
 export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
 target=; nasm=
+dosxt="$mydir"/pmodewd.exe
 while ! test "$target"; do
   case "$1" in
    "" | -\? | -v) exec owcc "$@" 2>&1 ;;
@@ -99,13 +105,29 @@ while ! test "$target"; do
    -bdos | -bdos32 | -bpmodew) shift; target=dos32 ;;
    -bwin32) shift; target=win32 ;;
    -bdoswin32) shift; target=doswin32 ;;
-   -blinux) shift; target=linux ;;
-   -bany | -banyos) shift; target=any ;;  # Similar to `minicc -bany' in https://github.com/pts/minilibc686 , but here system-specific and I/O functions (e.g. write(...)) won't even be declared.
+   -blinux) shift; target=linux; dosxt= ;;
+   -bfreebsd | -bfreebsdx) shift; target=freebsdx; dosxt= ;;  # -bfreebsd would be only FreeBSD without Linux. We don't support that.
+   -bany | -banyos) shift; target=any; dosxt= ;;  # Similar to `minicc -bany' in https://github.com/pts/minilibc686 , but here system-specific and I/O functions (e.g. write(...)) won't even be declared.
    *) target=doswin32 ;;
   esac
 done
 
-if test "$target" != linux && ! test -f "$mydir"/pmodewd.exe; then  # Build the DOS extender DOS stub pmodewd.exe upon first run.
+argflag=; exefn=; needexefn=1
+for arg in "$@"; do
+  case "$argflag" in -o) exefn="$arg" ;; esac
+  argflag=
+  case "$arg" in
+   -b*) echo "fatal: move target flag to the beginning: $arg" >&2; exit 1 ;;
+   -o?*) exefn="${arg#-?}" ;;
+   -o) argflag="$arg" ;;
+   -[cSE]) needexefn= ;;
+  esac
+done
+if test "$needexefn" && ! test "$exefn"; then
+  echo "fatal: missing output filename, please specify -o ..." >&2; exit 1
+fi
+
+if test "$dosxt" && ! test -f "$dosxt"; then  # Build the DOS extender DOS stub pmodewd.exe upon first run.
   if ! test "$nasm"; then
     nasm="$mydir"/tools/nasm-0.98.39.upx
     "$nasm" -v >/dev/null 2>&1 || nasm=nasm  # Use the system nasm if the bundled "$nasm" doesn't work.
@@ -134,20 +156,29 @@ fi
 # !! Bundle owcc, wcc386 and wlink.
 if test "$target" = dos32; then
   # !! Patch 0x40 --> 0x41 in the PE header file offset header field at file offset @0x3c.
-  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,stub="$mydir"/pmodewd.exe -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
+  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,stub="$dosxt" -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
 elif test "$target" = win32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K                                      -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
+  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K                          -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
 elif test "$target" = doswin32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,stub="$mydir"/pmodewd.exe -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__DOS__ "$@"
+  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,stub="$dosxt" -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__DOS__   "$@"
 elif test "$target" = linux; then
   # FYI `op exportall' is not specified.
+  # !! Apply sstrip.ml to make it even smaller, but only if -s was specified.
+  # `op obja=16' creates incorrectly aligned ELF. !!!
+  exec owcc -bbegin -Wc,-bt=linux   -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k                                                                      -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
+elif test "$target" = freebsdx; then
+  # FYI `op exportall' is not specified.
   # !! Apply sstrip.ml to make it even smaller.
-  # !! Apply the FreeBSD EI_BRAND to make it run on FreeBSD i386 3.0.
-  exec owcc -bbegin -Wc,-bt=linux -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=16                                                                                    -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
+  # `op obja=16' creates incorrectly aligned ELF. !!!
+  owcc      -bbegin -Wc,-bt=freebsd -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,fre -Wl,op -Wl,nor -Wl,op -Wl,obja=4k                                                                      -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__LINUX__ "$@" || exit "$?"
+  # Apply the FreeBSD EI_BRAND to make it run on FreeBSD i386 3.0. !! Drop the dependency on Perl, use sstrip.ml etc.
+  perl -e 'my $fn = $ARGV[0]; my $fnp = ($fn =~ m@^/@) ? "" : "./"; die("fatal: error opening: $fn\n") if !open(F, "+< $fnp$fn"); if ((sysread(F, $_, 16) or -1) == 16 and s@^(\x7fELF\x01\x01\x01\x09)\0{8}@${1}FreeBSD\0@) { die("fatal: error writing: $fn\n") if (sysseek(F, 0, 0) or -1) != 0 or (syswrite(F, $_, 16) or -1) != 16 }' \
+      "$exefn" || exit "$?"
+  exec sstrip.ml -- "$exefn"  # !! Is this needed, or is `op obja=4k' enough on FreeBSD 3.0?
 elif test "$target" = any; then
-  exec owcc -bbegin -Wc,-bt=anyos -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=16                                                                                    -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__           "$@"
+  exec owcc -bbegin -Wc,-bt=anyos -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=16                                                                        -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
 else
   echo "$0: fatal: target not implemented: -b$target" >&2; exit 1
 fi
