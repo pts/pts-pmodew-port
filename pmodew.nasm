@@ -91,6 +91,79 @@
 ;
 ; DPMI 0.9 specification formatted as nice HTML: https://web.archive.org/web/20240915000218/https://www.phatcode.net/res/262/files/dpmi09.html
 ;
+; ---
+;
+; Map of conventional memory (i.e. within the first 640 KiB) when PMODE/W is
+; running, positions and sizes measured in paragraphs (0x10 == 16 bytes)
+; from start of memory (linear address 0), in any mode:
+;
+; * 0: real-mode interrupt vector table (IVT) of 400h>>4 paragraphs.
+; * 40h: BIOS and DOS data area of ~=200h>>4 paragraphs.
+; * ~=60h: DOS data, DOS process code and data. It includes memory of command.com running PMODE/W.
+; * ...
+; * _pspseg-1: DOS MCB of the PSP.
+; * _pspseg: First half of the PSP of the pmodew.exe DOS process.
+; * _pspseg+8: Second half of the PSP. It contains the command-line string starting with the length byte.
+; * _pspseg+10h: (pmodewk>>4)==PMODE_TEXT (PMODE kernel by Tran) segment code and data. This is where pmodew.exe is loaded from file offset .hdrsize>>4.
+; * _pspseg+10h+~=21ch: (pmodewe>>4)==pmcode16 segment code and data (PMODE/W DOS extender stub code by Daredevil). Initially CS points to it, and IP == -pmodewe+_pm16start.
+; * _pspseg+10h+~=3d7h: pmstack segment uninitialized data (stack space at startup) of STACK_SIZE>>4 == 40h paragraphs. Initially SS points to it, and SP == STACK_SIZE. !! Is it used after initialization? !! Isn't it too large?
+;
+; Then, in DPMI mode:
+;
+; * _membase after calling _pm_init == _pspseg+10h+~=3d7h+40h: DPMI DOS extender private data of SI paragraphs (as returned in SI by int 2fh, AX == 1687h call).
+;
+; Then, in VCPI mode:
+;
+; * aligment for VCPI pagetables == _membase after calling _pm_init == _pspseg+10h+~=3d7h+40h: 0..0ffh paragraphs.
+; * pagetablesbase>>4: VCPI pagetable data of (min(PM_PAGETABLES,pagetables_needed_for_max_mem)<<8)+187h paragraphs.
+;
+; Then, in non-DPMI mode (i.e. VCPI, XMS or raw mode):
+
+; * idtbase>>4: IDT data of 80h paragraphs.
+; * rmstackbase: real-mode stacks of PM_RMSTACKLEN*PM_RMSTACKS paragraphs.
+; * pmstackbase>>4 == rmstacktop: protected-mdoe stacks, PM_PMSTACKLEN*PM_PMSTACKS paragraphs.
+; * callbackseg == pmstacktop>>4 == callbackbase>>4: callback data of ((PM_CALLBACKS+5)*25+0fh)>>4) paragraphs.
+; * gdtseg == gdtbase>>4: GDT of ((PM_SELECTORS+15)*8+0fh)>>4 paragraphs.
+;
+; Then, in any mode:
+
+; * _int21lowbufseg == _int21lowbufptr>>4: data transfer buffer for extended int 21h, Size is _int21lowbufsize>>4 == 100h paragraphs.
+; * _int21lowdtaseg == dtabufptr<<4 == initial _int21dtaoff: int 21h DTA buffer. Size is DTABUFSIZE>>4 == 20h paragraphs. Also used for reading the first 200h bytes of the .exe, looking for headers. DOS needs only 100h bytes of DTA.
+; * _membase before calling _loadexe: Some 32-bit .exe image data. Some of it may be loaded to extended memory (above 1 MiB).
+; * final _membase: Right after all of the above. Unused memory follows.
+; * ...
+; * _memtop: End of DOS memory block. PMODE/W will return the conventional memory between the final _membase and _memtop to DOS before jumping to the 32-bit .exe entry point.
+;
+; So the total conventional memory usage, in paragraphs, is the sum of:
+;
+; * internal DOS memory structures: unknown
+; * DOS MCB: 1
+; * PSP: 10h
+; * PMODE_TEXT segment: ~=21ch, depends on the compile-time configuration of PMODE/W.
+; * pmcode16 segment: ~=3d7h, depends on the compile-time configuration of PMODE/W.
+; * pmstack segment: 40h
+; * DPMI DOS extender private data: unknown. Present only in DPMI mode.
+; * alignment for VCPI pagetables: 0..0ffh. Only if VCPI mode.
+; * VCPI pagetables: (min(PM_PAGETABLES,pagetables_needed_for_max_mem)<<8)+187h. Only if VCPI mode.
+; * IDT: 80h. Present only in non-DPMI mode.
+; * real-mode stacks: PM_RMSTACKLEN*PM_RMSTACKS. Present only in non-DPMI mode.
+; * protected-mode stacks: PM_PMSTACKLEN*PM_PMSTACKS. Present only in non-DPMI mode.
+; * callbacks: (((PM_CALLBACKS+5)*25+0fh)>>4). Present only in non-DPMI mode.
+; * GDT: (((PM_SELECTORS+15)*8+0fh)>>4). Present only in non-DPMI mode.
+; * data transfer buffer for extended int 21h: 100h
+; * int 21h DTA buffer: 20h
+; * parts of the 32-bit .exe image loaded to conventional memory: unknown
+;
+; So the maximum PMODE/W conventional memory overhead with the default
+; load-time configuration settings (PM_PAGETABLES == 4 && PM_SELECTORS ==
+; 100h && PM_RMSTACKLEN == 40h && PM_PMSTACKLEN == 80h && PM_RMSTACKS == 8
+; && PM_PMSTACKS == 8 && PM_CALLBACKS == 20h) in non-DPMI mode is 1 + 10h +
+; 21ch + 3d7h + 40h + 0ffh + (4<<8)+187h + 80h + 40h*8 + 80h*8 +
+; (((20h+5)*25+0fh)>>4) + (((100h+15)*8+0fh)>>4) + 100h + 20h paragraphs ==
+; 152ch paragraphs == 84.6875 KiB.
+;
+; ---
+;
 ; TODO(pts): Add manual sizes to do -O0 instead of -O32700 (with both NASM 0.98.39 and newer).
 
 ; --- Compile-time configuration.
