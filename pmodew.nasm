@@ -2359,7 +2359,7 @@ v_init:                                 ; VCPI protected mode init
 	movzx ecx,byte [-pmodewk+pagetablenum]
 	shl ecx,12
 	_add eax,ecx
-	mov [-pmodewk+pagetabletop],eax
+	mov [-pmodewk+pagetabletop],eax  ; !! Unused variable, remove it. (Is it really unused?)
 
 	_xor di,di                       ; clear page dir and first page table
 	mov cx,1000h
@@ -5964,6 +5964,7 @@ _noborfix1:
 	mov ax,ss
 	add ax,strict word (STACKSIZE+0xf)>>4
 	mov [-pmodewe+_membase],ax  ; High word of _membase is already zero-initialized.
+	; !! Even better size optimization?: initialize _membase dd (STACKSIZE+0xf)>>4, then here add [-pmodewe+_membase],ax
 %else
 	_xor eax,eax                     ; Get the Base and Top of Low Memory
 	mov ax,[es:2]
