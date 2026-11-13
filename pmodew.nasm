@@ -411,6 +411,11 @@
 ;   Win32 and DOS-extended programs sharing some code and data. Native Win32
 ;   can still be detected even with the default
 ;   -DSPECUSTOMENTRY=0, see below.
+; * The simple PE loader doesn't allocate any heap memory, it ignores
+;   SizeOfHeapReserve and SizeOfHeapCommit.
+; * The simple PE loader allocates a memory block of SizeOfImage +
+;   SizeOfStackCommit bytes (rounded up to dword boundary). This value is
+;   not checked against the section sizes.
 ; * The simple PE loader initializes FS to the same value as DS == ES == SS.
 ;   This is different from Win32, which initializes FS to a selector to the
 ;   Thread Information Block (TIB) or TEB, containing pointers to
