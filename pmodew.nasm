@@ -551,6 +551,15 @@
   %assign SPEDOSONLY SPEDOSONLY  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef SPESIZEIMG  ; Can be specified on the command line.
+  %define SPESIZEIMG 1   ; Use SizeOfImage when determining how many bytes to allocate for the simple PE image.
+  ;%define SPESIZEIMG 0  ; Use the largest section .VirtualAddress+.VirtualSize when determining how many bytes to allocate for the simple PE image.
+%elifidn (SPESIZEIMG), ()
+  %define SPESIZEIMG 1
+%else
+  %assign SPESIZEIMG SPESIZEIMG  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %if (LOADLE|LOADPMW1|LOADSPE)==0
   %error ERROR_SUPPORT_FOR_ALL_PAYLOAD_FORMATS_DISABLED
   times -1 nop
@@ -6400,8 +6409,19 @@ _loadSPE:
 	push ds  ; Save.
 	mov cx, [gs:spefofs.pehdr.NumberOfSections]  ; dw.
 	push cx  ; Save NumberOfSections.
-	_xor edx, edx  ; Largest RVA so far.
+%if SPESIZEIMG
+	mov edx, [gs:spefofs.pehdr.SizeOfImage]  ; Also contains the section containing relocations. Good. Unfortunately, this wastes <4 KiB of memory because of rounding up to SectionAlignment.
+%else  ; Use the largest section .VirtualAddress+.VirtualSize.
 	mov si, spefofs.pehdr.IMAGE_SECTION_HEADER
+%if SPERELOC  ; We need this workaround for PE .exe files created by OpenWatcom v2 wlink, beuse wlink sets .VirtualSize of section .reloc (with Characteristics == INIT_DATA|DISCARDABLE|READABLE) to 0.
+	mov edx, [gs:si-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC+peidd.VirtualAddress]  ; EDX := largest RVA so far.
+	test edx, edx
+	jz short .reloc_rva_done
+	add edx, [gs:si-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC+peidd.Size]
+.reloc_rva_done:
+%else
+	xor edx, edx  ; EDX := largest RVA so far.
+%endif
 .section_size_loop:
 	mov eax, [gs:si+pesechdr.VirtualAddress]
 	add eax, [gs:si+pesechdr.VirtualSize]
@@ -6412,6 +6432,7 @@ _loadSPE:
 	add si, pesechdr._size
 	loop .section_size_loop
 	; Now: EDX == max(IMAGE_SECTION_HEADER[i].VirtualAddress+IMAGE_SECTION_HEADER[i].VirtualSize for i in xrange(NumberOfSections)).
+%endif
 	mov eax, [gs:spefofs.pehdr.SizeOfStackCommit]
 	add eax, 3
 	and al, ~3
