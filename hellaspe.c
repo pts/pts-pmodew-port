@@ -5,6 +5,10 @@
 #  include <unistd.h>
 #endif
 
+long long llmul(long long a, long long b) {
+  return (a + b) * (a - b);  /* Calls function __I8M. */
+}
+
 /* Poor man's printf(3). It's unbuffered. */
 static void print(const char *msg) {
   (void)!write(1, msg, strlen(msg));
