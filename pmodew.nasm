@@ -687,6 +687,15 @@
   %assign VARTYPE VARTYPE  ; Make sure it's an integer (expression), convert it to integer constant.
 %endif
 
+%ifndef MEMDEBUG  ; Can be specified on the command line.
+  %define MEMDEBUG 0   ; Disable memory usage debugging. Most users want it disable like this.
+  ;%define MEMDEBUG 1  ; Enable  memory usage debugging.
+%elifidn (MEMDEBUG), ()
+  %define MEMDEBUG 1
+%else
+  %assign MEMDEBUG MEMDEBUG  ; Make sure it's an integer (expression), convert it to integer constant.
+%endif
+
 %if LOADSPE && LOADLE
   %error ERROR_LOADSPE_CONFLICTS_WITH_LOADLE
   times -1 nop
@@ -5729,6 +5738,11 @@ _cr0valuerm     dd ANY
 
 _membase        dd ANY
 _memtop         dd ANY
+%if MEMDEBUG
+_membase1	dw ANY  ; Value of _membase (== ES) before calling _pm_init.
+_membase2	dw ANY  ; Value of _membase right after _pm_init has returned.
+_membase3	dw ANY  ; Value of _membase right before calling _loadexe.
+%endif
 
 %if LOADLE || LOADPMW1
 FIXUPBUFMIN     equ 4000h         ; Must be a multiple of 16 or you will become
@@ -6137,6 +6151,11 @@ _nostartmsg:
 %else
 	add [-pmodewe+_membase],edx
 %endif
+%if MEMDEBUG
+	mov [-pmodewe+_membase1],es
+	mov [-pmodewe+_membase2],es
+	add [-pmodewe+_membase2],dx
+%endif
 
 	reloc call PMODE_TEXT:-pmodewk+_pm_init  ; Initialize and enter Protected Mode
 	jc _pmstartuperr
@@ -6205,6 +6224,10 @@ _nomeminit1:
 
 	push gs
 	pop es                          ; ES = 32bit data selector
+%if MEMDEBUG
+	push word [-pmodewe+_membase]
+	pop  word [-pmodewe+_membase3]
+%endif
 %if LOADSPE
 	push es
 	pop fs                          ; FS = 32bit data selector
@@ -6212,6 +6235,15 @@ _nomeminit1:
 	call _loadSPE  ; Inlining it would make it longer.
 %else
 	call _loadexe                   ; Load LE/PMW1 EXE Into Memory
+%endif
+%if MEMDEBUG && 0  ; Dump all the membase values so far, and exit with a CPU exception.
+	mov ebp, 12345601h  ; Exit reason indicator.
+	movzx eax, word [-pmodewe+_membase1]
+	movzx ebx, word [-pmodewe+_membase2]
+	movzx ecx, word [-pmodewe+_membase3]
+	movzx edx, word [-pmodewe+_membase]
+	movzx esi, word [-pmodewe+_pspseg]
+	ud2
 %endif
 
 	mov ah,3eh                      ; Close EXE file
@@ -6251,6 +6283,9 @@ _nomeminit1:
 %endif
 	mov ax,[-pmodewe+_pspseg]
 	_sub bx,ax
+%if MEMDEBUG && 0
+	int3
+%endif
 	mov [ebp+_ebx],bx
 	mov [ebp+_es],ax
 %if SIZEOPT==0
@@ -6509,6 +6544,10 @@ _malloc_aligned_SPE:
 ; Output: EAX: linear address of the allocated block, will be page-aligned (multiple of 4096).
 ; Ruins: EBX, EFLAGS.
 ; Based on _loadobjects1.
+%if MEMDEBUG && 0
+	mov ebp, 12345603h  ; Exit reason indicator.
+	int3
+%endif
 	push eax  ; Save size (EAX).
 	mov ebx,[-pmodewe+_memtop]
 	sub ebx,[-pmodewe+_membase]
