@@ -221,6 +221,9 @@ typedef unsigned mode_t;
 #define _LIBC_HAS_OPEN_FAILED(fd_result) ((fd_result) == -1)
 #define _LIBC_NO_REALLOC 1
 #define _LIBC_NO_FILEP 1  /* No FILE*, no stdin, no stdout, no fprintf(...). */
+#if defined(__DOS__) || defined(__NT__)
+#  define _LIBC_CRLF 1
+#endif
 
 #ifdef _LIBC_USE_MAIN  /* Can be defined by the user. */
 #  ifdef _LIBC_USE_MAIN1  /* Can be defined by the user. */
