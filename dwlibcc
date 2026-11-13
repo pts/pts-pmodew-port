@@ -1,9 +1,12 @@
 #! /bin/sh --
 #
-# dwlibcc: C compiler driver for dwlibc, a toolchain to create stanalone, combined DOS--Win32 .exe programs and combined Linux--FreeBSD i386 ELF-32 programs
+# dwlibcc: C compiler driver for dwlibc, a toolchain to create stanalone, combined DOS--Win32 .exe programs and combined Linux--FreeBSD i386 ELF-32 programs on Linux i386 (or amd64)
 # by pts@fazekas.hu at Sun Nov  8 16:20:04 CET 2026
 #
 # Example first-run compile: ./dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -o helldspe.exe helldspe.c
+#
+# Command-line flags are passed to owcc (OpenWatcom v2 C compiler frontend),
+# for example, disable a warning like this: `dwlibcc -Wno-n201'.
 #
 # Example compile of a larger project:
 #
@@ -65,6 +68,9 @@
 #     undefined symbols.
 #   * --nasm=...: NASM command name to build the PMODE/W DOS extender
 #     for -bdoswin32 and -bdos.
+# * The default program stack size is as little as 8 KiB. Specify something
+#   larger if needed, e.g. `-mstack=64k'. On Linux and FreeBSD, the stack
+#   size setting is ignored.
 #
 # Limitations of dwlibc:
 #
@@ -110,7 +116,7 @@ test "$0" = "${0%/*}" || mydir="${0%/*}"
 
 unset INC LIB LIBDIR WLINK_LNK WATCOM
 export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
-target=; nasm=
+target=; nasm=; stack=8K
 dosxt="$mydir"/pmodewd.exe
 while ! test "$target"; do
   case "$1" in
@@ -123,6 +129,7 @@ while ! test "$target"; do
    -blinux) shift; target=linux; dosxt= ;;
    -bfreebsd | -bfreebsdx) shift; target=freebsdx; dosxt= ;;  # -bfreebsd would be only FreeBSD without Linux. We don't support that.
    -bany | -banyos) shift; target=any; dosxt= ;;  # Similar to `minicc -bany' in https://github.com/pts/minilibc686 , but here system-specific and I/O functions (e.g. write(...)) won't even be declared.
+   -mstack=*) stack="${1#*=}"; shift; continue ;;  # The syntax is whatever wlink accepts, e.g. -mstack=8k means 8192 bytes.
    *) target=doswin32 ;;
   esac
 done
@@ -140,6 +147,16 @@ for arg in "$@"; do
 done
 if test "$needexefn" && ! test "$exefn"; then
   echo "fatal: missing output filename, please specify -o ..." >&2; exit 1
+fi
+
+if ! test -f "$mydir/tools/owcc"; then
+  (cd "$mydir"/tools && ./owcc-ow2023-03-04.7z -y) || exit "$?"  # Self-extracting archive on Linux i386 (or amd64).
+  : >"$mydir"/tools/specs.owc  # An empty file is good enough for owcc.
+  for f in owcc wcc386 wlink; do
+    if test -f "$mydir/tools/$f" && test -x "$mydir/tools/$f"; then :; else
+      echo "fatal: could not extract: tools/$f" >&2; exit 102
+    fi
+  done
 fi
 
 if test "$needexefn" && ! test -f "$mydir/wi64.lib"; then  # Build the library containing the 64-bit integer functions e.g. __I8M.
@@ -169,44 +186,43 @@ if test "$dosxt" && ! test -f "$dosxt"; then  # Build the DOS extender DOS stub 
   set +x  # Disable echo of commands run.
 fi
 
-# This design of doing the full compile and link without .asm or object (.o) files is based on: https://stackoverflow.com/a/62495257
+# This design of doing the full compile and link without .asm or object (.o) files is based on: https://stackoverflow.com/a/62495257 . It cannot provide the 64-bit integer functions (e.g. __I8M).
 # `owcc -bbegin' passes `system begin' to wlink and `-bt=begin\ (default-mapped) to wcc396.
 # There mapping from `owcc -banything' to `wcc386 ...' flags is defined in the specs file bin*/specs.owc. If `system begin anything' is not found there, then the default flag will be `wcc386 -bt=anything'.
 # Typical `-bt=...' values in bin*/specs.owc: dos (both 16-bit and 32-bit), nt (Win32, 32-bit), windows (Windows 3.1, 16-bit), linux (i386, 32-bit), os2 (both 16-bit and 32-bit), netware (i386, 32-bit), qnx (i386, 32-bit), zdos, rdos, rdosdev, rdos_*.
 # wcc386 takes the last -bt=anything flag value passed to it, capitalizes it, and defines the macro like `wcc386 -D__ANYTHING__=1' (same as C code `#define __ANYTHING__ 1').
 # If wcc386 doesn't get any -bt=anything flag, then it will use the host system name (e.g. linux if compiling on Linux, nt if compiling on Win32), e.g. `wcc386 -D__LINUX__=1'.
-# Disable a warning like this: -Wno-n201
-# !! Document how -Wl,op -Wl,st=8K can be overridden for a larger stack.
-# Here the -Wl,com st=8K is used for the stack size. !! Make the override consistent.
 # !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this? Patch it.
 # !! Also patch the PMODE/W and dwlibc logos in at file offset @0x18.
-# !! dwlibc_win32.lnk imports all the functions, even the unused ones. Provide a library instead.
-# !! Bundle owcc, wcc386 and wlink.
+# !! Add the -v flag to display the owcc command line, also pass it to owcc.
+OLD_PATH="$PATH"
+export PATH="$mydir/tools"  # owcc finds specs.owc, wcc386 and wlink on $PATH. It doesn't even look at its own directory.
 if test "$target" = dos32; then
   # !! Patch 0x40 --> 0x41 in the PE header file offset header field at file offset @0x3c.
-  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,stub="$dosxt" -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
+  exec owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt" -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
 elif test "$target" = win32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K                          -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
+  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack"                          -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
 elif test "$target" = doswin32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st=8K -Wl,op -Wl,stub="$dosxt" -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__DOS__   "$@"
+  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt" -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__DOS__   "$@"
 elif test "$target" = linux; then
   # FYI `op exportall' is not specified.
   # !! Apply sstrip.ml to make it even smaller, but only if -s was specified.
   # `op obja=16' creates incorrectly aligned ELF. !!!
-  exec owcc -bbegin -Wc,-bt=linux   -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k                                                                      -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
+  exec owcc -bbegin -Wc,-bt=linux   -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k                                                                            -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
 elif test "$target" = freebsdx; then
   # FYI `op exportall' is not specified.
   # !! Apply sstrip.ml to make it even smaller.
   # `op obja=16' creates incorrectly aligned ELF. !!!
-  owcc      -bbegin -Wc,-bt=freebsd -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,fre -Wl,op -Wl,nor -Wl,op -Wl,obja=4k                                                                      -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__LINUX__ "$@" || exit "$?"
+  owcc      -bbegin -Wc,-bt=freebsd -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,fre -Wl,op -Wl,nor -Wl,op -Wl,obja=4k                                                                            -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__LINUX__ "$@" || exit "$?"
+  export PATH="$OLD_PATH"
   # Apply the FreeBSD EI_BRAND to make it run on FreeBSD i386 3.0. !! Drop the dependency on Perl, use sstrip.ml etc.
   perl -e 'my $fn = $ARGV[0]; my $fnp = ($fn =~ m@^/@) ? "" : "./"; die("fatal: error opening: $fn\n") if !open(F, "+< $fnp$fn"); if ((sysread(F, $_, 16) or -1) == 16 and s@^(\x7fELF\x01\x01\x01\x09)\0{8}@${1}FreeBSD\0@) { die("fatal: error writing: $fn\n") if (sysseek(F, 0, 0) or -1) != 0 or (syswrite(F, $_, 16) or -1) != 16 }' \
       "$exefn" || exit "$?"
   exec sstrip.ml -- "$exefn"  # !! Is this needed, or is `op obja=4k' enough on FreeBSD 3.0?
 elif test "$target" = any; then
-  exec owcc -bbegin -Wc,-bt=anyos -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=16                                                                        -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
+  exec owcc -bbegin -Wc,-bt=anyos -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=16                                                                              -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
 else
   echo "$0: fatal: target not implemented: -b$target" >&2; exit 1
 fi
