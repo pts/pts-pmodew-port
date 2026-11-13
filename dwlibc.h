@@ -181,11 +181,13 @@ typedef unsigned mode_t;
 
 #define EOF (-1)  /* Indicates end-of-file (EOF) or error. */
 
-#if 0  /* For 2-argument and 3-argument open(...), which we don't provide. */
-#  define O_RDONLY 0  /* flags bitfield value below. */
-#  define O_WRONLY 1
-#  define O_RDWR   2
+#define O_RDONLY 0  /* flags for 2-argument open(...). */
+#define O_WRONLY 1  /* flags for 2-argument open(...). */
+#define O_RDWR   2  /* flags for 2-argument open(...). */
+#if 0  /* Disable so that smart C sources don't try to do setmode(...). */
 #  define O_BINARY 0  /* All I/O is binary, no CTRF-to-LF conversion. */
+#endif
+#if 0  /* For 2-argument and 3-argument open(...), which we don't provide. */
 #  define O_CREAT  ...  /* Value portable. */
 #  define O_TRUNC  ...  /* Value portable. */
 #  define O_APPEND ...  /* Value portable. */
@@ -214,8 +216,8 @@ typedef unsigned mode_t;
 
 #define _LIBC_HAVE_OPEN00 1  /* Similar to https://github.com/pts/ssmcc */
 #define _LIBC_HAVE_CREAT1 1
-/* open00(...), creat(...) and creat1(...) can return a valid and negative
- * file descriptor.
+/* open(...), open00(...), creat(...) and creat1(...) can return a valid and
+ * negative file descriptor.
  */
 #define _LIBC_OPEN_NEGFD  1
 #define _LIBC_HAS_OPEN_FAILED(fd_result) ((fd_result) == -1)
@@ -258,6 +260,18 @@ typedef unsigned mode_t;
 #endif
 
 #ifndef __ANYOS__
+/* Almost equivalent to regular libc creat(pathname, mode), except for
+ * O_BINARY. Equivalent to regular open(pathname, flags | O_BINARY).
+ * It is not able to create a file, hance dwlibc doesn't define O_CREAT or
+ * O_TRUNC.
+ *
+ * Unlike in regular libc, the retuned file descriptor can be negative and
+ * still be valid. Use _LIBC_HAS_OPEN_FAILED(...) to check the result.
+ *
+ * Argument mode is ignord on DOS and Win32.
+ */
+__DWLIBCABI1 int open(const char *pathname, int flags);
+
 /* Equivalent to open(pathname, O_RDONLY | O_BINARY), but a full-fledged
  * open(2) is not provided by dwlibc . Returns -1 on error.
  *
@@ -266,10 +280,6 @@ typedef unsigned mode_t;
  *
  */
 __DWLIBCABI1 int open00(const char *pathname);
-
-/* !! add: __DWLIBCABI1 int open(const char *pathname, int flags); for
- * flags <= 2 only, i.e. file creation not supported.
- */
 
 /* Almost equivalent to regular libc creat(pathname, mode), except for
  * O_BINARY. Equivalent to open(pathname, O_WRONLY | O_CREAT | O_TRUNC |
@@ -868,6 +878,11 @@ extern HANDLE __dwlibc_std_handles[3];
     /* cld shouldn't be need at Win32 entry. */ \
     __asm { stc } __asm { clc } __asm { cld }  /* Signature. */ \
     __asm { xor eax, eax }  /* DOS entry point is after this. */
+  int __dwlibc_dos_open(const char *pathname, int flags);
+#  pragma aux __dwlibc_dos_open = "mov ah, 3dh"  "and al, 3"  "int 21h" \
+    "jnc short ok"  "sbb eax, eax"  "ok:" \
+    __value [__eax] __parm [__edx] [__eax] \
+    __modify __exact [__eax __ecx]
   int __dwlibc_dos_open00(const char *pathname);
 #  pragma aux __dwlibc_dos_open00 = "mov ax, 3d00h"  "int 21h" \
     "jnc short ok"  "sbb eax, eax"  "ok:" \
@@ -926,6 +941,20 @@ extern HANDLE __dwlibc_std_handles[3];
 #  pragma aux _exit = "movzx eax, al"  "push eax" "call ExitProcess" \
      __parm [__al] __modify __exact []
 #endif
+
+static __inline int open(const char *pathname, int flags) {
+  int fd;
+#ifdef __DOS__  /* While still #ifdef __NT__. */
+  if (__dwlibc_is_dos) return __dwlibc_dos_open(pathname, flags);
+#endif
+  if ((fd = (int)CreateFileA(pathname,
+      /* A bitset of GENERIC_READ and/or GENERIC_WRITE. */
+      0xc48 >> ((flags & 3) << 2) << 28,
+      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+      NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL)) !=
+      -1  /* (int)INVALID_HANDLE_VALUE */) fd += 3;
+  return fd;
+}
 
 static __inline int open00(const char *pathname) {
   int fd;
@@ -1211,8 +1240,13 @@ static __inline const char * __watcall __dwlibc_doscmdline(char *cmdline) {
 #pragma aux  exit = "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
 #pragma aux _exit = "mov ah, 4ch"  "int 21h"  __parm [__al] __modify __exact []
 
-#pragma aux open00 = "mov ax, 3d00h"  "int 21h" \
+#pragma aux open = "mov ah, 3dh"  "and al, 3" "int 21h" \
     "jnc short ok"  "sbb eax, eax"  "ok:" \
+    __value [__eax] __parm [__edx] [__eax] \
+    __modify __exact [__eax __ecx]
+
+#pragma aux open00 = "mov ax, 3d00h"  "int 21h" \
+     "jnc short ok"  "sbb eax, eax"  "ok:" \
     __value [__eax] __parm [__edx] __modify __exact [__eax __ecx]
 
 #pragma aux creat = "mov ah, 3ch"  "xor ecx, ecx"  "int 21h" \
@@ -1506,6 +1540,10 @@ extern char _edata[], _end[];  /* Populated by wlink. */
 #pragma aux _exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "int 80h" \
     __parm [__al] __modify __exact []
 
+#pragma aux open = "push 5"  "pop eax"  "and ecx, 3" \
+    "int 80h"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__ecx] __modify __exact [__eax __ecx]
+
 #pragma aux open00 = "push 5"  "pop eax"  "push 0"  "pop ecx" \
     "int 80h"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx]
@@ -1653,6 +1691,13 @@ extern char __dwlibc_is_freebsd;
     "push ebx"  "int 80h" __parm [__al] __modify __exact []
 #pragma aux _exit = "movzx ebx, al"  "xor eax, eax"  "inc eax"  "push ebx" \
     "push ebx"  "int 80h" __parm [__al] __modify __exact []
+
+#pragma aux open = "push 5"  "pop eax"  "and ecx, 3" \
+    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd"  "int 80h" \
+    "test eax, eax"  "jns short done"  "jmp short bad" \
+    "freebsd: push ecx"  "push ebx"  "push eax"  "int 80h" \
+    "lea esp, [esp+3*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
+    __value [__eax] __parm [__ebx] [__ecx] __modify __exact [__eax __ecx]
 
 #pragma aux open00 = "push 5"  "pop eax" \
     "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" \
