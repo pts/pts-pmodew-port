@@ -40,9 +40,18 @@
 /pmwca2.com
 /pmwca2
 
-# dwlibc
+# dwlibc.
 /pmodewd.exe
 /pmodwwdu.exe
+/wi64.lib
+/i8d.obj
+/i8rs.obj
+/u8d.obj
+/u8ls.obj
+/u8m.obj
+/u8rs.obj
+
+# dwlibc test files.
 /hellaspe.o
 /hellaspe.exe
 /helldspe.o
