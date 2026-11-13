@@ -1441,7 +1441,7 @@ int __dwlibc_ftruncate_low(int fd, off_t size);
 #pragma aux __dwlibc_ftruncate_low = "push ebx"  "xchg ebx, eax" \
     "xchg ecx, edx"  "push 93"  "pop eax"  "int 80h" "xchg ecx, edx" \
     "pop ebx"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
-    __value [__eax] __parm [__eax __edx] __modify __exact [__eax]
+    __value [__eax] __parm [__eax] [__edx] __modify __exact [__eax]
 
 static __inline int ftruncate(int fd, off_t size) {
   return __dwlibc_ftruncate_low(fd, size);
@@ -1597,29 +1597,27 @@ extern char __dwlibc_is_freebsd;
     "db 0a8h"  "bad1: pop edx"  "bad: or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] [__ecx] [__edx] __modify __exact [__eax]
 
-/* !! Test this on both Linux and FreeBSD. */
 #pragma aux ftruncate_here = "push 19"  "pop eax" \
     "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd"  "xor ecx, ecx" \
     "xor edx, edx"  "inc edx"  "int 80h"  "js short bad"  "xchg ecx, eax" \
     "push 93"  "pop eax"  "int 80h"  "test eax, eax"  "jns short done" \
     "jmp short bad"  "freebsd: mov al, 199"  "push 1"  "push 0"  "push 0" \
-    "push eax"  "push ebx"  "push eax"  "lea esp, [esp+6*4]"  "jc short bad" \
-    "push edx"  "push eax"  "xor eax, eax"  "mov al, 201" \
+    "push eax"  "push ebx"  "push eax"  "int 80h"  "lea esp, [esp+6*4]"  \
+    "jc short bad"  "push edx"  "push eax"  "xor eax, eax"  "mov al, 201" \
     "push eax"  "push ebx"  "push eax"  "int 80h" \
     "lea esp, [esp+5*4]"  "jnc short done"  "bad: or eax, -1"  "done:" \
     __value [__eax] __parm [__ebx] __modify __exact [__eax __ecx __edx]
 
-/* !! Test this on both Linux and FreeBSD. */
 int __dwlibc_ftruncate_low(int fd, off_t size);
 #pragma aux __dwlibc_ftruncate_low = "push ebx"  "xchg ebx, eax" \
-    "xchg ecx, edx"  "push 93"  "pop eax" \
-    "cmp [__dwlibc_is_freebsd], ah"  "jne short freebsd" "int 80h" \
-    "test eax, eax"  "jns short done"  "jmp short bad" \
-    "freebsd: push edx"  "mov al, 201"  "xchg eax, ecx"  "cdq"  "push edx" \
-    "push eax"  "push eax"  "push ebx"  "push eax"  "int 80h" \
-    "lea esp, [esp+5*4]"  "pop edx"  "jnc short done"  "bad: or eax, -1" \
-    "done: pop ebx"  "xchg ecx, edx" \
-    __value [__eax] __parm [__eax __edx] __modify __exact [__eax]
+    "xchg ecx, edx"  "push 93"  "pop eax"  "cmp [__dwlibc_is_freebsd], ah" \
+    "jne short freebsd"  "int 80h"  "mov ecx, edx"  \
+    "test eax, eax"  "jns short done"  "jmp short bad"  "freebsd: push edx" \
+    "xchg eax, ecx"  "cdq"  "push edx"  "push eax"  "push eax"  "push ebx" \
+    "xor eax, eax"  "mov al, 201"  "push eax"  "int 80h" \
+    "lea esp, [esp+5*4]"  "pop ecx"  "jnc short done"  "bad: or eax, -1" \
+    "done: pop ebx" \
+    __value [__eax] __parm [__eax] [__edx] __modify __exact [__eax]
 static __inline int ftruncate(int fd, off_t size) {
   return __dwlibc_ftruncate_low(fd, size);
 }
