@@ -1440,7 +1440,7 @@ int __dwlibc_ftruncate_low(int fd, off_t size);
 #pragma aux __dwlibc_ftruncate_low = "push ebx"  "xchg ebx, eax" \
     "xchg ecx, edx"  "push 93"  "pop eax"  "int 80h" "xchg ecx, edx" \
     "pop ebx"  "test eax, eax"  "jns short done"  "or eax, -1"  "done:" \
-    __value [__eax] __parm [__eax __edx] __modify __exact [__eax]
+    __value [__eax] __parm [__eax] [__edx] __modify __exact [__eax]
 
 static __inline int ftruncate(int fd, off_t size) {
   return __dwlibc_ftruncate_low(fd, size);
@@ -1617,7 +1617,7 @@ int __dwlibc_ftruncate_low(int fd, off_t size);
     "push eax"  "push eax"  "push ebx"  "push eax"  "int 80h" \
     "lea esp, [esp+5*4]"  "pop edx"  "jnc short done"  "bad: or eax, -1" \
     "done: pop ebx"  "xchg ecx, edx" \
-    __value [__eax] __parm [__eax __edx] __modify __exact [__eax]
+    __value [__eax] __parm [__eax] [__edx] __modify __exact [__eax]
 static __inline int ftruncate(int fd, off_t size) {
   return __dwlibc_ftruncate_low(fd, size);
 }
