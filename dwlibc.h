@@ -1286,16 +1286,47 @@ static __inline int ftruncate(int fd, off_t size) {
 
 #if defined(__DOS__) && !defined(__LINUX__)
 /* Allocates bsize bytes using DPMI and returns the starting address.
+ * bsize must be a multiple of 16 == 0x10.
  * Returns NULL iff bsize is 0 or if there is not enough memory.
+ *
  * According to https://www.delorie.com/djgpp/doc/dpmi/api/310501.html ,
  * but not the DPMI specification
  * (https://www.phatcode.net/res/262/files/dpmi09.html#13.2), the returned
  * pointer will be aligned to a multiple of 16 bytes (paragraph).
+ *
+ * DOS memory is divided into conventional memory (first 640 KiB), UMB (next
+ * 384 KiB; this includes video memory and ROM) and high memory (everything
+ * after that, i.e. after the first 1 MiB). DPMI function int 31h, AX ==
+ * 501h can allocate from high memory only. (DPMI function int 31h, AX ==
+ * 100h) and (un-DOS-extended int 21h, AH == 48h) can allocate from
+ * conventional memory only. For conventional memory we use the latter,
+ * because the former also allocates DPMI descriptors, which is useless for
+ * us, and we don't want to run out of PMODE/W DPMI descriptors.
  */
 void *__dwlibc_dpmi_alloc(size_t bsize);
 #pragma aux __dwlibc_dpmi_alloc = "xor eax, eax"  "jecxz done"  "push eax" \
-    "shld ebx, ecx, 16"  "mov ax, 501h"  "int 31h"  "pop eax" \
-    "jc short done"  "xchg eax, ebx"  "shl eax, 16"  "xchg ax, cx"  "done:" \
+    "shld ebx, ecx, 16"  "mov ax, 501h"  "int 31h" \
+    "jc short conv"  "pop eax"  "xchg eax, ebx"  "shl eax, 16" \
+    "xchg ax, cx" "jmp short done" \
+    "conv: mov ebx, ecx"  /* Try to allocate conventional memory. */ \
+    "shr ebx, 4"  /* No need to round up, EBX is divisible by 0x10. */ \
+    "xor eax, eax"  "cmp ebx, 0ffffh" \
+    "ja short done"  /* Returns error as EAX == NULL. */ \
+    "xor ecx, ecx"  "push ecx"  "sub esp, 0ah"  /* Set _sp, _ss. */ \
+    "push ecx"  /* Set _flags, _es. We don't care about _es. */ \
+    "mov ah, 48h"  /* Allocate BX paragraphs of DOS conventional memory. */ \
+    "pushad"  /* We care aboue AH and BX (== # paragraphs to allocate). */ \
+    "mov bx, 21h"  /* DOS syscall via DPMI. */ \
+    "mov ax, 300h"  /* DPMI simulate real-mode interrupt. */ \
+    "mov edi, esp"  "int 31h"  /* Takes AX, BX, CX, ES:EDI. */ \
+    "pop eax"  /* Restore EAX := NULL. It keeps CF intact. */ \
+    "jc short cleanup"  /* This jumps iff there was a DPMI error. */ \
+    "test byte ptr [edi+20h], 1"  /* Get CF from _flags. */ \
+    "jnz short cleanup"  /* This jumps iff there was a DPMI error. */ \
+    "movzx eax, word ptr [edi+1ch]"  /* Get _ax. */ \
+    "shl eax, 4"  /* Convert from real-mode segment to linear address. */ \
+    /* Discard the DPMI real-mode call structure. It keeps CF intact. */ \
+    "cleanup: lea esp, [edi+32h]"  "done:" \
     __value [__eax] __parm [__ecx] \
     __modify __exact [__eax __ebx __ecx __esi __edi]
 #endif  /* #ifdef __DOS__ */
