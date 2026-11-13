@@ -6417,6 +6417,11 @@ _loadSPE:
 %if SPESIZEIMG
 	mov edx, [gs:spefofs.pehdr.SizeOfImage]  ; Also contains the section containing relocations. Good. Unfortunately, this wastes <4 KiB of memory because of rounding up to SectionAlignment.
 %else  ; Use the largest section .VirtualAddress+.VirtualSize.
+	; !! TODO(pts): Add a low-memory option for the simple PE loader, which:
+	; * omits the gap between 200h bytes after ImageBase and the first section
+	; * loads only the IMAGE_DIRECTORY_ENTRY_BASERELOC.Size bytes from .rdata to a temporary locations (probably the PE .exe stack)
+	; * after processing the relocations, it makes the stack containing them shorter, and releases some conventional memory, making _membase smalle
+	; * it works with a smaller STACK_SIZE for initialization, and it releases that stack before jumping to the program
 	mov si, spefofs.pehdr.IMAGE_SECTION_HEADER
 %if SPERELOC  ; We need this workaround for PE .exe files created by OpenWatcom v2 wlink, beuse wlink sets .VirtualSize of section .reloc (with Characteristics == INIT_DATA|DISCARDABLE|READABLE) to 0.
 	mov edx, [gs:si-spefofs.pehdr.IMAGE_SECTION_HEADER+spefofs.pehdr.IMAGE_DIRECTORY_ENTRY_BASERELOC+peidd.VirtualAddress]  ; EDX := largest RVA so far.
