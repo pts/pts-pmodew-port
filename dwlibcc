@@ -49,7 +49,9 @@
 #   * -bdoswin32 (default): Build combined DOS--Win32 .exe program file.
 #   * -bdos32: Build DOS-only .exe program file. It works on DOS >=2.0.
 #     It needs a 80386 or later CPU. If the program doesn't call
-#     malloc(...), it works even with just 640 KiB of RAM.
+#     malloc(...), it works even with just 640 KiB of RAM, even malloc(...)
+#     works. The memory requirement before the first malloc(...) call
+#     on DOS is: 21 KiB + SizeOfImage + SizeOfStackCommit.
 #   * -bwin32: Build Win32-only .exe program file. It works on Windows NT
 #     3.1 (1993) or later, and Windows 95 (1995), even on Windows 10 and
 #     Windows 11.
