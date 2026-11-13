@@ -1290,11 +1290,11 @@ IMAGE_OPTIONAL_HEADER:  ; @0x58.
 .MajorSubsystemVersion: dw 3
 .MinorSubsystemVersion: dw 10  ; (3, 1) works on Windows NT 3.1. (4, 0) needs Windows NT 4.0 or later, or Windows 95 or later.
 .Win32VersionValue: dd 0  ; reserved1.
-.SizeOfImage:  ; .VirtualAddress+.VirtualSize of the last-in-memory section, minus .ImageBase.
+.SizeOfImage:  ; .VirtualAddress+.VirtualSize of the last-in-memory section, minus .ImageBase. Must be a multiple of SectionAlignment.
 %ifdef SPE_bssend  ; A label.
-		dd SPE_bssend-SPE_sections  ; Correct for a single section.
+		dd (SPE_bssend-SPE_sections+0xfff)&~0xfff  ; Correct for a single section.
 %elifdef SPE_end  ; A label.
-		dd SPE_end-SPE_sections  ; Correct for a single section.
+		dd (SPE_end-SPE_sections+0xfff)&~0xfff  ; Correct for a single section.
 %else
 		dd '????'
 %endif

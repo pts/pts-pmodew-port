@@ -178,7 +178,7 @@
   MajorSubsystemVersion: dw 3   ; Windows NT 3.1.
   MinorSubsystemVersion: dw 10  ; Windows NT 3.1.
   Win32VersionValue: dd 0
-  SizeOfImage: dd PE_RVA_TEXT_0+(SECTION_TEXT_end-SECTION_TEXT)+(SECTION_BSS_end-SECTION_BSS)
+  SizeOfImage: dd (PE_RVA_TEXT_0+(SECTION_TEXT_end-SECTION_TEXT)+(SECTION_BSS_end-SECTION_BSS)+0xfff)&~0xfff
   SizeOfHeaders: dd IMAGE_NT_HEADERS_end-FILE_HEADER
   CheckSum: dd 0
   Subsystem: dw 3  ; IMAGE_SUBSYSTEM_WINDOWS_CUI; gcc -mconsole
