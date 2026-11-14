@@ -107,16 +107,20 @@
 # * No floating-point support. (Some simple operations may work.) No
 #   floating-point emulation support.
 
+mydir=.
+test "$0" = "${0%/*}" || mydir="${0%/*}"
+test "${mydir#-}" = "$mydir" || mydir="./$mydir"
+if test "$1" != --sh-script; then
+  exec "$mydir/tools/busybox-minicc-1.21.1.upx" env -i sh "$0" --sh-script "$@" || exit 1
+fi
+shift;  # Remove the --sh-script argument.
+
 set -e
 unset LANG LANGUAGE
 export LC_ALL=C  # For reproducible builds.
 export TZ=GMT  # For reproducible builds.
-mydir=.
-test "$0" = "${0%/*}" || mydir="${0%/*}"
-test "${mydir#-}" = "$mydir" || mydir="./$mydir"
 
-unset INC LIB LIBDIR WLINK_LNK WATCOM
-export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
+unset INC LIB LIBDIR WLINK_LNK WATCOM INCLUDE
 
 v=
 for arg in "$@"; do case "$arg" in -v) v="$arg" ;; esac; done
@@ -242,6 +246,7 @@ test "$prepare" && exit
 # If wcc386 doesn't get any -bt=anything flag, then it will use the host system name (e.g. linux if compiling on Linux, nt if compiling on Win32), e.g. `wcc386 -D__LINUX__=1'.
 # !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this? Patch it with sstrip.
 export PATH="$mydir"/tools  # owcc finds specs.owc, wcc386 and wlink on $PATH. It doesn't even look at its own directory.
+export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
 set x -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"; shift
 if test "$target" = dos32; then
   set owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"              "$@"
