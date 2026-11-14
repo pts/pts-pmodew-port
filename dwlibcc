@@ -122,39 +122,59 @@ v=
 for arg in "$@"; do case "$arg" in -v) v="$arg" ;; esac; done
 if test "$v"; then (set -x && : "$0" "$@"); fi  # Print our own command without running it if -v was specified.
 
-target=; nasm=; stack=8K
+target=; nasm=; stack=8K; prepare=
 dosxt="$mydir"/pmodewd.exe
-while ! test "$target"; do
-  case "$1" in
-   "" | -\? | -v) exec owcc "$@" 2>&1 ;;
-   --help) shift; exec owcc -\? "$@" 2>&1 ;;
-   --nasm=*) nasm="${1#*=}"; shift ;;
-   -bdos | -bdos32 | -bpmodew) shift; target=dos32 ;;
-   -bwin32) shift; target=win32 ;;
-   -bdoswin32) shift; target=doswin32 ;;
-   -blinux) shift; target=linux; dosxt= ;;
-   -bfreebsd | -bfreebsdx) shift; target=freebsdx; dosxt= ;;  # -bfreebsd would be only FreeBSD without Linux. We don't support that.
-   -bany | -banyos) shift; target=any; dosxt= ;;  # Similar to `minicc -bany' in https://github.com/pts/minilibc686 , but here system-specific and I/O functions (e.g. write(...)) won't even be declared.
-   -mstack=*) stack="${1#*=}"; shift; continue ;;  # The syntax is whatever wlink accepts, e.g. -mstack=8k means 8192 bytes.
-   *) target=doswin32 ;;
-  esac
-done
-
 argflag=; exefn=; needexefn=1; exportall="-Wl,op -Wl,exporta"; ns=-ns
 pmodew_message="PMODE/W v1.33 (C)Daredevil and Tran."
-for arg in "$@"; do
-  case "$argflag" in -o) exefn="$arg" ;; esac
-  argflag=
-  case "$arg" in
-   -b*) echo "fatal: move target flag to the beginning: $arg" >&2; exit 1 ;;
-   -o?*) exefn="${arg#-?}" ;;
-   -o) argflag="$arg" ;;
-   -[cSE]) needexefn= ;;
-   -s) exportall=; ns= ;;
-  esac
-done
-if test "$needexefn" && ! test "$exefn"; then
-  echo "fatal: missing output filename, please specify -o ..." >&2; exit 1
+if test "$1" = --prepare; then
+  prepare=1; needexefn=1
+  rm -f "$dosxt" "$mydir"/tools/owcc "$mydir"/tools/wcc386 "$mydir"/tools/wlink "$mydir"/tools/specs.owc "$mydir"/wi64.lib "$mydir"/tools/sstrip
+elif test "$1" = --check; then
+  set -x
+  test -f "$dosxt"
+  test -f "$mydir"/dwlibc.h
+  test -f "$mydir"/tools/owcc
+  test -x "$mydir"/tools/owcc
+  test -f "$mydir"/tools/wcc386
+  test -x "$mydir"/tools/wcc386
+  test -f "$mydir"/tools/wlink
+  test -x "$mydir"/tools/wlink
+  test -f "$mydir"/tools/specs.owc
+  test -f "$mydir"/wi64.lib
+  test -f "$mydir"/tools/sstrip
+  test -x "$mydir"/tools/sstrip
+  : "$0" check OK.
+  set +x; exit 0
+else
+  while ! test "$target"; do
+    case "$1" in
+     "" | -\? | -v) exec owcc "$@" 2>&1 ;;
+     --help) shift; exec owcc -\? "$@" 2>&1 ;;
+     --nasm=*) nasm="${1#*=}"; shift ;;
+     -bdos | -bdos32 | -bpmodew) shift; target=dos32 ;;
+     -bwin32) shift; target=win32; dosxt= ;;
+     -bdoswin32) shift; target=doswin32 ;;
+     -blinux) shift; target=linux; dosxt= ;;
+     -bfreebsd | -bfreebsdx) shift; target=freebsdx; dosxt= ;;  # -bfreebsd would be only FreeBSD without Linux. We don't support that.
+     -bany | -banyos) shift; target=any; dosxt= ;;  # Similar to `minicc -bany' in https://github.com/pts/minilibc686 , but here system-specific and I/O functions (e.g. write(...)) won't even be declared.
+     -mstack=*) stack="${1#*=}"; shift; continue ;;  # The syntax is whatever wlink accepts, e.g. -mstack=8k means 8192 bytes.
+     *) target=doswin32 ;;
+    esac
+  done
+  for arg in "$@"; do
+    case "$argflag" in -o) exefn="$arg" ;; esac
+    argflag=
+    case "$arg" in
+     -b*) echo "fatal: move target flag to the beginning: $arg" >&2; exit 1 ;;
+     -o?*) exefn="${arg#-?}" ;;
+     -o) argflag="$arg" ;;
+     -[cSE]) needexefn= ;;
+     -s) exportall=; ns= ;;
+    esac
+  done
+  if test "$needexefn" && ! test "$exefn"; then
+    echo "fatal: missing output filename, please specify -o ..." >&2; exit 1
+  fi
 fi
 
 if ! test -f "$mydir/tools/owcc"; then
@@ -190,6 +210,11 @@ if test "$needexefn"; then
      (set -x && "$mydir"/tools/sstrip.tmp -l "$mydir"/tools/sstrip.tmp2) || exit "$?"
      rm -f "$mydir"/tools/sstrip.tmp "$mydir"/tools/sstrip.o
      mv "$mydir"/tools/sstrip.tmp2 "$mydir"/tools/sstrip
+    for f in sstrip; do
+      if test -f "$mydir/tools/$f" && test -x "$mydir/tools/$f"; then :; else
+        echo "fatal: could not extract: tools/$f" >&2; exit 102
+      fi
+    done
   fi
 fi
 
@@ -203,9 +228,11 @@ if test "$dosxt" && ! test -f "$dosxt"; then  # Build the DOS extender DOS stub 
   (cd "$mydir" && "$nasm" -O0 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DCONFIGINEXEIMAGE=2 -DPM_SELECTORS=4 -o pmwca pmwcax.nasm) || exit "$?"
   chmod +x "$mydir"/pmwca
   (cd "$mydir" && ./pmwca pmodewdu.exe pmodewd.exe) || exit "$?"  # This runs on Linux i386, Linux amd64 and FreeBSD i386.
-  rm -f pmodewdu.exe
+  rm -f pmodewdu.exe pmwca
   set +x  # Disable echo of commands run.
 fi
+
+test "$prepare" && exit
 
 # This design of doing the full compile and link without .asm or object (.o) files is based on: https://stackoverflow.com/a/62495257 . It cannot provide the 64-bit integer functions (e.g. __I8M).
 # `owcc -bbegin' passes `system begin' to wlink and `-bt=begin\ (default-mapped) to wcc396.
