@@ -117,6 +117,11 @@ test "${mydir#-}" = "$mydir" || mydir="./$mydir"
 
 unset INC LIB LIBDIR WLINK_LNK WATCOM
 export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
+
+v=
+for arg in "$@"; do case "$arg" in -v) v="$arg" ;; esac; done
+if test "$v"; then (set -x && : "$0" "$@"); fi  # Print our own command without running it if -v was specified.
+
 target=; nasm=; stack=8K
 dosxt="$mydir"/pmodewd.exe
 while ! test "$target"; do
@@ -136,6 +141,7 @@ while ! test "$target"; do
 done
 
 argflag=; exefn=; needexefn=1; exportall="-Wl,op -Wl,exporta"; ns=-ns
+pmodew_message="PMODE/W v1.33 (C)Daredevil and Tran."
 for arg in "$@"; do
   case "$argflag" in -o) exefn="$arg" ;; esac
   argflag=
@@ -150,7 +156,6 @@ done
 if test "$needexefn" && ! test "$exefn"; then
   echo "fatal: missing output filename, please specify -o ..." >&2; exit 1
 fi
-
 
 if ! test -f "$mydir/tools/owcc"; then
   (cd "$mydir"/tools && ./owcc-ow2023-03-04.7z -y) || exit "$?"  # Self-extracting archive on Linux i386 (or amd64).
@@ -209,31 +214,40 @@ fi
 # wcc386 takes the last -bt=anything flag value passed to it, capitalizes it, and defines the macro like `wcc386 -D__ANYTHING__=1' (same as C code `#define __ANYTHING__ 1').
 # If wcc386 doesn't get any -bt=anything flag, then it will use the host system name (e.g. linux if compiling on Linux, nt if compiling on Win32), e.g. `wcc386 -D__LINUX__=1'.
 # !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this? Patch it with sstrip.
-# !! Add the -v flag to display the owcc command line, also pass it to owcc.
 export PATH="$mydir"/tools  # owcc finds specs.owc, wcc386 and wlink on $PATH. It doesn't even look at its own directory.
-pmodew_message="PMODE/W v1.33 (C)Daredevil and Tran."
+set x -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"; shift
 if test "$target" = dos32; then
-  owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt" -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
-  ! test "$needexefn" || sstrip -p1 -m "$pmodew_message" -- "$exefn"
+  set owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"              "$@"
 elif test "$target" = win32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  exec owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack"                     -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
+  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack"                                       "$@"
 elif test "$target" = doswin32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt" -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__DOS__   "$@"
-  ! test "$needexefn" || sstrip -m "$pmodew_message" -- "$exefn"
+  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"  -D__DOS__   "$@"
 elif test "$target" = linux; then
   # `op obja=16' creates incorrectly aligned ELF which Linux can run. !! Write a post-processing tool which relocates _DATA.
-  owcc -bbegin -Wc,-bt=linux        -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall                                                            -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
-  ! test "$needexefn" || sstrip -ll $ns -- "$exefn"
+  set owcc -bbegin -Wc,-bt=linux        -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall "$@"
 elif test "$target" = freebsdx; then
   # `op obja=16' creates incorrectly aligned ELF which FreeBSD 3.0 can't run (it fails with: Abort trap). !! Write a post-processing tool which relocates _DATA.
-  owcc  -bbegin -Wc,-bt=freebsd -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,fre -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall                                                                -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -D__LINUX__ "$@" || exit "$?"
-  ! test "$needexefn" || sstrip -lf $ns -- "$exefn"  # Only -lf (EI_OSABI and EI_BRAND FreeBSD) is needed for FreeBSD to run the program, in addition to `op obja=4k'.
+  set owcc  -bbegin -Wc,-bt=freebsd -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,fre -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall -D__LINUX__ "$@" || exit "$?"
 elif test "$target" = any; then
-  exec owcc -bbegin -Wc,-bt=anyos -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=16                                                                         -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__             "$@"
+  set owcc -bbegin -Wc,-bt=anyos -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall "$@"
 else
   echo "$0: fatal: target not implemented: -b$target" >&2; exit 1
 fi
+if test "$v"; then (set -x && "$@") || exit "$?"; else "$@"; fi
 
-: "$0" OK.
+if test "$needexefn"; then
+  if test "$target" = dos32; then      set sstrip -p1 -m "$pmodew_message" -- "$exefn"
+  elif test "$target" = doswin32; then set sstrip     -m "$pmodew_message" -- "$exefn"
+  elif test "$target" = linux; then    set sstrip -ll $ns -- "$exefn"
+  elif test "$target" = freebsdx; then set sstrip -lf $ns -- "$exefn"  # Only -lf (EI_OSABI and EI_BRAND FreeBSD) is needed for FreeBSD to run the program, in addition to `op obja=4k'.
+  fi
+  if test "$2"; then
+    if test "$v"; then (set -x && "$@") || exit "$?"; else "$@"; fi
+  fi
+fi
+if test "$v"; then (set -x && : "$0" OK.); fi
+
+# __END__
+
