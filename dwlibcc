@@ -124,7 +124,7 @@ unset INC LIB LIBDIR WLINK_LNK WATCOM INCLUDE
 
 v=
 for arg in "$@"; do case "$arg" in -v) v="$arg" ;; esac; done
-if test "$v"; then (set -x && : "$0" "$@"); fi  # Print our own command without running it if -v was specified.
+if test "$v"; then (exec 2>&1 && set -x && : "$0" "$@"); fi  # Print our own command without running it if -v was specified.
 
 target=; nasm=; stack=8K; prepare=
 dosxt="$mydir"/pmodewd.exe
@@ -147,7 +147,7 @@ elif test "$1" = --check; then
   test -f "$mydir"/wi64.lib
   test -f "$mydir"/tools/sstrip
   test -x "$mydir"/tools/sstrip
-  : "$0" check OK.
+  : : "$0" check OK.
   set +x; exit 0
 else
   while ! test "$target"; do
@@ -267,8 +267,8 @@ elif test "$target" = any; then
 else
   echo "$0: fatal: target not implemented: -b$target" >&2; exit 1
 fi
-if test "$v"; then (set -x && "$@") || exit "$?"; else "$@"; fi
-
+! test "$v"  || (exec 2>&1 && set -x && : "$@") || exit "$?"
+"$@"
 if test "$needexefn"; then
   if test "$target" = dos32; then      set sstrip -p1 -m "$pmodew_message" -- "$exefn"
   elif test "$target" = doswin32; then set sstrip     -m "$pmodew_message" -- "$exefn"
@@ -276,10 +276,10 @@ if test "$needexefn"; then
   elif test "$target" = freebsdx; then set sstrip -lf $ns -- "$exefn"  # Only -lf (EI_OSABI and EI_BRAND FreeBSD) is needed for FreeBSD to run the program, in addition to `op obja=4k'.
   fi
   if test "$2"; then
-    if test "$v"; then (set -x && "$@") || exit "$?"; else "$@"; fi
+    ! test "$v"  || (exec 2>&1 && set -x && : "$@") || exit "$?"
+    "$@"
   fi
 fi
-if test "$v"; then (set -x && : "$0" OK.); fi
+if test "$v"; then (exec 2>&1 && set -x && : : "$0" OK.); fi
 
 # __END__
-
