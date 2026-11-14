@@ -1,6 +1,6 @@
 #! /bin/sh --
 #
-# dwlibcc: C compiler driver for dwlibc, a toolchain to create stanalone, combined DOS--Win32 .exe programs and combined Linux--FreeBSD i386 ELF-32 programs on Linux i386 (or amd64)
+# dwlibcc: C compiler driver for dwlibc, a toolchain to create standalone, combined DOS--Win32 .exe programs and combined Linux--FreeBSD i386 ELF-32 programs on Linux i386 (or amd64)
 # by pts@fazekas.hu at Sun Nov  8 16:20:04 CET 2026
 #
 # Example first-run compile: ./dwlibcc -s -Os -W -Wall -Wextra -Werror -std=c89 -o helldspe.exe helldspe.c
