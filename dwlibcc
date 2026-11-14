@@ -150,10 +150,11 @@ elif test "$1" = --check; then
   : : "$0" check OK.
   set +x; exit 0
 else
+  usage2="Usage: $0 [-bdoswin32|-bdos32|-bwin32|-blinux|-bfreebsdx] -o <output-exe> [<option>...] file.c"
   while ! test "$target"; do
     case "$1" in
-     "" | -\? | -v) exec owcc "$@" 2>&1 ;;
-     --help) shift; exec owcc -\? "$@" 2>&1 ;;
+     "" | -\? | -v) echo "$usage"; exec "$mydir"/tools/owcc "$@" 2>&1 ;;
+     --help) shift; echo "$usage"; exec "$mydir"/tools/owcc -\? "$@" 2>&1 ;;
      --nasm=*) nasm="${1#*=}"; shift ;;
      -bdos | -bdos32 | -bpmodew) shift; target=dos32 ;;
      -bwin32) shift; target=win32; dosxt= ;;
