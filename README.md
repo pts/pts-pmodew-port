@@ -195,8 +195,9 @@ Feature additions:
   * OS/2 >=2.0 DOS window using PMODE/W in the DOS stub
   * DOS emulators (such as DOSBox) using PMODE/W in the DOS stub
 
-  However, a convenient end-to-end build environment for such ultraportable
-  .exe program files is not provided by pts-pmodew-port.
+  A convenient end-to-end build environment for such ultraportable
+  .exe program files (including a C compiler and C library) is also provided
+  by pts-pmodew-port, see [dwlibc.md](dwlibc.md).
 
 * The simple PE builder (can be enabled with `%define SPE_EntryPoint ...`
   before the `%include 'pmodew.nasm'`) has been added to
