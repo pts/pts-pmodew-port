@@ -237,7 +237,7 @@ if test "$dosxt" && ! test -f "$dosxt"; then  # Build the DOS extender DOS stub 
   set +x  # Disable echo of commands run.
 fi
 
-test "$prepare" && exit
+if test "$prepare"; then (set -x && : : "$0" prepare OK.); exit; fi
 
 # This design of doing the full compile and link without .asm or object (.o) files is based on: https://stackoverflow.com/a/62495257 . It cannot provide the 64-bit integer functions (e.g. __I8M).
 # `owcc -bbegin' passes `system begin' to wlink and `-bt=begin\ (default-mapped) to wcc396.
