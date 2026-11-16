@@ -28,7 +28,7 @@ v=
 for arg in "$@"; do case "$arg" in -v) v="$arg" ;; esac; done
 if test "$v"; then (exec 2>&1 && set -x && : "$0" "$@"); fi  # Print our own command without running it if -v was specified.
 
-target=; nasm=; stack=8K; prepare=
+target=; nasm=; stack=8K; prepare=; stackres=1M
 dosxt="$mydir"/pmodewd.exe
 argflag=; exefn=; needexefn=1; exportall="-Wl,op -Wl,exporta"; ns=-ns
 pmodew_message="PMODE/W v1.33 (C)Daredevil and Tran."
@@ -64,7 +64,7 @@ else
      -blinux) shift; target=linux; dosxt= ;;
      -bfreebsd | -bfreebsdx) shift; target=freebsdx; dosxt= ;;  # -bfreebsd would be only FreeBSD without Linux. We don't support that.
      -bany | -banyos) shift; target=any; dosxt= ;;  # Similar to `minicc -bany' in https://github.com/pts/minilibc686 , but here system-specific and I/O functions (e.g. write(...)) won't even be declared.
-     -mstack=*) stack="${1#*=}"; shift; continue ;;  # The syntax is whatever wlink accepts, e.g. -mstack=8k means 8192 bytes.
+     -mstack=*) stack="${1#*=}"; stackres="$stack"; shift; continue ;;  # The syntax is whatever wlink accepts, e.g. -mstack=8k means 8192 bytes.
      *) target=doswin32 ;;
     esac
   done
@@ -147,18 +147,18 @@ if test "$prepare"; then (set -x && : : "$0" prepare OK.); exit; fi
 # Typical `-bt=...' values in bin*/specs.owc: dos (both 16-bit and 32-bit), nt (Win32, 32-bit), windows (Windows 3.1, 16-bit), linux (i386, 32-bit), os2 (both 16-bit and 32-bit), netware (i386, 32-bit), qnx (i386, 32-bit), zdos, rdos, rdosdev, rdos_*.
 # wcc386 takes the last -bt=anything flag value passed to it, capitalizes it, and defines the macro like `wcc386 -D__ANYTHING__=1' (same as C code `#define __ANYTHING__ 1').
 # If wcc386 doesn't get any -bt=anything flag, then it will use the host system name (e.g. linux if compiling on Linux, nt if compiling on Win32), e.g. `wcc386 -D__LINUX__=1'.
-# !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this? Patch it with sstrip.
+# !! Add stack checking and remove -fno-stack-check by default
 export PATH="$mydir"/tools  # owcc finds specs.owc, wcc386 and wlink on $PATH. It doesn't even look at its own directory.
 export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
 set x $v -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,noext -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ $dss "$@"; shift
 if test "$target" = dos32; then
-  set owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"              "$@"
+  set owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"              "$@"
 elif test "$target" = win32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack"                                       "$@"
+  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack"                                       "$@"
 elif test "$target" = doswin32; then
   export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"  -D__DOS__   "$@"
+  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"  -D__DOS__   "$@"
 elif test "$target" = linux; then
   # `op obja=16' creates incorrectly aligned ELF which Linux can run. !! Write a post-processing tool which relocates _DATA.
   set owcc -bbegin -Wc,-bt=linux    -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall "$@"
@@ -173,8 +173,9 @@ fi
 ! test "$v"  || (exec 2>&1 && set -x && : "$@") || exit "$?"
 "$@"
 if test "$needexefn"; then
-  if test "$target" = dos32; then      set sstrip -p1 -m "$pmodew_message" -- "$exefn"
-  elif test "$target" = doswin32; then set sstrip     -m "$pmodew_message" -- "$exefn"
+  if test "$target" = dos32; then      set sstrip -p1 -pt0 -ph0 -ps -m "$pmodew_message" -- "$exefn"
+  elif test "$target" = doswin32; then set sstrip     -pt0 -ph0 -ps -m "$pmodew_message" -- "$exefn"
+  elif test "$target" = win32; then    set sstrip     -pt0 -ph0 -ps                      -- "$exefn"
   elif test "$target" = linux; then    set sstrip -ll $ns -- "$exefn"
   elif test "$target" = freebsdx; then set sstrip -lf $ns -- "$exefn"  # Only -lf (EI_OSABI and EI_BRAND FreeBSD) is needed for FreeBSD to run the program, in addition to `op obja=4k'.
   fi
