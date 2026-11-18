@@ -247,7 +247,7 @@ test "$prepare" && exit
 # !! SizeOfHeapReserve is generated as 0. Why? Does owcc always do this? Patch it with sstrip.
 export PATH="$mydir"/tools  # owcc finds specs.owc, wcc386 and wlink on $PATH. It doesn't even look at its own directory.
 export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
-set x -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ "$@"; shift
+set x $v -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,noext -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ $dss "$@"; shift
 if test "$target" = dos32; then
   set owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st=256K -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"              "$@"
 elif test "$target" = win32; then
