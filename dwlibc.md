@@ -221,3 +221,9 @@ These are the current limitations:
   floating-point emulation support.
 * Compressed executables (such as with UPX) are not supported for `-bdos32`,
   -bdoswin32` and `-bfreebsdx` targets.
+* There is no way to grow the stack, not even on Win32 (which supports
+  growing it until it reaches size SizeOfStackReserve).
+* It only works with files shorter than 2 GiB. The culprits are the *lseek*
+  and *ftruncate* functions, which take a 32-bit signed integer. However,
+  depending on the system (e.g. on Linux), even opening large files may
+  fail.
