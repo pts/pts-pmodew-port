@@ -233,7 +233,11 @@ typedef unsigned mode_t;
 #  endif
 #else
 #  ifndef _LIBC_USE_MAIN1
-#    define _LIBC_USE_MAIN  /* main(...) is the default, not main1(...). */
+#    if defined(_LIBC_USE_MAIN0) && (defined(__DOS__) || defined(__NT__))
+#      define _LIBC_USE_MAIN1
+#    else
+#      define _LIBC_USE_MAIN  /* main(...) is the default, not main1(...). */
+#    endif
 #  endif
 #endif
 
