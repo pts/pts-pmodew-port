@@ -183,6 +183,29 @@ General usage of dwlibcc:
   larger if needed, e.g. `-mstack=64k`. On Linux and FreeBSD, the stack
   size setting is ignored.
 
+## Gotchas and differnces from other libcs
+
+These are the gotchas and differences from other libcs:
+
+* Stack size is limited. The default upper limit is 8 KiB, which is much
+  smaller than in other i386 environments. The limit can be changed by
+  specifying e.g. `dwlibcc -mstack=64K`, which changes it to 64 KiB. Please
+  note that `-bdos`, `-bwin32` and `-bdoswin32` preallocate the entire stack
+  limit.
+* The return value of the *open*, *creat*, *open00* and *creat1* functions
+  has to be checked for errors using `== -1` rather than `< 0`, because
+  negative values except for -1 are also valid file descriptors with
+  `-bwin32` and `-bdoswin32`. Do it portably like this:
+  ```
+  #ifndef _LIBC_HAS_OPEN_FAILED
+  #  define _LIBC_HAS_OPEN_FAILED(fd_result) ((fd_result) < 0)
+  #endif
+  ...
+  if (_LIBC_HAS_OPEN_FAILED(fd = open(...))) { ... }
+  ```
+* There is no automatic CRLF-to-LF or LF-to-CRLF translation, not even
+  on terminal devices (i.e. TTY, console command prompt).
+
 ## Limitations of dwlibc
 
 These are the current limitations:
