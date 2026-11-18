@@ -221,3 +221,5 @@ These are the current limitations:
   floating-point emulation support.
 * Compressed executables (such as with UPX) are not supported for `-bdos32`,
   -bdoswin32` and `-bfreebsdx` targets.
+* There is no way to grow the stack, not even on Win32 (which supports
+  growing it until it reaches size SizeOfStackReserve).

@@ -28,7 +28,7 @@ v=
 for arg in "$@"; do case "$arg" in -v) v="$arg" ;; esac; done
 if test "$v"; then (exec 2>&1 && set -x && : "$0" "$@"); fi  # Print our own command without running it if -v was specified.
 
-target=; nasm=; stack=8K; prepare=; stackres=1M
+target=doswin32; nasm=; stack=8K; dss="-D__DWLIBC_STACK_SIZE=8 -D__DWLIBC_STACK_SHIFT=10"; prepare=; v0=; stackres=1M
 dosxt="$mydir"/pmodewd.exe
 argflag=; exefn=; needexefn=1; exportall="-Wl,op -Wl,exporta"; ns=-ns
 pmodew_message="PMODE/W v1.33 (C)Daredevil and Tran."
@@ -53,30 +53,36 @@ elif test "$1" = --check; then
   set +x; exit 0
 else
   usage2="Usage: $0 [-bdoswin32|-bdos32|-bwin32|-blinux|-bfreebsdx] -o <output-exe> [<option>...] file.c"
-  while ! test "$target"; do
+  case "$#:$1" in
+   0: | 1:-\? | 1:-v) echo "$usage"; exec "$mydir"/tools/owcc "$@" 2>&1 ;;
+   1:--help) echo "$usage"; exec "$mydir"/tools/owcc -\? "$@" 2>&1 ;;
+  esac
+  while :; do
     case "$1" in
-     "" | -\? | -v) echo "$usage"; exec "$mydir"/tools/owcc "$@" 2>&1 ;;
-     --help) shift; echo "$usage"; exec "$mydir"/tools/owcc -\? "$@" 2>&1 ;;
-     --nasm=*) nasm="${1#*=}"; shift ;;
-     -bdos | -bdos32 | -bpmodew) shift; target=dos32 ;;
-     -bwin32) shift; target=win32; dosxt= ;;
-     -bdoswin32) shift; target=doswin32 ;;
-     -blinux) shift; target=linux; dosxt= ;;
-     -bfreebsd | -bfreebsdx) shift; target=freebsdx; dosxt= ;;  # -bfreebsd would be only FreeBSD without Linux. We don't support that.
-     -bany | -banyos) shift; target=any; dosxt= ;;  # Similar to `minicc -bany' in https://github.com/pts/minilibc686 , but here system-specific and I/O functions (e.g. write(...)) won't even be declared.
-     -mstack=*) stack="${1#*=}"; stackres="$stack"; shift; continue ;;  # The syntax is whatever wlink accepts, e.g. -mstack=8k means 8192 bytes.
-     *) target=doswin32 ;;
+     --nasm=*) nasm="${1#*=}"; shift; continue ;;
+     -v) v0="$1"; shift; continue ;;  # Already set to v=-v above.
+     -bdos | -bdos32 | -bpmodew) target=dos32; shift; continue ;;
+     -bwin32) target=win32; dosxt=; shift; continue ;;
+     -bdoswin32) target=doswin32; shift; continue ;;
+     -blinux) target=linux; dosxt=; shift; continue ;;
+     -bfreebsd | -bfreebsdx) target=freebsdx; dosxt=; shift; continue ;;  # -bfreebsd would be only FreeBSD without Linux. We don't support that.
+     -bany | -banyos) target=any; dosxt= ;;  # Similar to `minicc -bany' in https://github.com/pts/minilibc686 , but here system-specific and I/O functions (e.g. write(...)) won't even be declared.
+     -mstack=*[mM]) stack="${1#*=}"; stackres="$stack"; dss="-D__DWLIBC_STACK_SIZE=${stack%?} -D__DWLIBC_STACK_SHIFT=20"; shift; continue ;;  # The syntax is whatever wlink accepts, e.g. -mstack=8k means 8192 bytes.
+     -mstack=*[kK]) stack="${1#*=}"; stackres="$stack"; dss="-D__DWLIBC_STACK_SIZE=${stack%?} -D__DWLIBC_STACK_SHIFT=10"; shift; continue ;;  # The syntax is whatever wlink accepts, e.g. -mstack=8k means 8192 bytes.
+     -mstack=*)     stack="${1#*=}"; stackres="$stack"; dss="-D__DWLIBC_STACK_SIZE=$stack     -D__DWLIBC_STACK_SHIFT=0" ; shift; continue ;;  # The syntax is whatever wlink accepts, e.g. -mstack=8k means 8192 bytes.
     esac
+    break
   done
   for arg in "$@"; do
     case "$argflag" in -o) exefn="$arg" ;; esac
     argflag=
     case "$arg" in
-     -b*) echo "fatal: move target flag to the beginning: $arg" >&2; exit 1 ;;
+     -b* | -mstack=*) echo "fatal: move target flag to the beginning: $arg" >&2; exit 1 ;;
      -o?*) exefn="${arg#-?}" ;;
      -o) argflag="$arg" ;;
      -[cSE]) needexefn= ;;
      -s) exportall=; ns= ;;
+     -fno-stack-check) dss= ;;
     esac
   done
   if test "$needexefn" && ! test "$exefn"; then
@@ -147,10 +153,9 @@ if test "$prepare"; then (set -x && : : "$0" prepare OK.); exit; fi
 # Typical `-bt=...' values in bin*/specs.owc: dos (both 16-bit and 32-bit), nt (Win32, 32-bit), windows (Windows 3.1, 16-bit), linux (i386, 32-bit), os2 (both 16-bit and 32-bit), netware (i386, 32-bit), qnx (i386, 32-bit), zdos, rdos, rdosdev, rdos_*.
 # wcc386 takes the last -bt=anything flag value passed to it, capitalizes it, and defines the macro like `wcc386 -D__ANYTHING__=1' (same as C code `#define __ANYTHING__ 1').
 # If wcc386 doesn't get any -bt=anything flag, then it will use the host system name (e.g. linux if compiling on Linux, nt if compiling on Win32), e.g. `wcc386 -D__LINUX__=1'.
-# !! Add stack checking and remove -fno-stack-check by default
 export PATH="$mydir"/tools  # owcc finds specs.owc, wcc386 and wlink on $PATH. It doesn't even look at its own directory.
 export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
-set x $v -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,noext -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ $dss "$@"; shift
+set x $v0 -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,noext -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ $dss "$@"; shift
 if test "$target" = dos32; then
   set owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"              "$@"
 elif test "$target" = win32; then
