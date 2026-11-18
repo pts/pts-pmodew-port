@@ -223,6 +223,10 @@ typedef unsigned mode_t;
 #define _LIBC_NO_FILEP 1  /* No FILE*, no stdin, no stdout, no fprintf(...). */
 #if defined(__DOS__) || defined(__NT__)
 #  define _LIBC_CRLF 1
+#  define _LIBC_NL_STR "\r\n"
+#else
+#  undef  _LIBC_CRLF
+#  define _LIBC_NL_STR "\n"
 #endif
 
 #ifdef _LIBC_USE_MAIN  /* Can be defined by the user. */
