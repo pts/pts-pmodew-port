@@ -4,8 +4,13 @@ import '_DeleteFileA@4' 'kernel32.dll'.DeleteFileA
 import '_ExitProcess@4' 'kernel32.dll'.ExitProcess
 import '_GetCommandLineA@0' 'kernel32.dll'.GetCommandLineA
 import '_GetFileType@4' 'kernel32.dll'.GetFileType
+import '_GetLastError@4' 'kernel32.dll'.GetLastError
 import '_GetModuleFileNameA@12' 'kernel32.dll'.GetModuleFileNameA
+import '_GetModuleHandleA@4' 'kernel32.dll'.GetModuleHandleA
+import '_GetProcAddress@8' 'kernel32.dll'.GetProcAddress
 import '_GetStdHandle@4' 'kernel32.dll'.GetStdHandle
+import '_GetVersion@0' 'kernel32.dll'.GetVersion
+import '_MoveFileA@8' 'kernel32.dll'.MoveFileA
 import '_ReadFile@20' 'kernel32.dll'.ReadFile
 import '_SetEndOfFile@4' 'kernel32.dll'.SetEndOfFile
 import '_SetFilePointer@16' 'kernel32.dll'.SetFilePointer
