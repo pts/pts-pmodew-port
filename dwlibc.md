@@ -241,9 +241,6 @@ These are the current limitations:
 * It doesn't support long filenames on DOS. (It could be added, first
   PMODE/W, then to the libx.)
 * It doesn't support command-line strings longer than 126 bytes on DOS.
-* The -bwin32 and -bdoswin32 .exe imports even those Win32 functions
-  from kernel32.dll which it doesn't use. (This could be fixed by
-  running wlink twice, and creating a shorter .lnk file in-between.)
 * No floating-point support. (Some simple operations may work.) No
   floating-point emulation support.
 * Compressed executables (such as with UPX) are not supported for `-bdos32`,

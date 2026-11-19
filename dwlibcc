@@ -34,7 +34,7 @@ argflag=; exefn=; needexefn=1; exportall="-Wl,op -Wl,exporta"; ns=-ns
 pmodew_message="PMODE/W v1.33 (C)Daredevil and Tran."
 if test "$1" = --prepare; then
   prepare=1; needexefn=1
-  rm -f "$dosxt" "$mydir"/tools/owcc "$mydir"/tools/wcc386 "$mydir"/tools/wlink "$mydir"/tools/specs.owc "$mydir"/wi64.lib "$mydir"/tools/sstrip
+  rm -f "$dosxt" "$mydir"/tools/owcc "$mydir"/tools/wcc386 "$mydir"/tools/wlink "$mydir"/tools/specs.owc "$mydir"/win32imp.lib "$mydir"/wi64.lib "$mydir"/tools/sstrip
 elif test "$1" = --check; then
   set -x
   test -f "$dosxt"
@@ -101,17 +101,33 @@ if ! test -f "$mydir/tools/owcc"; then
 fi
 
 if test "$needexefn"; then
+  nasmm=tools/nasm-0.98.39.upx; nasm="$mydir/$nasmm"
   if ! test -f "$mydir/wi64.lib"; then  # Build the library containing the 64-bit integer functions e.g. __I8M.
-    if ! test "$nasm"; then
-      nasm="$mydir"/tools/nasm-0.98.39.upx
-      "$nasm" -v >/dev/null 2>&1 || nasm=nasm  # Use the system nasm if the bundled "$nasm" doesn't work.
-    fi
     for f in i8d i8rs u8d u8ls u8m u8rs; do
-      (cd "$mydir" && set -x && "$nasm" -O0 -w+orphan-labels -f obj -o "$f".obj i64/i64_"$f".nasm) || exit "$?"
+      (cd "$mydir" && set -x && "$nasmm" -O0 -w+orphan-labels -f obj -o "$f".obj i64/i64_"$f".nasm) || exit "$?"
     done
-    (cd "$mydir" && set -x && "$nasm" -O0 -w+orphan-labels -f bin -o wi64.lib wi64.nasm) || exit "$?"
+    (cd "$mydir" && set -x && "$nasmm" -O0 -w+orphan-labels -f bin -o wi64.lib wi64.nasm) || exit "$?"
     (cd "$mydir" && rm -f i8dr.obj i8rs.obj u8d.obj u8ls.obj u8m.obj u8rs.obj) || exit "$?"
     if ! test -f "$mydir/wi64.lib"; then echo "fatal: could not build: wi64.lib" >&2; exit 101; fi
+  fi
+  if ! test -f "$mydir/win32imp.lib"; then
+    # !! Generate these imp_*.obj files from a C program, no need for NASM.
+    for symbol in \
+        _CloseHandle@4 _CreateFileA@28 _DeleteFileA@4 _ExitProcess@4 \
+        _GetCommandLineA@0 _GetFileType@4 _GetLastError@4 \
+	_GetModuleFileNameA@12 \
+        _GetModuleHandleA@4 _GetProcAddress@8 _GetStdHandle@4 \
+        _GetVersion@0 _MoveFileA@8 _ReadFile@20 _SetEndOfFile@4 \
+        _SetFilePointer@16 _VirtualAlloc@16 _WriteFile@20 \
+        ; do
+      symbolnu="${symbol#_}"
+      echo "import $symbol kernel32.dll ${symbolnu%@*}" >"$mydir"/imp.nasm
+      (cd "$mydir" && set -x && "$nasmm" -O0 -w+orphan-labels -f obj -o imp_"${symbolnu%@*}".obj imp.nasm) || exit "$?"
+    done
+    # !! Generate win32imp.lib from a C program, no need for NASM.
+    (cd "$mydir" && set -x && "$nasmm" -O0 -w+orphan-labels -f bin -o win32imp.lib win32imp.nasm) || exit "$?"
+    (cd "$mydir" && rm -f imp.nasm ./imp_*.obj) || exit "$?"
+    if ! test -f "$mydir/win32imp.lib"; then echo "fatal: could not build: win32imp.lib" >&2; exit 101; fi
   fi
   if ! test -f "$mydir"/tools/sstrip; then  # Do a direct compile (using "$mydir"/tools/owcc) of tools/sstrip.c to tools/sstrip , targeting Linux i386.
      rm -f "$mydir"/tools/sstrip.tmp
@@ -132,13 +148,10 @@ if test "$needexefn"; then
 fi
 
 if test "$dosxt" && ! test -f "$dosxt"; then  # Build the DOS extender DOS stub pmodewd.exe upon first run.
-  if ! test "$nasm"; then
-    nasm="$mydir"/tools/nasm-0.98.39.upx
-    "$nasm" -v >/dev/null 2>&1 || nasm=nasm  # Use the system nasm if the bundled "$nasm" doesn't work.
-  fi
+  nasmm=tools/nasm-0.98.39.upx; nasm="$mydir/$nasmm"
   set -x  # Enable echo of commands run.
-  (cd "$mydir" && "$nasm" -O32700 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DSIZEOPT=1 -DCONFIGTYPE=2 -DLOADSPE=3 -DSPECUSTOMENTRY=2 -DLOADLE=0 -DLOADPMW1=0 -DEXCEPTIONS=1 -DINT3108FUNC=0 -DINT1B=2 -DINT33=0 -DINT31VENDOR=0 -DFREEMEMINFO=0 -DGETVERSION=0 -DABORTMSGTTY=1 -DEXITCODE=1 -DSHORTMSG=1 -o pmodewdu.exe pmodew.nasm) || exit "$?"
-  (cd "$mydir" && "$nasm" -O0 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DCONFIGINEXEIMAGE=2 -DPM_SELECTORS=4 -o pmwca pmwcax.nasm) || exit "$?"
+  (cd "$mydir" && "$nasmm" -O32700 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DSIZEOPT=1 -DCONFIGTYPE=2 -DLOADSPE=3 -DSPECUSTOMENTRY=2 -DLOADLE=0 -DLOADPMW1=0 -DEXCEPTIONS=1 -DINT3108FUNC=0 -DINT1B=2 -DINT33=0 -DINT31VENDOR=0 -DFREEMEMINFO=0 -DGETVERSION=0 -DABORTMSGTTY=1 -DEXITCODE=1 -DSHORTMSG=1 -o pmodewdu.exe pmodew.nasm) || exit "$?"
+  (cd "$mydir" && "$nasmm" -O0 -w+orphan-labels -DPMWV=33 -DLOGO=0 -DCONFIGINEXEIMAGE=2 -DPM_SELECTORS=4 -o pmwca pmwcax.nasm) || exit "$?"
   chmod +x "$mydir"/pmwca
   (cd "$mydir" && ./pmwca pmodewdu.exe pmodewd.exe) || exit "$?"  # This runs on Linux i386, Linux amd64 and FreeBSD i386.
   rm -f pmodewdu.exe pmwca
@@ -157,13 +170,13 @@ export PATH="$mydir"/tools  # owcc finds specs.owc, wcc386 and wlink on $PATH. I
 export INCLUDE="$mydir"  # For `#include <dwlibc.h>'.
 set x $v0 -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,noext -Wl,op -Wl,start=_dwlibcstart_ -Wl,l -Wl,"$mydir"/wi64.lib -fnostdlib -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ $dss "$@"; shift
 if test "$target" = dos32; then
-  set owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"              "$@"
+  set owcc -bbegin -Wc,-bt=dos -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"                                              "$@"
 elif test "$target" = win32; then
-  export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack"                                       "$@"
+  #export WLINK_LNK="$mydir"/dwlibc_win32.lnk  # Fallback for linking without win32imp.lib.
+  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack"                                       -Wl,l -Wl,"$mydir"/win32imp.lib "$@"
 elif test "$target" = doswin32; then
-  export WLINK_LNK="$mydir"/dwlibc_win32.lnk
-  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"  -D__DOS__   "$@"
+  #export WLINK_LNK="$mydir"/dwlibc_win32.lnk  # Fallback for linking without win32imp.lib.
+  set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"  -D__DOS__   -Wl,l -Wl,"$mydir"/win32imp.lib "$@"
 elif test "$target" = linux; then
   # `op obja=16' creates incorrectly aligned ELF which Linux can run. !! Write a post-processing tool which relocates _DATA.
   set owcc -bbegin -Wc,-bt=linux    -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall "$@"

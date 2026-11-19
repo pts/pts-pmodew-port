@@ -50,6 +50,9 @@
 /u8ls.obj
 /u8m.obj
 /u8rs.obj
+/imp_*.obj
+/imp.nasm
+/win32imp.lib
 
 # dwlibc test files.
 /hellaspe.o
