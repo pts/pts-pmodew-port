@@ -132,7 +132,7 @@ if test "$needexefn"; then
   if ! test -f "$mydir"/tools/sstrip; then  # Do a direct compile (using "$mydir"/tools/owcc) of tools/sstrip.c to tools/sstrip , targeting Linux i386.
      rm -f "$mydir"/tools/sstrip.tmp
      # We are doing a cd here so that sstrip.o ends up in "$mydir"/tools.
-     (set -x && cd "$mydir"/tools && PATH=. owcc -bbegin -Wc,-bt=linux -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -DENABLE_PEPATCH -s -Os -W -Wall -Wextra -Werror -std=c89 -include ../dwlibc.h -o sstrip.tmp sstrip.c) || exit "$?"
+     (set -x && cd "$mydir"/tools && PATH=. owcc -bbegin -Wc,-bt=linux -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,d -Wl,op -Wl,nored -Wl,op -Wl,start=_dwlibcstart_ -fnostdlib -fno-stack-check -finline-intrinsics -fsigned-char -march=i386 -D__DWLIBC__ -DENABLE_PEPATCH -DENABLE_ELFDATAMOVE -s -Os -W -Wall -Wextra -Werror -std=c89 -include ../dwlibc.h -o sstrip.tmp sstrip.c) || exit "$?"
      test -f "$mydir"/tools/sstrip.tmp
      cat "$mydir"/tools/sstrip.tmp >"$mydir"/tools/sstrip.tmp2
      chmod +x "$mydir"/tools/sstrip.tmp2
@@ -178,11 +178,11 @@ elif test "$target" = doswin32; then
   #export WLINK_LNK="$mydir"/dwlibc_win32.lnk  # Fallback for linking without win32imp.lib.
   set owcc -bbegin -Wc,-bt=nt  -Wl,x -Wl,end -Wl,form -Wl,win -Wl,nt -Wl,ru -Wl,con=3.10 -Wl,op -Wl,h=4K -Wl,com -Wl,h=4K -Wl,op -Wl,st="$stackres" -Wl,com -Wl,st="$stack" -Wl,op -Wl,stub="$dosxt"  -D__DOS__   -Wl,l -Wl,"$mydir"/win32imp.lib "$@"
 elif test "$target" = linux; then
-  # `op obja=16' creates incorrectly aligned ELF which Linux can run. !! Write a post-processing tool which relocates _DATA.
-  set owcc -bbegin -Wc,-bt=linux    -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall "$@"
+  # `op obja=16' creates incorrectly aligned ELF which Linux can still run. `sstrip -md' below will make it more compatible. `sstrip -md' needs relocations, so it doesn't work with `op nor'.
+  set owcc -bbegin -Wc,-bt=linux    -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,obja=16 $exportall "$@"
 elif test "$target" = freebsdx; then
-  # `op obja=16' creates incorrectly aligned ELF which FreeBSD 3.0 can't run (it fails with: Abort trap). !! Write a post-processing tool which relocates _DATA.
-  set owcc  -bbegin -Wc,-bt=freebsd -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,fre -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall -D__LINUX__ "$@" || exit "$?"
+  # `op obja=16' creates incorrectly aligned ELF which FreeBSD 3.0 can't run (it fails with: Abort trap). `sstrip -md' below will fix it. FreeBSD 3.0 would be able to run the defualt `op obja=4k' without any fix. `sstrip -md' needs relocations, so it doesn't work with `op nor'.
+  set owcc  -bbegin -Wc,-bt=freebsd -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,fre -Wl,op -Wl,obja=16 $exportall -D__LINUX__ "$@" || exit "$?"
 elif test "$target" = any; then
   set owcc -bbegin -Wc,-bt=anyos -Wl,x -Wl,end -Wl,form -Wl,elf -Wl,ru -Wl,lin -Wl,op -Wl,nor -Wl,op -Wl,obja=4k $exportall "$@"
 else
@@ -194,8 +194,8 @@ if test "$needexefn"; then
   if test "$target" = dos32; then      set sstrip -p1 -pt0 -ph0 -ps -m "$pmodew_message" -- "$exefn"
   elif test "$target" = doswin32; then set sstrip     -pt0 -ph0 -ps -m "$pmodew_message" -- "$exefn"
   elif test "$target" = win32; then    set sstrip     -pt0 -ph0 -ps                      -- "$exefn"
-  elif test "$target" = linux; then    set sstrip -ll $ns -- "$exefn"
-  elif test "$target" = freebsdx; then set sstrip -lf $ns -- "$exefn"  # Only -lf (EI_OSABI and EI_BRAND FreeBSD) is needed for FreeBSD to run the program, in addition to `op obja=4k'.
+  elif test "$target" = linux; then    set sstrip -ll -md $ns -- "$exefn"
+  elif test "$target" = freebsdx; then set sstrip -lf -md $ns -- "$exefn"  # Only -lf (EI_OSABI and EI_BRAND FreeBSD) is needed for FreeBSD to run the program, in addition to `op obja=4k' or `sstrip -md'.
   fi
   if test "$2"; then
     ! test "$v"  || (exec 2>&1 && set -x && : "$@") || exit "$?"
