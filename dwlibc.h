@@ -1750,8 +1750,7 @@ extern char __dwlibc_is_freebsd;
 #  define main(argspec1, argspec2) \
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       /*__asm { cld }*/  /* Not needed for Linux. */ \
-      __DWLIBC_ASMB_DETECT_FREEBSD \
-      __DWLIBC_ASMB_FILLBSSPAGE1 \
+      __DWLIBC_ASMB_FILLBSSPAGE1 __DWLIBC_ASMB_DETECT_FREEBSD \
       __asm { pop eax }  /* EAX := argc. */ \
       __asm { mov edx, esp }  /* EDX := argv. */ \
       __DWLIBC_ASMB_INIT_STACKLOWNEG  /* Ruins EBX. */ \
@@ -1769,8 +1768,8 @@ extern char __dwlibc_is_freebsd;
 #  define main1(argspec1) \
       /*int*/ __declspec(naked) __watcall _dwlibcstart(void) { \
       /*__asm { cld }*/  /* Not needed for Linux. */ \
-      __DWLIBC_ASMB_DETECT_FREEBSD \
-      __DWLIBC_ASMB_FILLBSSPAGE1 __DWLIBC_ASMB_GET_ARGV \
+      __DWLIBC_ASMB_FILLBSSPAGE1 __DWLIBC_ASMB_DETECT_FREEBSD \
+      __DWLIBC_ASMB_GET_ARGV \
       __DWLIBC_ASMB_INIT_STACKLOWNEG  /* Ruins EBX. */ \
       __DWLIBC_ASMB_ARGV_TO_CMDLINE \
       __asm { call main1 } \
